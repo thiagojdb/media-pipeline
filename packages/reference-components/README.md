@@ -11,6 +11,7 @@ Manually authored reference components demonstrate the public `@relay/component-
 - optional frame-driven line drawing;
 - highlighted series and data points;
 - channel color, font, and spacing tokens;
+- exact 1920×1080, 1280×720, and 960×540 output dimensions;
 - intentional empty-data rendering;
 - representative, empty, and dense fixtures with checkpoint frames.
 

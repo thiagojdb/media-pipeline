@@ -50,6 +50,28 @@ npm test
 npm run build
 ```
 
+Workspace package builds are ordered explicitly, so `npm run build` and the `npm run dev` preparation step do not depend on ignored `dist` output from an earlier run.
+
+### Browser tests
+
+Install the pinned Playwright Chromium runtime once after `npm install`:
+
+```bash
+npx playwright install chromium
+```
+
+Then run the browser suite deterministically against a test-owned production Next.js server:
+
+```bash
+npm run test:browser
+```
+
+The command first performs the production build, starts `next start` on `127.0.0.1:3100`, and refuses to reuse a process already listening there. Browser tests remain explicit rather than part of `npm run verify`. Playwright reports, traces, and test-result directories are ignored build artifacts.
+
+## MED-129 trust boundary
+
+The component preview registry is a closed allowlist of trusted reference definitions bundled with this application. Exact component id and version lookup has no fallback. MED-129 does not load or execute agent-generated candidates and does not claim to provide a sandbox. Candidate workspaces, process isolation, and untrusted-code execution belong to MED-133.
+
 ## Workspace boundaries
 
 - `apps/web` — Next.js App Router creator application with Tailwind CSS and shadcn/ui

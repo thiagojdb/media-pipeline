@@ -67,12 +67,15 @@ describe("video component contract", () => {
     ).toBe(60);
   });
 
-  it("applies Zod defaults and reports actionable invalid input paths", () => {
+  it("applies Zod defaults and defaults supported dimensions to the primary dimensions", () => {
     const component = defineVideoComponent(minimalDefinition);
     expect(component.fixtures[0]!.input).toEqual({
       title: "Relay",
       emphasis: false,
     });
+    expect(component.supportedDimensions).toEqual([
+      { width: 1920, height: 1080 },
+    ]);
 
     expect(
       validateVideoComponentInput(component.schema, { emphasis: true }),
@@ -103,6 +106,62 @@ describe("video component contract", () => {
         },
       ],
     });
+  });
+
+  it("copies and freezes primary dimensions so caller mutation cannot invalidate the contract", () => {
+    const dimensions = { width: 1920, height: 1080 };
+    const component = defineVideoComponent({
+      ...minimalDefinition,
+      dimensions,
+      supportedDimensions: [dimensions, { width: 1280, height: 720 }],
+    });
+
+    dimensions.width = 640;
+    expect(component.dimensions).toEqual({ width: 1920, height: 1080 });
+    expect(component.supportedDimensions).toContainEqual(component.dimensions);
+    expect(Object.isFrozen(component.dimensions)).toBe(true);
+  });
+
+  it("validates declared supported dimensions and requires the primary dimensions", () => {
+    const component = defineVideoComponent({
+      ...minimalDefinition,
+      supportedDimensions: [
+        minimalDefinition.dimensions,
+        { width: 1280, height: 720 },
+      ],
+    });
+    expect(component.supportedDimensions).toEqual([
+      { width: 1920, height: 1080 },
+      { width: 1280, height: 720 },
+    ]);
+
+    expect(() =>
+      defineVideoComponent({
+        ...minimalDefinition,
+        supportedDimensions: [
+          { width: 1280, height: 720 },
+          { width: 1280, height: 720 },
+          { width: 0, height: 1080 },
+        ],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            code: "dimension_duplicate",
+            path: ["supportedDimensions", 1],
+          }),
+          expect.objectContaining({
+            code: "invalid_dimensions",
+            path: ["supportedDimensions", 2],
+          }),
+          expect.objectContaining({
+            code: "invalid_dimensions",
+            path: ["supportedDimensions"],
+          }),
+        ]),
+      }),
+    );
   });
 
   it("requires fixtures and checkpoints and validates static duration independently", () => {

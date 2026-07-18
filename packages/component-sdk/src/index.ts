@@ -95,7 +95,10 @@ export interface VideoComponentDefinition<Schema extends z.ZodObject> {
   readonly version: string;
   readonly schema: Schema;
   readonly fps: number;
+  /** Primary dimensions used when a host does not make an explicit selection. */
   readonly dimensions: VideoDimensions;
+  /** Optional additional dimensions a host may select exactly. Defaults to `dimensions`. */
+  readonly supportedDimensions?: readonly VideoDimensions[];
   readonly duration: number | ((input: z.output<Schema>) => number);
   readonly assets: readonly AssetRequirement[];
   readonly fixtures: readonly VideoComponentFixture<z.input<Schema>>[];
@@ -107,8 +110,10 @@ export type InputControlMetadata = z.core.JSONSchema.BaseSchema;
 
 export interface DefinedVideoComponent<Schema extends z.ZodObject> extends Omit<
   VideoComponentDefinition<Schema>,
-  "fixtures"
+  "fixtures" | "supportedDimensions"
 > {
+  /** Primary plus any other exact dimensions a host may select. */
+  readonly supportedDimensions: readonly VideoDimensions[];
   /** JSON Schema generated from `schema` for generic input controls. */
   readonly inputControls: InputControlMetadata;
   /** Fixture inputs after Zod parsing/default application. */
@@ -123,6 +128,7 @@ export type ContractIssueCode =
   | "checkpoint_out_of_range"
   | "checkpoint_required"
   | "compatibility_invalid"
+  | "dimension_duplicate"
   | "duration_invalid"
   | "fixture_duplicate"
   | "fixture_invalid"
@@ -185,14 +191,44 @@ export function defineVideoComponent<Schema extends z.ZodObject>(
       message: "FPS must be a positive integer.",
     });
   }
-  if (
-    !isPositiveInteger(definition.dimensions.width) ||
-    !isPositiveInteger(definition.dimensions.height)
-  ) {
+  if (!isValidDimensions(definition.dimensions)) {
     issues.push({
       code: "invalid_dimensions",
       path: ["dimensions"],
       message: "Width and height must be positive integers.",
+    });
+  }
+
+  const supportedDimensions = definition.supportedDimensions ?? [
+    definition.dimensions,
+  ];
+  if (supportedDimensions.length === 0) {
+    issues.push({
+      code: "invalid_dimensions",
+      path: ["supportedDimensions"],
+      message: "Supported dimensions cannot be empty when provided.",
+    });
+  }
+  supportedDimensions.forEach((dimensions, index) => {
+    if (!isValidDimensions(dimensions)) {
+      issues.push({
+        code: "invalid_dimensions",
+        path: ["supportedDimensions", index],
+        message: "Width and height must be positive integers.",
+      });
+    }
+  });
+  checkUniqueDimensions(supportedDimensions, issues);
+  if (
+    isValidDimensions(definition.dimensions) &&
+    !supportedDimensions.some((dimensions) =>
+      dimensionsEqual(dimensions, definition.dimensions),
+    )
+  ) {
+    issues.push({
+      code: "invalid_dimensions",
+      path: ["supportedDimensions"],
+      message: "Supported dimensions must include the primary dimensions.",
     });
   }
 
@@ -369,6 +405,10 @@ export function defineVideoComponent<Schema extends z.ZodObject>(
 
   return Object.freeze({
     ...definition,
+    dimensions: Object.freeze({ ...definition.dimensions }),
+    supportedDimensions: Object.freeze(
+      supportedDimensions.map((dimensions) => Object.freeze({ ...dimensions })),
+    ),
     fixtures: Object.freeze(fixtures),
     inputControls,
   });
@@ -503,6 +543,35 @@ function checkUnique(
       issues.push({ code, path: [...pathPrefix.split("."), index], message });
     seen.add(value);
   });
+}
+
+function checkUniqueDimensions(
+  dimensions: readonly VideoDimensions[],
+  issues: ContractIssue[],
+): void {
+  const seen = new Set<string>();
+  dimensions.forEach((item, index) => {
+    const key = `${item.width}x${item.height}`;
+    if (seen.has(key)) {
+      issues.push({
+        code: "dimension_duplicate",
+        path: ["supportedDimensions", index],
+        message: "Supported dimensions must be unique.",
+      });
+    }
+    seen.add(key);
+  });
+}
+
+function dimensionsEqual(
+  left: VideoDimensions,
+  right: VideoDimensions,
+): boolean {
+  return left.width === right.width && left.height === right.height;
+}
+
+function isValidDimensions(value: VideoDimensions): boolean {
+  return isPositiveInteger(value.width) && isPositiveInteger(value.height);
 }
 
 function isPositiveInteger(value: number): boolean {

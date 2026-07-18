@@ -18,6 +18,10 @@ export default defineVideoComponent({
   }),
   fps: 30,
   dimensions: { width: 1920, height: 1080 },
+  supportedDimensions: [
+    { width: 1920, height: 1080 },
+    { width: 1280, height: 720 },
+  ],
   duration: 180,
   assets: [],
   fixtures: [
@@ -64,7 +68,7 @@ The repository includes mechanically tested definitions for all five families; t
 
 ## Frame, theme, and assets
 
-The renderer receives a zero-based `frame`, `fps`, exact `durationInFrames`, and exact pixel dimensions. Preview and final render hosts must supply the same values. Channel theme values are explicit color, font-family, and spacing token maps.
+The renderer receives a zero-based `frame`, `fps`, exact `durationInFrames`, and exact pixel dimensions. `dimensions` remains the primary/default size. Components may additionally declare `supportedDimensions`; when omitted, it defaults to an array containing only the primary dimensions. Declared values must be unique positive-integer sizes and must include the primary size. Preview and final render hosts must supply the same selected values. Channel theme values are explicit color, font-family, and spacing token maps.
 
 Components declare asset requirements by stable key and kind. Relay resolves those requirements before rendering and supplies `assets[key]` with a source and content hash. Component inputs and fixture outputs must be JSON values. Secrets are never component inputs or assets.
 

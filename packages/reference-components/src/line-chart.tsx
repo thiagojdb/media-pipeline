@@ -189,6 +189,11 @@ export const lineChart = defineVideoComponent({
   schema: lineChartInputSchema,
   fps: 30,
   dimensions: { width: 1920, height: 1080 },
+  supportedDimensions: [
+    { width: 1920, height: 1080 },
+    { width: 1280, height: 720 },
+    { width: 960, height: 540 },
+  ],
   duration: 120,
   assets: [],
   fixtures: [

@@ -5,6 +5,9 @@ import { defineConfig } from "vitest/config";
 const root = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  test: {
+    exclude: ["tests/browser/**", "**/node_modules/**", "**/dist/**"],
+  },
   resolve: {
     alias: {
       "@relay/component-sdk": path.join(

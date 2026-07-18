@@ -6,13 +6,21 @@
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.test.json",
     "build": "tsc"
   },
   "dependencies": {
-    "remotion": "^4.0.490"
+    "@relay/component-sdk": "0.1.0",
+    "react": "^19.2.4",
+    "remotion": "^4.0.490",
+    "zod": "^4.4.3"
   },
   "files": [
     "dist"
-  ]
+  ],
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react-dom": "^19.2.3",
+    "react-dom": "^19.2.4"
+  }
 }

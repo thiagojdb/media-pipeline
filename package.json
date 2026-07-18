@@ -7,17 +7,22 @@
     "packages/*"
   ],
   "scripts": {
+    "predev": "npm run build:packages",
     "dev": "concurrently --kill-others-on-fail --names web,convex,worker --prefix-colors blue,magenta,green \"npm run dev --workspace @relay/web\" \"convex dev\" \"npm run dev --workspace @relay/worker\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "pretypecheck": "npm run build --workspace @relay/component-sdk --workspace @relay/component-testkit",
+    "build:packages": "npm run build --workspace @relay/component-sdk && npm run build --workspace @relay/component-testkit && npm run build --workspace @relay/reference-components && npm run build --workspace @relay/rendering",
+    "pretypecheck": "npm run build:packages",
     "typecheck": "tsc --project convex/tsconfig.json --noEmit && npm run typecheck --workspaces --if-present",
     "test": "vitest run",
-    "build": "npm run build --workspaces --if-present",
+    "pretest:browser": "npm run build",
+    "test:browser": "playwright test",
+    "build": "npm run build:packages && npm run build --workspace @relay/worker && npm run build --workspace @relay/web",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/node": "^24.10.1",
     "concurrently": "^10.0.3",
     "convex": "^1.42.3",

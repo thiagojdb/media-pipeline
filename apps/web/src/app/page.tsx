@@ -31,14 +31,20 @@ export default function Home() {
         ))}
       </ul>
 
-      <div className="mt-10">
+      <div className="mt-10 flex flex-wrap gap-3">
         <Button asChild>
+          <a href="/components/animated-line-chart/versions/1.0.0/preview">
+            Preview the line chart
+            <ArrowUpRight aria-hidden="true" />
+          </a>
+        </Button>
+        <Button asChild variant="outline">
           <a
-            href="https://linear.app/media-pipeline/issue/MED-130/scaffold-the-minimal-typescript-workspace"
+            href="https://linear.app/media-pipeline/issue/MED-129/build-component-preview-fixtures-and-frame-scrubbing"
             rel="noreferrer"
             target="_blank"
           >
-            View foundation scope
+            View preview scope
             <ArrowUpRight aria-hidden="true" />
           </a>
         </Button>

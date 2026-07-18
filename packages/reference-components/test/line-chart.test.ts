@@ -57,8 +57,13 @@ function renderInput(input: LineChartInput, frame: number): string {
 }
 
 describe("reference animated line chart", () => {
-  it("defines typed controls and representative, empty, and dense fixtures through the SDK", () => {
+  it("defines typed controls, supported dimensions, and representative fixtures through the SDK", () => {
     expect(lineChart.id).toBe("animated-line-chart");
+    expect(lineChart.supportedDimensions).toEqual([
+      { width: 1920, height: 1080 },
+      { width: 1280, height: 720 },
+      { width: 960, height: 540 },
+    ]);
     expect(lineChart.inputControls).toMatchObject({
       type: "object",
       properties: {
