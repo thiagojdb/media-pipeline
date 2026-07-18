@@ -78,6 +78,22 @@ npm run render:smoke
 
 It renders the reference line chart twice at 960×540, verifies both outputs as playable H.264 MP4s, and proves declared checkpoint agreement across the browser preview, Remotion stills, and frames decoded from the MP4. It also confirms identical requests produce identical Remotion checkpoint fingerprints. This expensive proof is separate from the normal repository gate.
 
+### Isolated component-build smoke test
+
+On the Linux worker target, prove through adversarial probes that Bubblewrap and `prlimit` execute the fixed candidate validator with blocked network, hidden host home/repository paths, a cleared parent environment, a read-only candidate workspace, and root writes contained inside the disposable namespace:
+
+```bash
+npm run isolation:smoke
+```
+
+Normal `npm run verify` uses the deterministic fake executor and does not require privileged isolation or call a model.
+
+## MED-133 component-build boundary
+
+Component-build execution is disabled unless `COMPONENT_BUILD_CONVEX_URL` and `COMPONENT_BUILD_WORKER_TOKEN` are both configured. Health reports the live loop as `running`, `degraded`, `stopped`, or `disabled`. When enabled, one serialized worker loop claims durable Convex jobs with server-time leases, fenced claim attempts, and heartbeats; removes abandoned local workspaces at startup; creates a disposable bounded workspace; and runs only the fixed validator under fail-closed Bubblewrap/`prlimit` isolation. No fallback ordinary spawn exists. Expired leases recover only within the bounded attempt budget, and stale workers or late cancellation races cannot publish candidates.
+
+Jobs retain opaque `channelId`, `threadId`, `turnId`, optional parent-candidate, and base-snapshot associations for later conversational Pi turns. Enqueue is idempotent per channel/thread/turn. Safe internal Convex queries expose ordered thread state and events without source, raw logs, lease fields, or worker credentials. MED-133 does not add chat, Pi execution, repair, approval, or browser enqueue APIs. Worker mutations require a server-only token; enqueue is an internal Convex mutation. Generated candidates never execute in Next.js or Convex. Successful references hash both exact source and validator/scaffold policy; durable artifact storage remains later work.
+
 ## MED-129 trust boundary
 
 The component preview registry is a closed allowlist of trusted reference definitions bundled with this application. Exact component id and version lookup has no fallback. MED-129 does not load or execute agent-generated candidates and does not claim to provide a sandbox. Candidate workspaces, process isolation, and untrusted-code execution belong to MED-133.

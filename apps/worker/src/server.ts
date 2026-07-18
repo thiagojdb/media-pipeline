@@ -15,14 +15,25 @@ const MAX_REQUEST_BYTES = 1_000_000;
 
 export const createWorkerServer = ({
   draftRenders,
+  componentBuildsEnabled = false,
+  componentBuildStatus,
 }: {
   readonly draftRenders?: DraftRenderService;
+  readonly componentBuildsEnabled?: boolean;
+  readonly componentBuildStatus?: () =>
+    "disabled" | "running" | "degraded" | "stopped";
 } = {}): Server =>
   createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://relay-worker.local");
       if (request.method === "GET" && url.pathname === "/health") {
-        sendJson(response, 200, { service: "relay-worker", status: "ready" });
+        sendJson(response, 200, {
+          service: "relay-worker",
+          status: "ready",
+          componentBuilds:
+            componentBuildStatus?.() ??
+            (componentBuildsEnabled ? "running" : "disabled"),
+        });
         return;
       }
 

@@ -43,6 +43,27 @@ describe("worker HTTP boundary", () => {
     await expect(response.json()).resolves.toEqual({
       service: "relay-worker",
       status: "ready",
+      componentBuilds: "disabled",
+    });
+  });
+
+  it("reports the live component-build control-loop state", async () => {
+    let componentBuildState: "running" | "degraded" = "running";
+    const server = createWorkerServer({
+      componentBuildStatus: () => componentBuildState,
+    }).listen(0, "127.0.0.1");
+    servers.add(server);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    let response = await fetch(`http://127.0.0.1:${port}/health`);
+    await expect(response.json()).resolves.toMatchObject({
+      componentBuilds: "running",
+    });
+    componentBuildState = "degraded";
+    response = await fetch(`http://127.0.0.1:${port}/health`);
+    await expect(response.json()).resolves.toMatchObject({
+      componentBuilds: "degraded",
     });
   });
 

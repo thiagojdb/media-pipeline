@@ -162,9 +162,9 @@ Relay commits to Remotion for the rebuild. It does not recreate the alpha’s en
 
 The browser preview and worker render must evaluate the same Remotion component implementation with the same frame, FPS, dimensions, duration, assets, theme, and inputs. Editing overlays are separate and cannot affect rendered output.
 
-Verified candidate previews should run in a sandboxed frame isolated from the main application. Final and draft rendering occurs in the worker environment. The first render path produces a resolution- and quality-pinned MP4 at 720p, 1080p, 1440p, or 4K from one exact component version. Programmatic graphics default to a near-lossless H.264 Master preset (CRF 1 with 4:4:4 chroma) because 4:2:0 subsampling damages thin colored edges and ordinary CRF values can introduce ringing around text. Compatible 4:2:0 and smaller-file presets remain explicit options; composition, audio, and broader codec options expand in later milestones. Higher resolutions remain explicit creator choices because they consume more worker time and memory. Local rendering favors machine responsiveness over throughput: one job and one Remotion frame worker run at a time, frame rendering and encoding do not overlap, H.264 uses a fast preset, and the worker lowers its OS scheduling priority where supported. MED-133 will replace the process-local queue with durable bounded jobs without weakening these resource controls.
+Verified candidate previews should run in a sandboxed frame isolated from the main application. Final and draft rendering occurs in the worker environment. The first render path produces a resolution- and quality-pinned MP4 at 720p, 1080p, 1440p, or 4K from one exact component version. Programmatic graphics default to a near-lossless H.264 Master preset (CRF 1 with 4:4:4 chroma) because 4:2:0 subsampling damages thin colored edges and ordinary CRF values can introduce ringing around text. Compatible 4:2:0 and smaller-file presets remain explicit options; composition, audio, and broader codec options expand in later milestones. Higher resolutions remain explicit creator choices because they consume more worker time and memory. Local rendering favors machine responsiveness over throughput: one job and one Remotion frame worker run at a time, frame rendering and encoding do not overlap, H.264 uses a fast preset, and the worker lowers its OS scheduling priority where supported.
 
-MED-131 uses a process-local worker render registry and worker-owned `.relay/` output files to prove this path before durable orchestration exists. Next.js only proxies creator commands and downloads; it does not bundle or render. Progress and cancellation are explicit within the live worker process, while restart recovery, Convex job records, disposable workspaces, and untrusted candidate isolation remain MED-133 responsibilities.
+MED-131 retains a process-local worker render registry and worker-owned `.relay/` output files. Next.js only proxies creator commands and downloads; it does not bundle or render. MED-133 adds durable Convex orchestration, restart recovery, and isolation for component-build jobs specifically; render-job durability remains deferred rather than being hidden behind a premature generic job framework.
 
 Remotion is a deliberate product dependency. If measured licensing or scale requirements later justify replacement, migration is a future architecture project rather than complexity paid in advance.
 
@@ -214,7 +214,15 @@ queued -> running -> succeeded
                   -> needs_intervention
 ```
 
-Jobs record attempt count, bounded progress, timestamps, worker identity, and terminal error category. Stale heartbeats become recoverable state through an explicit policy implemented with the worker.
+Jobs record attempt count, bounded progress, timestamps, worker identity, and terminal error category. Stale heartbeats become recoverable state through an explicit policy implemented with the worker. Convex server time defines lease expiry, and each claim attempt is a fencing token: an expired process cannot heartbeat or publish after a successor claim, even if it reused the same worker identifier.
+
+### Component-build execution boundary
+
+Component builds are durable Convex records with explicit queued, running, validating, failed, needs-intervention, succeeded, and canceled states. Leases and heartbeats recover abandoned work within a bounded retry budget. Final candidate publication rechecks cancellation transactionally. Jobs carry opaque channel/thread/turn lineage plus exact source hashes and optional parent/base references, allowing later chat-like turns without MED-133 implementing messages or Pi. Enqueue is idempotent per channel/thread/turn. Safe internal queries expose ordered thread jobs and bounded events without returning source, logs, lease ownership, or worker credentials.
+
+The Node worker is the only candidate execution host. It removes abandoned local workspaces at startup, creates a disposable allowlisted workspace, rejects traversal, symlinks, undeclared dependencies, and file/byte excesses, then invokes one fixed validator command under Bubblewrap and `prlimit`. Isolation is fail-closed and adversarial smoke probes verify blocked network, hidden host homes/repository, cleared parent environment, read-only candidate workspace, and namespace-contained root writes. Worker mutations require a server-only token and enqueue remains internal; there is no unauthenticated web mutation surface. Health reports `running`, `degraded`, `stopped`, or `disabled` from the live control loop rather than configuration alone.
+
+The first implementation keeps successful candidates as immutable content-addressed references rather than durable object-storage artifacts. Durable artifact storage, Pi commands, independent repair, approval, and chat UI remain later issue scope.
 
 ## Testing strategy
 
@@ -233,7 +241,7 @@ The initial repository gate should remain small: format, lint, typecheck, unit t
 
 The first milestone targets local development and private dogfooding. Even locally, arbitrary generated code remains outside Next.js and Convex and cannot replace a working version without validation.
 
-Before untrusted external users can author components, the worker boundary must additionally provide disposable containers or equivalent OS isolation, a read-only base, constrained writable workspace, network restrictions, non-root execution, CPU/memory/process/wall-time limits, and dependency policy. JavaScript sandbox libraries and model instructions alone are insufficient.
+MED-133 establishes the local Linux proof with disposable workspaces, Bubblewrap namespaces, a read-only base, no network or home access, and `prlimit` CPU/memory/process/file/wall-time bounds. JavaScript sandbox libraries and model instructions alone remain insufficient. Before untrusted external users or deployment beyond private dogfooding, this boundary still requires production container policy, authenticated enqueue paths, durable artifact storage, and operational monitoring.
 
 ## Lessons retained from the alpha
 

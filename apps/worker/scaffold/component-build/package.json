@@ -1,0 +1,6 @@
+{
+  "name": "relay-component-candidate",
+  "private": true,
+  "type": "module",
+  "dependencies": {}
+}
