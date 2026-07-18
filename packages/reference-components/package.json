@@ -1,0 +1,28 @@
+{
+  "name": "@relay/reference-components",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.test.json",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@relay/component-sdk": "0.1.0",
+    "react": "^19.2.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@relay/component-testkit": "0.1.0",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "react-dom": "^19.2.4"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}

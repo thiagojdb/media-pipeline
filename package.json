@@ -11,6 +11,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "pretypecheck": "npm run build --workspace @relay/component-sdk --workspace @relay/component-testkit",
     "typecheck": "tsc --project convex/tsconfig.json --noEmit && npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "build": "npm run build --workspaces --if-present",
