@@ -74,7 +74,24 @@ describe("draft render service", () => {
     );
   });
 
-  it("rejects unpinned metadata, invalid inputs, and non-draft dimensions", async () => {
+  it("accepts selectable HD through 4K output resolutions", async () => {
+    const renders = await service();
+    for (const dimensions of [
+      { width: 1280, height: 720 },
+      { width: 1920, height: 1080 },
+      { width: 2560, height: 1440 },
+      { width: 3840, height: 2160 },
+    ]) {
+      const completed = await waitForTerminal(
+        renders,
+        (await renders.create({ ...validRequest(), dimensions })).id,
+      );
+      expect(completed.state).toBe("succeeded");
+      expect(completed.settings.dimensions).toEqual(dimensions);
+    }
+  });
+
+  it("rejects unpinned metadata, invalid inputs, and unsupported dimensions", async () => {
     const renders = await service();
     for (const [candidate, code] of [
       [
@@ -84,8 +101,8 @@ describe("draft render service", () => {
       [{ ...validRequest(), fps: 24 }, "fps_mismatch"],
       [{ ...validRequest(), durationInFrames: 119 }, "duration_mismatch"],
       [
-        { ...validRequest(), dimensions: { width: 1920, height: 1080 } },
-        "draft_dimensions_too_large",
+        { ...validRequest(), dimensions: { width: 7680, height: 4320 } },
+        "dimensions_unsupported",
       ],
       [
         { ...validRequest(), input: { title: "", labels: [], series: [] } },

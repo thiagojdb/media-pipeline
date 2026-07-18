@@ -32,7 +32,7 @@ export class RemotionDraftRenderExecutor implements DraftRenderExecutor {
   ): Promise<DraftRenderExecutionResult> {
     hooks.onProgress(0.01);
     const serveUrl = await this.#bundle((progress) =>
-      hooks.onProgress(progress * 0.15),
+      hooks.onProgress(bundleProgress(progress)),
     );
     throwIfAborted(hooks.signal);
 
@@ -121,6 +121,10 @@ export class RemotionDraftRenderExecutor implements DraftRenderExecutor {
       }),
     );
   }
+}
+
+export function bundleProgress(percentage: number): number {
+  return Math.min(0.15, Math.max(0, percentage / 100) * 0.15);
 }
 
 export function resolveRemotionEntryPoint(moduleUrl: string): string {

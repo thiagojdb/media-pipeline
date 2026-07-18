@@ -17,7 +17,7 @@ import {
   type PinnedDraftRenderRequest,
 } from "./draft-render-contract.js";
 
-const MAX_DRAFT_PIXELS = 1280 * 720;
+const MAX_RENDER_PIXELS = 3840 * 2160;
 
 type InternalJob = {
   snapshot: DraftRenderSnapshot;
@@ -281,10 +281,13 @@ export function validateAndPinRequest(
       400,
     );
   }
-  if (request.dimensions.width * request.dimensions.height > MAX_DRAFT_PIXELS) {
+  if (
+    request.dimensions.width * request.dimensions.height >
+    MAX_RENDER_PIXELS
+  ) {
     throw new DraftRenderRequestError(
-      "draft_dimensions_too_large",
-      "Draft renders are limited to 1280x720 pixels.",
+      "render_dimensions_too_large",
+      "MP4 renders are limited to 3840x2160 pixels.",
       400,
     );
   }

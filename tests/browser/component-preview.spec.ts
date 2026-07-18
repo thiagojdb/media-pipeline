@@ -209,7 +209,16 @@ test("starts a worker draft render, observes success, and downloads the pinned M
   await page
     .getByRole("textbox", { name: "Title", exact: true })
     .fill("Pinned creator render");
-  await page.getByRole("button", { name: "Render low-resolution MP4" }).click();
+  const renderResolution = page.getByLabel("Render resolution");
+  await expect(renderResolution.locator("option")).toHaveText([
+    "720p HD · 1280 × 720",
+    "1080p Full HD · 1920 × 1080",
+    "1440p QHD · 2560 × 1440",
+    "4K UHD · 3840 × 2160",
+  ]);
+  await renderResolution.selectOption("3840x2160");
+  await expect(page.getByText("3840×2160", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Render MP4" }).click();
 
   const status = page.getByTestId("draft-render-status");
   await expect(status).toContainText("animated-line-chart@1.0.0");
@@ -231,7 +240,7 @@ test("cancels an active worker draft without exposing a download", async ({
   page,
 }) => {
   await openPreview(page);
-  await page.getByRole("button", { name: "Render low-resolution MP4" }).click();
+  await page.getByRole("button", { name: "Render MP4" }).click();
   await page.getByRole("button", { name: "Cancel render" }).click();
   await expect(page.getByTestId("draft-render-status")).toContainText(
     "canceled",

@@ -73,6 +73,13 @@ type JsonSchema = {
 
 type InputRecord = Record<string, unknown>;
 
+const renderResolutionPresets = [
+  { label: "720p HD", width: 1280, height: 720 },
+  { label: "1080p Full HD", width: 1920, height: 1080 },
+  { label: "1440p QHD", width: 2560, height: 1440 },
+  { label: "4K UHD", width: 3840, height: 2160 },
+] as const;
+
 type DraftRenderSnapshot = {
   readonly id: string;
   readonly state: "queued" | "running" | "succeeded" | "failed" | "canceled";
@@ -123,6 +130,11 @@ function ResolvedPreviewWorkspace({
   readonly definition: NonNullable<ReturnType<typeof getPreviewComponent>>;
 }) {
   const firstFixture = definition.fixtures[0]!;
+  const renderResolutionOptions = renderResolutionPresets.filter((preset) =>
+    definition.supportedDimensions.some(
+      ({ width, height }) => width === preset.width && height === preset.height,
+    ),
+  );
   const [fixtureId, setFixtureId] = useState(firstFixture.id);
   const fixture =
     definition.fixtures.find((item) => item.id === fixtureId) ?? firstFixture;
@@ -143,6 +155,12 @@ function ResolvedPreviewWorkspace({
   const [selectedDimensions, setSelectedDimensions] = useState<VideoDimensions>(
     definition.dimensions,
   );
+  const [renderDimensions, setRenderDimensions] = useState<
+    VideoDimensions | undefined
+  >(() => {
+    const preset = renderResolutionOptions[0];
+    return preset ? { width: preset.width, height: preset.height } : undefined;
+  });
   const [renderRevision, setRenderRevision] = useState(0);
   const [runtimeFailure, setRuntimeFailure] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<readonly string[]>([]);
@@ -155,11 +173,6 @@ function ResolvedPreviewWorkspace({
     validInput,
   );
   const controls = definition.inputControls as JsonSchema;
-  const draftDimensions = [...definition.supportedDimensions]
-    .filter(({ width, height }) => width * height <= 1280 * 720)
-    .sort(
-      (left, right) => left.width * left.height - right.width * right.height,
-    )[0];
 
   useEffect(() => {
     if (!playing) return;
@@ -345,7 +358,7 @@ function ResolvedPreviewWorkspace({
   };
 
   const startDraftRender = async () => {
-    if (!draftDimensions || issues.length > 0 || runtimeFailure) return;
+    if (!renderDimensions || issues.length > 0 || runtimeFailure) return;
     setDraftRenderError(null);
     try {
       const response = await fetch("/api/draft-renders", {
@@ -358,7 +371,7 @@ function ResolvedPreviewWorkspace({
           input: validInput,
           fps: definition.fps,
           durationInFrames,
-          dimensions: draftDimensions,
+          dimensions: renderDimensions,
           theme: previewTheme,
           quality: { codec: "h264", crf: 28, pixelFormat: "yuv420p" },
         }),
@@ -643,19 +656,53 @@ function ResolvedPreviewWorkspace({
             <div className="flex items-start gap-3">
               <Film className="mt-0.5 size-5 text-cyan-700" />
               <div>
-                <h2 className="font-semibold">Low-resolution draft</h2>
+                <h2 className="font-semibold">MP4 render</h2>
                 <p className="text-muted-foreground mt-1 text-xs">
                   The Node worker renders the exact component version, fixture,
-                  validated input, and frame settings shown here.
+                  validated input, resolution, and frame settings shown here.
                 </p>
               </div>
             </div>
+            <label
+              className="mt-4 block text-xs font-semibold"
+              htmlFor="render-resolution"
+            >
+              Render resolution
+            </label>
+            <select
+              className="mt-2 h-10 w-full rounded-md border bg-white px-3 text-sm"
+              disabled={renderResolutionOptions.length === 0}
+              id="render-resolution"
+              onChange={(event) => {
+                const selected = renderResolutionOptions.find(
+                  ({ width, height }) =>
+                    dimensionKey({ width, height }) === event.target.value,
+                );
+                if (selected) {
+                  setRenderDimensions({
+                    width: selected.width,
+                    height: selected.height,
+                  });
+                }
+              }}
+              value={renderDimensions ? dimensionKey(renderDimensions) : ""}
+            >
+              {renderResolutionOptions.map((preset) => (
+                <option key={dimensionKey(preset)} value={dimensionKey(preset)}>
+                  {preset.label} · {preset.width} × {preset.height}
+                </option>
+              ))}
+            </select>
+            <p className="text-muted-foreground mt-2 text-xs">
+              Higher resolutions take longer and use more worker memory.
+            </p>
+
             <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-md bg-slate-50 p-2">
                 <dt className="text-muted-foreground">Output</dt>
                 <dd className="mt-1 font-mono">
-                  {draftDimensions
-                    ? `${draftDimensions.width}×${draftDimensions.height}`
+                  {renderDimensions
+                    ? `${renderDimensions.width}×${renderDimensions.height}`
                     : "Unavailable"}
                 </dd>
               </div>
@@ -672,13 +719,13 @@ function ResolvedPreviewWorkspace({
               <Button
                 className="mt-4 w-full"
                 disabled={
-                  !draftDimensions ||
+                  !renderDimensions ||
                   issues.length > 0 ||
                   runtimeFailure !== null
                 }
                 onClick={() => void startDraftRender()}
               >
-                <Film /> Render low-resolution MP4
+                <Film /> Render MP4
               </Button>
             ) : (
               <Button

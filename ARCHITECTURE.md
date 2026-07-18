@@ -162,7 +162,7 @@ Relay commits to Remotion for the rebuild. It does not recreate the alpha’s en
 
 The browser preview and worker render must evaluate the same Remotion component implementation with the same frame, FPS, dimensions, duration, assets, theme, and inputs. Editing overlays are separate and cannot affect rendered output.
 
-Verified candidate previews should run in a sandboxed frame isolated from the main application. Final and draft rendering occurs in the worker environment. The first render path produces a low-resolution MP4 from one exact component version; composition, audio, and quality options expand in later milestones.
+Verified candidate previews should run in a sandboxed frame isolated from the main application. Final and draft rendering occurs in the worker environment. The first render path produces a resolution-pinned MP4 at 720p, 1080p, 1440p, or 4K from one exact component version; composition, audio, and broader quality options expand in later milestones. Higher resolutions remain explicit creator choices because they consume more worker time and memory.
 
 MED-131 uses a process-local worker render registry and worker-owned `.relay/` output files to prove this path before durable orchestration exists. Next.js only proxies creator commands and downloads; it does not bundle or render. Progress and cancellation are explicit within the live worker process, while restart recovery, Convex job records, disposable workspaces, and untrusted candidate isolation remain MED-133 responsibilities.
 
