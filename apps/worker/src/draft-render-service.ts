@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import {
@@ -186,7 +187,7 @@ export class DraftRenderService {
       }
       const failure = creatorSafeFailure(error);
       console.error(
-        `Draft render ${job.snapshot.id} failed [${failure.code}].`,
+        `Draft render ${job.snapshot.id} failed [${failure.code}]: ${workerDiagnosticMessage(error)}`,
       );
       job.snapshot = {
         ...job.snapshot,
@@ -370,6 +371,18 @@ function creatorSafeFailure(error: unknown): {
     message:
       "The video renderer failed. Retry the draft or review the worker diagnostics.",
   };
+}
+
+function workerDiagnosticMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replaceAll(process.cwd(), "[worker]")
+    .replaceAll(os.homedir(), "[home]")
+    .replace(
+      /\b(api[-_]?key|authorization|password|secret|token)\b\s*[:=]\s*\S+/gi,
+      "$1=[redacted]",
+    )
+    .slice(0, 2000);
 }
 
 function abortableDelay(

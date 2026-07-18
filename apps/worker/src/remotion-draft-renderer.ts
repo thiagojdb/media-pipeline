@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -115,13 +116,21 @@ export class RemotionDraftRenderExecutor implements DraftRenderExecutor {
   #bundle(onProgress: (progress: number) => void): Promise<string> {
     return this.#bundleCache.get(() =>
       bundle({
-        entryPoint: fileURLToPath(
-          new URL("./remotion-entry.js", import.meta.url),
-        ),
+        entryPoint: resolveRemotionEntryPoint(import.meta.url),
         onProgress,
       }),
     );
   }
+}
+
+export function resolveRemotionEntryPoint(moduleUrl: string): string {
+  const sourceEntry = fileURLToPath(new URL("./remotion-entry.tsx", moduleUrl));
+  if (existsSync(sourceEntry)) return sourceEntry;
+
+  const builtEntry = fileURLToPath(new URL("./remotion-entry.js", moduleUrl));
+  if (existsSync(builtEntry)) return builtEntry;
+
+  throw new Error("The Remotion draft entry point is unavailable.");
 }
 
 export class RetryableAsyncValue<Value> {
