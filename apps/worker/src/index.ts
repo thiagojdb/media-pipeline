@@ -26,16 +26,16 @@ const draftRenders = new DraftRenderService(
   path.resolve(process.env.RELAY_RENDER_OUTPUT_DIR ?? ".relay/draft-renders"),
 );
 
+const componentBuildsEnabled = process.env.COMPONENT_BUILD_ENABLED === "true";
 const buildUrl = process.env.COMPONENT_BUILD_CONVEX_URL;
 const buildToken = process.env.COMPONENT_BUILD_WORKER_TOKEN;
-if (Boolean(buildUrl) !== Boolean(buildToken)) {
+if (componentBuildsEnabled && (!buildUrl || !buildToken)) {
   throw new Error(
-    "COMPONENT_BUILD_CONVEX_URL and COMPONENT_BUILD_WORKER_TOKEN must be configured together.",
+    "COMPONENT_BUILD_ENABLED=true requires COMPONENT_BUILD_CONVEX_URL and COMPONENT_BUILD_WORKER_TOKEN.",
   );
 }
-const componentBuildsEnabled = Boolean(buildUrl && buildToken);
 let componentBuildLoop: ComponentBuildLoop | undefined;
-if (buildUrl && buildToken) {
+if (componentBuildsEnabled && buildUrl && buildToken) {
   const workerId = `${os.hostname()}:${process.pid}:${randomUUID()}`;
   const store = new ConvexComponentBuildJobStore(buildUrl, buildToken);
   const workspaces = new CandidateWorkspaceManager(
