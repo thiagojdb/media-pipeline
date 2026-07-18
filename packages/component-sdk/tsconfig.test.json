@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "baseUrl": "../..",
+    "paths": {
+      "@relay/component-sdk": ["packages/component-sdk/src/index.ts"],
+      "@relay/component-testkit": ["packages/component-testkit/src/index.ts"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "examples/**/*.ts",
+    "test/**/*.ts",
+    "../component-testkit/src/**/*.ts"
+  ]
+}

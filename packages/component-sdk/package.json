@@ -6,10 +6,23 @@
   "exports": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.test.json",
     "build": "tsc"
   },
+  "dependencies": {
+    "semver": "^7.8.5",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/semver": "^7.7.1",
+    "react": "^19.2.4"
+  },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ]
 }
