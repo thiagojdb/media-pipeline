@@ -37,7 +37,7 @@ const request: PinnedDraftRenderRequest = {
     fonts: { heading: "Arial, sans-serif", body: "Arial, sans-serif" },
     spacing: { outer: 72 },
   },
-  quality: { codec: "h264", crf: 28, pixelFormat: "yuv420p" },
+  quality: { codec: "h264", crf: 18, pixelFormat: "yuv420p" },
 };
 
 const projectRoot = fileURLToPath(new URL("../../..", import.meta.url));

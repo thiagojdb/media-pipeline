@@ -80,6 +80,12 @@ const renderResolutionPresets = [
   { label: "4K UHD", width: 3840, height: 2160 },
 ] as const;
 
+const renderQualityPresets = [
+  { id: "high", label: "High", crf: 18 },
+  { id: "balanced", label: "Balanced", crf: 22 },
+  { id: "compact", label: "Compact", crf: 28 },
+] as const;
+
 type DraftRenderSnapshot = {
   readonly id: string;
   readonly state: "queued" | "running" | "succeeded" | "failed" | "canceled";
@@ -161,6 +167,10 @@ function ResolvedPreviewWorkspace({
     const preset = renderResolutionOptions[0];
     return preset ? { width: preset.width, height: preset.height } : undefined;
   });
+  const [renderQualityId, setRenderQualityId] = useState("high");
+  const renderQuality =
+    renderQualityPresets.find(({ id }) => id === renderQualityId) ??
+    renderQualityPresets[0];
   const [renderRevision, setRenderRevision] = useState(0);
   const [runtimeFailure, setRuntimeFailure] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<readonly string[]>([]);
@@ -373,7 +383,11 @@ function ResolvedPreviewWorkspace({
           durationInFrames,
           dimensions: renderDimensions,
           theme: previewTheme,
-          quality: { codec: "h264", crf: 28, pixelFormat: "yuv420p" },
+          quality: {
+            codec: "h264",
+            crf: renderQuality.crf,
+            pixelFormat: "yuv420p",
+          },
         }),
       });
       setDraftRender(await readRenderResponse(response));
@@ -699,6 +713,29 @@ function ResolvedPreviewWorkspace({
               reduced OS priority.
             </p>
 
+            <label
+              className="mt-4 block text-xs font-semibold"
+              htmlFor="render-quality"
+            >
+              Render quality
+            </label>
+            <select
+              className="mt-2 h-10 w-full rounded-md border bg-white px-3 text-sm"
+              id="render-quality"
+              onChange={(event) => setRenderQualityId(event.target.value)}
+              value={renderQuality.id}
+            >
+              {renderQualityPresets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label} · CRF {preset.crf}
+                </option>
+              ))}
+            </select>
+            <p className="text-muted-foreground mt-2 text-xs">
+              High is the default for crisp text and graphics. Compact creates
+              smaller files with more visible compression.
+            </p>
+
             <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-md bg-slate-50 p-2">
                 <dt className="text-muted-foreground">Output</dt>
@@ -710,7 +747,9 @@ function ResolvedPreviewWorkspace({
               </div>
               <div className="rounded-md bg-slate-50 p-2">
                 <dt className="text-muted-foreground">Quality</dt>
-                <dd className="mt-1 font-mono">H.264 · CRF 28</dd>
+                <dd className="mt-1 font-mono">
+                  H.264 · {renderQuality.label} · CRF {renderQuality.crf}
+                </dd>
               </div>
             </dl>
 
