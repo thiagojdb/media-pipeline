@@ -34,7 +34,7 @@ export class CandidateWorkspaceManager {
       hash.update(file);
       hash.update(await readFile(path.join(this.scaffold, file)));
     }
-    hash.update("workspace-policy-v1");
+    hash.update("workspace-policy-v2-structured-validation");
     return hash.digest("hex");
   }
 

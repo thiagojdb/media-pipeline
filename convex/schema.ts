@@ -23,6 +23,8 @@ export default defineSchema({
     state: buildState,
     attempt: v.number(),
     maxAttempts: v.number(),
+    repairAttempt: v.optional(v.number()),
+    maxRepairAttempts: v.optional(v.number()),
     cancelRequested: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -34,6 +36,8 @@ export default defineSchema({
     candidateRef: v.optional(v.string()),
     boundedStdout: v.optional(v.string()),
     boundedStderr: v.optional(v.string()),
+    validationEvidenceJson: v.optional(v.string()),
+    repairTurnId: v.optional(v.id("authoringTurns")),
   })
     .index("by_state_created", ["state", "createdAt"])
     .index("by_state_lease", ["state", "leaseExpiresAt"])
@@ -67,6 +71,10 @@ export default defineSchema({
     channelThemeJson: v.string(),
     assetsMetadataJson: v.string(),
     priorSummaries: v.array(v.string()),
+    rootTurnId: v.optional(v.string()),
+    repairAttempt: v.optional(v.number()),
+    maxRepairAttempts: v.optional(v.number()),
+    validationEvidenceJson: v.optional(v.string()),
     state: v.union(
       v.literal("queued"),
       v.literal("running"),

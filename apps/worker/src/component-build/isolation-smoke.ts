@@ -24,12 +24,14 @@ try {
     state: "running",
     attempt: 1,
     maxAttempts: 1,
+    repairAttempt: 0,
+    maxRepairAttempts: 0,
     cancelRequested: false,
     leaseOwner: "smoke-worker",
   });
   try {
     process.env.RELAY_ISOLATION_PROBE_SECRET = "must-not-leak";
-    const result = await new IsolatedCandidateExecutor().execute(
+    const result = await new IsolatedCandidateExecutor("isolation").execute(
       workspace,
       new AbortController().signal,
     );

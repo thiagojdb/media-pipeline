@@ -23,6 +23,10 @@ export interface AuthoringTurn {
   readonly state: AuthoringState;
   readonly attempt: number;
   readonly maxAttempts: number;
+  readonly rootTurnId: string;
+  readonly repairAttempt: number;
+  readonly maxRepairAttempts: number;
+  readonly validationEvidenceJson?: string | undefined;
   readonly cancelRequested: boolean;
   readonly leaseOwner?: string | undefined;
   readonly leaseExpiresAt?: number | undefined;
@@ -124,6 +128,8 @@ export interface AuthoringContextPack {
     readonly acceptanceCriteria: readonly string[];
     readonly parentCandidateId?: string | undefined;
     readonly baseSnapshotId?: string | undefined;
+    readonly repairAttempt: number;
+    readonly maxRepairAttempts: number;
   };
   readonly exactBase: {
     readonly source: string;
@@ -134,6 +140,7 @@ export interface AuthoringContextPack {
     readonly assets: unknown;
   };
   readonly priorSummaries: readonly string[];
+  readonly validationEvidence?: unknown;
   readonly policy: {
     readonly allowedDependencies: readonly string[];
     readonly availableTools: readonly string[];

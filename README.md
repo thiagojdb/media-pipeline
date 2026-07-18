@@ -121,6 +121,8 @@ Authoring threads and turns are durable Convex records separate from build jobs.
 
 Pi SDK integration is pinned to reviewed version `0.80.10`. Pi receives a deterministic hashed context pack and only four Relay-owned tools: read context, replace candidate source, check syntax/source policy without evaluation, and declare candidate ready. Built-in shell/read/write/edit/search tools and discovered extensions, skills, prompts, themes, and context files are disabled. Session files live only under Relay's owned session root; the latest opaque session reference is carried into the next thread turn when available, while Convex remains authoritative and permits deterministic reconstruction when the file is absent. Before every provider continuation, the worker rechecks cumulative turns, tokens, and cost and reduces the model output cap to the remaining durable token allowance.
 
+After authoring, the component-build worker independently compiles and exercises the candidate inside the isolated workspace. It retains structured evidence for source policy, TypeScript bundling, the component contract, fixture inputs, deterministic checkpoints, and the complete low-resolution fixture frame sequence. Failed validation can enqueue a bounded same-session repair with the exact failed source and only the remaining original budget; exhausted repair or resource limits become `needs_intervention`.
+
 MED-128 does not add creator chat UI, authentication UI, independent repair, approval, or version promotion. Those remain MED-123, MED-125, and MED-124 work.
 
 ## MED-129 trust boundary

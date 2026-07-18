@@ -6,6 +6,7 @@ export type SourcePolicyIssueCode =
   | "ambient_randomness"
   | "browser_dimensions"
   | "hidden_renderer_api"
+  | "undeclared_dependency"
   | "wall_clock";
 
 export interface SourcePolicyIssue {
@@ -41,6 +42,8 @@ const messages: Readonly<Record<SourcePolicyIssueCode, string>> = {
     "Use the width and height supplied in component props instead of browser dimensions.",
   hidden_renderer_api:
     "Use only the frame, timing, and dimensions supplied in component props.",
+  undeclared_dependency:
+    "Component source may import only @relay/component-sdk, react, and zod.",
   wall_clock:
     "Derive timing from the frame context; wall-clock time is not deterministic.",
 };
@@ -279,6 +282,14 @@ function validateSourceFile(
       report(node, "hidden_renderer_api");
       return;
     }
+    if (isModuleDeclaration(node) && !isAllowedModule(node.moduleSpecifier!)) {
+      report(node, "undeclared_dependency");
+      return;
+    }
+    if (ts.isImportEqualsDeclaration(node)) {
+      report(node, "undeclared_dependency");
+      return;
+    }
 
     if (ts.isVariableDeclaration(node)) rememberDeclaration(node);
     if (
@@ -292,6 +303,10 @@ function validateSourceFile(
     if (ts.isCallExpression(node) || ts.isNewExpression(node)) {
       if (ts.isCallExpression(node) && isRemotionLoader(node)) {
         report(node, "hidden_renderer_api");
+        return;
+      }
+      if (ts.isCallExpression(node) && isDisallowedModuleLoader(node)) {
+        report(node, "undeclared_dependency");
         return;
       }
       const capability = classify(node.expression);
@@ -323,6 +338,31 @@ function validateSourceFile(
   };
 
   visit(sourceFile);
+}
+
+function isModuleDeclaration(
+  node: ts.Node,
+): node is ts.ImportDeclaration | ts.ExportDeclaration {
+  return (
+    (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+    node.moduleSpecifier !== undefined
+  );
+}
+
+function isAllowedModule(node: ts.Expression): boolean {
+  return (
+    (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+    ["@relay/component-sdk", "react", "zod"].includes(node.text)
+  );
+}
+
+function isDisallowedModuleLoader(node: ts.CallExpression): boolean {
+  const isDynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+  const isRequire =
+    ts.isIdentifier(node.expression) && node.expression.text === "require";
+  if (!isDynamicImport && !isRequire) return false;
+  const [specifier] = node.arguments;
+  return !specifier || !isAllowedModule(specifier);
 }
 
 function unwrap(expression: ts.Expression): ts.Expression {

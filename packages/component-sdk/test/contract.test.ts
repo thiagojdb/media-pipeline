@@ -354,6 +354,35 @@ describe("deterministic component source policy", () => {
     ).toEqual({ success: true });
   });
 
+  it("allows only the declared single-file component dependencies", () => {
+    expect(
+      validateComponentSource({
+        "valid.tsx": [
+          'import React from "react";',
+          'import {z} from "zod";',
+          'import {defineVideoComponent} from "@relay/component-sdk";',
+        ].join("\n"),
+      }),
+    ).toEqual({ success: true });
+
+    const result = validateComponentSource({
+      "invalid.ts": [
+        'import secret from "/etc/passwd";',
+        'export {value} from "../../host-file";',
+        'const lazy = import("node:fs");',
+        "const loaded = require(variable);",
+      ].join("\n"),
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error("Expected dependency-policy failures.");
+    expect(result.issues.map(({ code, line }) => ({ code, line }))).toEqual([
+      { code: "undeclared_dependency", line: 1 },
+      { code: "undeclared_dependency", line: 2 },
+      { code: "undeclared_dependency", line: 3 },
+      { code: "undeclared_dependency", line: 4 },
+    ]);
+  });
+
   it("rejects renderer imports, nested globals, and assignment aliases", () => {
     const result = validateComponentSource({
       "bypasses.ts": [

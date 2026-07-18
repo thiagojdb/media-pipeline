@@ -58,6 +58,19 @@ describe("bounded component build lifecycle", () => {
         expect(store.jobs.get("job-1")?.boundedStdout).toBe(
           "candidate source validated\n",
         );
+        expect(store.jobs.get("job-1")?.validationEvidence).toMatchObject({
+          schemaVersion: 1,
+          fixtureCount: 1,
+          checkpointCount: 1,
+          renderedFrameCount: 30,
+        });
+        expect(
+          store.jobs
+            .get("job-1")
+            ?.validationEvidence?.checks.every(
+              ({ status }) => status === "passed",
+            ),
+        ).toBe(true);
       }
       expect(await readdir(root)).toEqual([]);
     },
@@ -150,7 +163,7 @@ describe("bounded component build lifecycle", () => {
       const manager = new CandidateWorkspaceManager(root, scaffold);
       const workspace = await manager.create(job("crash", "FIXTURE_CRASH"));
       try {
-        const result = await new IsolatedCandidateExecutor().execute(
+        const result = await new IsolatedCandidateExecutor("crash").execute(
           workspace,
           new AbortController().signal,
         );
@@ -158,6 +171,81 @@ describe("bounded component build lifecycle", () => {
           status: "crashed",
           code: "build_crashed",
         });
+      } finally {
+        await manager.remove(workspace);
+      }
+    },
+  );
+
+  it.runIf(existsSync("/usr/bin/bwrap") && existsSync("/usr/bin/prlimit"))(
+    "independently compiles the contract and renders every fixture frame in isolation",
+    async () => {
+      const source = `
+        import {defineVideoComponent} from "@relay/component-sdk";
+        import {z} from "zod";
+        export default defineVideoComponent({
+          id: "validation-proof",
+          version: "1.0.0",
+          schema: z.object({label: z.string()}),
+          fps: 30,
+          dimensions: {width: 320, height: 180},
+          duration: 3,
+          assets: [],
+          fixtures: [{
+            id: "proof",
+            name: "Proof",
+            input: {label: "Relay"},
+            checkpoints: [{label: "start", frame: 0}, {label: "end", frame: 2}],
+          }],
+          compatibility: {mode: "initial"},
+          component: ({input, frame, width, height}) => (
+            <svg width={width} height={height}><text>{input.label}:{frame}</text></svg>
+          ),
+        });
+      `;
+      const root = await mkdtemp(
+        path.join(os.tmpdir(), "relay-validation-test-"),
+      );
+      roots.push(root);
+      const manager = new CandidateWorkspaceManager(root, scaffold);
+      const workspace = await manager.create(job("validation", source));
+      try {
+        const result = await new IsolatedCandidateExecutor().execute(
+          workspace,
+          new AbortController().signal,
+        );
+        expect(result.status, JSON.stringify(result, null, 2)).toBe(
+          "succeeded",
+        );
+        expect(result.validationEvidence).toMatchObject({
+          schemaVersion: 1,
+          fixtureCount: 1,
+          checkpointCount: 2,
+          renderedFrameCount: 3,
+        });
+        expect(result.validationEvidence.renderFingerprint).toMatch(
+          /^[a-f0-9]{64}$/,
+        );
+        expect(result.validationEvidence.checks).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              code: "source_policy",
+              status: "passed",
+            }),
+            expect.objectContaining({
+              code: "typescript_bundle",
+              status: "passed",
+            }),
+            expect.objectContaining({
+              code: "component_contract",
+              status: "passed",
+            }),
+            expect.objectContaining({
+              code: "preview_runtime",
+              status: "passed",
+            }),
+          ]),
+        );
       } finally {
         await manager.remove(workspace);
       }
@@ -267,6 +355,8 @@ function job(id: string, source: string): ComponentBuildJob {
     state: "queued",
     attempt: 0,
     maxAttempts: 2,
+    repairAttempt: 0,
+    maxRepairAttempts: 2,
     cancelRequested: false,
   };
 }

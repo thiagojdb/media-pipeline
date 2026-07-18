@@ -37,6 +37,10 @@ export async function buildAuthoringContext(
   const assets = parseSafeJson(turn.assetsMetadataJson, "asset metadata");
   rejectCredentialFields(theme, "channel theme");
   rejectCredentialFields(assets, "asset metadata");
+  const validationEvidence = turn.validationEvidenceJson
+    ? parseSafeJson(turn.validationEvidenceJson, "validation evidence")
+    : undefined;
+  rejectCredentialFields(validationEvidence, "validation evidence");
 
   const loaded: Record<string, string> = {};
   const hashes: Record<string, string> = {};
@@ -65,10 +69,13 @@ export async function buildAuthoringContext(
       acceptanceCriteria: [...turn.acceptanceCriteria],
       parentCandidateId: turn.parentCandidateId,
       baseSnapshotId: turn.baseSnapshotId,
+      repairAttempt: turn.repairAttempt,
+      maxRepairAttempts: turn.maxRepairAttempts,
     },
     exactBase: { source: turn.baseSource, sha256: turn.baseSourceHash },
     channel: { theme, assets },
     priorSummaries: [...turn.priorSummaries],
+    validationEvidence,
     policy: {
       allowedDependencies: ["@relay/component-sdk", "react", "zod"],
       availableTools: [

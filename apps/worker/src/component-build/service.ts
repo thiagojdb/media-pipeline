@@ -75,6 +75,7 @@ export class ComponentBuildService {
           candidateRef,
           stdout: execution.stdout,
           stderr: execution.stderr,
+          validationEvidence: execution.validationEvidence,
         });
       } else if (execution.status === "canceled") {
         await this.transition(job, {
@@ -83,6 +84,7 @@ export class ComponentBuildService {
           message: execution.message,
           stdout: execution.stdout,
           stderr: execution.stderr,
+          validationEvidence: execution.validationEvidence,
         });
       } else {
         const needsIntervention =
@@ -93,6 +95,7 @@ export class ComponentBuildService {
           message: execution.message,
           stdout: execution.stdout,
           stderr: execution.stderr,
+          validationEvidence: execution.validationEvidence,
         });
       }
     } catch (error) {

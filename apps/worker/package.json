@@ -33,6 +33,7 @@
     "@remotion/bundler": "4.0.490",
     "@remotion/renderer": "4.0.490",
     "convex": "^1.42.3",
+    "esbuild": "0.28.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "remotion": "4.0.490",

@@ -44,6 +44,7 @@ export const enqueue = internalMutation({
     assetsMetadataJson: v.string(),
     priorSummaries: v.array(v.string()),
     maxAttempts: v.number(),
+    maxRepairAttempts: v.optional(v.number()),
     ...budgets,
   },
   handler: async (ctx, args) => {
@@ -73,6 +74,7 @@ export const enqueue = internalMutation({
     if (args.priorSummaries.length > 20)
       throw new Error("Too many prior summaries.");
     validateBudgets(args);
+    integerRange(args.maxRepairAttempts ?? 2, "maxRepairAttempts", 0, 3);
     if (args.maxAttempts !== 1)
       throw new Error(
         "Authoring turns allow exactly one paid-capable attempt; creators must explicitly enqueue another turn to retry.",
@@ -105,7 +107,8 @@ export const enqueue = internalMutation({
         existing.maxModelTurns !== args.maxModelTurns ||
         existing.maxToolCalls !== args.maxToolCalls ||
         existing.maxTokens !== args.maxTokens ||
-        existing.maxCostUsd !== args.maxCostUsd
+        existing.maxCostUsd !== args.maxCostUsd ||
+        (existing.maxRepairAttempts ?? 2) !== (args.maxRepairAttempts ?? 2)
       )
         throw new Error("This authoring turn already has different inputs.");
       return existing._id;
@@ -141,6 +144,9 @@ export const enqueue = internalMutation({
     }
     const id = await ctx.db.insert("authoringTurns", {
       ...args,
+      rootTurnId: args.turnId,
+      repairAttempt: 0,
+      maxRepairAttempts: args.maxRepairAttempts ?? 2,
       sessionRef: previousTurn?.sessionRef,
       state: "queued",
       attempt: 0,
@@ -403,6 +409,8 @@ export const submitCandidate = mutation({
         state: "queued",
         attempt: 0,
         maxAttempts: 2,
+        repairAttempt: turn.repairAttempt ?? 0,
+        maxRepairAttempts: turn.maxRepairAttempts ?? 2,
         cancelRequested: false,
         createdAt: now,
         updatedAt: now,
@@ -648,6 +656,10 @@ function safeTurn(turn: Doc<"authoringTurns">) {
     terminalMessage: turn.terminalMessage,
     candidateSourceHash: turn.candidateSourceHash,
     buildJobId: turn.buildJobId,
+    rootTurnId: turn.rootTurnId ?? turn.turnId,
+    repairAttempt: turn.repairAttempt ?? 0,
+    maxRepairAttempts: turn.maxRepairAttempts ?? 2,
+    validationEvidenceJson: turn.validationEvidenceJson,
   };
 }
 

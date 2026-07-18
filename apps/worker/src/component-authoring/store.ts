@@ -302,6 +302,10 @@ function fromConvex(value: Record<string, unknown>): AuthoringTurn {
     state: value.state as AuthoringState,
     attempt: Number(value.attempt),
     maxAttempts: Number(value.maxAttempts),
+    rootTurnId: String(value.rootTurnId ?? value.turnId),
+    repairAttempt: Number(value.repairAttempt ?? 0),
+    maxRepairAttempts: Number(value.maxRepairAttempts ?? 2),
+    validationEvidenceJson: optional(value.validationEvidenceJson),
     cancelRequested: Boolean(value.cancelRequested),
     leaseOwner: optional(value.leaseOwner),
     leaseExpiresAt:

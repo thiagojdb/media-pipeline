@@ -19,12 +19,40 @@ export interface ComponentBuildJob {
   readonly state: ComponentBuildState;
   readonly attempt: number;
   readonly maxAttempts: number;
+  readonly repairAttempt: number;
+  readonly maxRepairAttempts: number;
   readonly cancelRequested: boolean;
   readonly leaseOwner?: string | undefined;
   readonly leaseExpiresAt?: number | undefined;
   readonly candidateRef?: string | undefined;
   readonly boundedStdout?: string | undefined;
   readonly boundedStderr?: string | undefined;
+  readonly validationEvidence?: ValidationEvidence | undefined;
+  readonly repairTurnId?: string | undefined;
+}
+
+export type ValidationCheckCode =
+  | "source_policy"
+  | "typescript_bundle"
+  | "component_contract"
+  | "fixture_inputs"
+  | "checkpoint_runtime"
+  | "preview_runtime";
+
+export interface ValidationCheck {
+  readonly code: ValidationCheckCode;
+  readonly status: "passed" | "failed";
+  readonly message: string;
+  readonly details?: readonly string[] | undefined;
+}
+
+export interface ValidationEvidence {
+  readonly schemaVersion: 1;
+  readonly checks: readonly ValidationCheck[];
+  readonly fixtureCount: number;
+  readonly checkpointCount: number;
+  readonly renderedFrameCount: number;
+  readonly renderFingerprint?: string | undefined;
 }
 
 export interface BuildTransition {
@@ -35,6 +63,7 @@ export interface BuildTransition {
   readonly candidateRef?: string | undefined;
   readonly stdout?: string | undefined;
   readonly stderr?: string | undefined;
+  readonly validationEvidence?: ValidationEvidence | undefined;
 }
 
 export interface ComponentBuildJobStore {
@@ -62,6 +91,7 @@ export interface CandidateExecutionResult {
   readonly message: string;
   readonly stdout: string;
   readonly stderr: string;
+  readonly validationEvidence: ValidationEvidence;
 }
 
 export interface CandidateExecutor {

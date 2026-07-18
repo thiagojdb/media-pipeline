@@ -72,6 +72,9 @@ export class ConvexComponentBuildJobStore implements ComponentBuildJobStore {
       candidateRef: transition.candidateRef,
       stdout: transition.stdout,
       stderr: transition.stderr,
+      validationEvidenceJson: transition.validationEvidence
+        ? JSON.stringify(transition.validationEvidence)
+        : undefined,
     });
   }
 
@@ -159,6 +162,7 @@ export class InMemoryComponentBuildJobStore implements ComponentBuildJobStore {
       candidateRef: transition.candidateRef,
       boundedStdout: transition.stdout,
       boundedStderr: transition.stderr,
+      validationEvidence: transition.validationEvidence,
       leaseOwner: terminal(transition.state) ? undefined : workerId,
       leaseExpiresAt: terminal(transition.state)
         ? undefined
@@ -220,7 +224,15 @@ function fromConvex(value: Record<string, unknown>): ComponentBuildJob {
     candidateRef: optionalString(value.candidateRef),
     boundedStdout: optionalString(value.boundedStdout),
     boundedStderr: optionalString(value.boundedStderr),
+    repairAttempt: Number(value.repairAttempt ?? 0),
+    maxRepairAttempts: Number(value.maxRepairAttempts ?? 0),
+    validationEvidence: parseEvidence(value.validationEvidenceJson),
+    repairTurnId: optionalString(value.repairTurnId),
   };
+}
+function parseEvidence(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  return JSON.parse(value) as import("./types.js").ValidationEvidence;
 }
 function optionalString(value: unknown): string | undefined {
   return value === undefined ? undefined : String(value);

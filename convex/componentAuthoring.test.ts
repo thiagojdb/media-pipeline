@@ -11,13 +11,16 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 const workerToken = "authoring-test-worker-token";
+const buildWorkerToken = "build-test-worker-token";
 
 beforeEach(() => {
   process.env.AUTHORING_WORKER_TOKEN = workerToken;
+  process.env.COMPONENT_BUILD_WORKER_TOKEN = buildWorkerToken;
 });
 
 afterEach(() => {
   delete process.env.AUTHORING_WORKER_TOKEN;
+  delete process.env.COMPONENT_BUILD_WORKER_TOKEN;
 });
 
 describe("Convex component authoring lifecycle", () => {
@@ -186,6 +189,194 @@ describe("Convex component authoring lifecycle", () => {
     ).resolves.toEqual([
       expect.objectContaining({ kind: "enqueued_from_authoring" }),
     ]);
+  });
+
+  it("queues bounded same-session repair with structured evidence and stops at the repair limit", async () => {
+    const t = convexTest(schema, modules);
+    const initialId = await t.mutation(
+      internal.componentAuthoring.enqueue,
+      enqueueArgs({ maxRepairAttempts: 1 }),
+    );
+    await t.mutation(api.componentAuthoring.claim, {
+      workerToken,
+      workerId: "author-worker",
+      leaseMs: 5_000,
+    });
+    const firstBuildId = await submit(
+      t,
+      initialId,
+      "author-worker",
+      "export default 'invalid';",
+    );
+    const firstBuild = await t.mutation(api.componentBuildJobs.claim, {
+      workerToken: buildWorkerToken,
+      workerId: "build-worker",
+      leaseMs: 5_000,
+    });
+    expect(firstBuild?._id).toBe(firstBuildId);
+    await t.mutation(api.componentBuildJobs.transition, {
+      workerToken: buildWorkerToken,
+      jobId: firstBuildId,
+      workerId: "build-worker",
+      leaseAttempt: 1,
+      nextState: "validating",
+      message: "Validating candidate.",
+    });
+    const validationEvidenceJson = JSON.stringify({
+      schemaVersion: 1,
+      checks: [
+        {
+          code: "component_contract",
+          status: "failed",
+          message: "Default export is not a component definition.",
+          details: ["Export defineVideoComponent(...) as default."],
+        },
+      ],
+      fixtureCount: 0,
+      checkpointCount: 0,
+      renderedFrameCount: 0,
+    });
+    await t.mutation(api.componentBuildJobs.transition, {
+      workerToken: buildWorkerToken,
+      jobId: firstBuildId,
+      workerId: "build-worker",
+      leaseAttempt: 1,
+      nextState: "failed",
+      code: "validation_failed",
+      message: "Independent validation failed.",
+      validationEvidenceJson,
+    });
+
+    const repair = await t.run(async (ctx) =>
+      ctx.db
+        .query("authoringTurns")
+        .withIndex("by_state_created", (q) => q.eq("state", "queued"))
+        .unique(),
+    );
+    expect(repair).toMatchObject({
+      rootTurnId: "turn-test",
+      repairAttempt: 1,
+      maxRepairAttempts: 1,
+      baseSource: "export default 'invalid';",
+      sessionRef: "pi:test-session",
+      validationEvidenceJson,
+      maxModelTurns: 3,
+      maxToolCalls: 6,
+      maxTokens: 3_700,
+      maxCostUsd: 0.2,
+      maxWallTimeMs: 29_500,
+    });
+    expect(repair?.priorSummaries.at(-1)).toContain(
+      "Independent validation failed",
+    );
+
+    const claimedRepair = await t.mutation(api.componentAuthoring.claim, {
+      workerToken,
+      workerId: "author-worker",
+      leaseMs: 5_000,
+    });
+    const secondBuildId = await submit(
+      t,
+      claimedRepair!._id,
+      "author-worker",
+      "export default 'still-invalid';",
+    );
+    await t.mutation(api.componentBuildJobs.claim, {
+      workerToken: buildWorkerToken,
+      workerId: "build-worker",
+      leaseMs: 5_000,
+    });
+    await t.mutation(api.componentBuildJobs.transition, {
+      workerToken: buildWorkerToken,
+      jobId: secondBuildId,
+      workerId: "build-worker",
+      leaseAttempt: 1,
+      nextState: "validating",
+      message: "Validating repair.",
+    });
+    await t.mutation(api.componentBuildJobs.transition, {
+      workerToken: buildWorkerToken,
+      jobId: secondBuildId,
+      workerId: "build-worker",
+      leaseAttempt: 1,
+      nextState: "failed",
+      code: "validation_failed",
+      message: "Repair still failed validation.",
+      validationEvidenceJson,
+    });
+    const exhausted = await t.query(internal.componentBuildJobs.getSafeStatus, {
+      jobId: secondBuildId,
+    });
+    expect(exhausted).toMatchObject({
+      state: "needs_intervention",
+      validationEvidenceJson,
+    });
+    await expect(
+      t.run(async (ctx) =>
+        ctx.db
+          .query("authoringTurns")
+          .withIndex("by_state_created", (q) => q.eq("state", "queued"))
+          .collect(),
+      ),
+    ).resolves.toHaveLength(0);
+  });
+
+  it("retains passing validation evidence with the reviewable candidate reference", async () => {
+    const t = convexTest(schema, modules);
+    const source = "export default 'candidate';";
+    const jobId = await t.mutation(internal.componentBuildJobs.enqueue, {
+      channelId: "channel-test",
+      threadId: "thread-test",
+      turnId: "standalone-validation",
+      sourceSnapshot: source,
+      sourceHash: sha(source),
+      maxAttempts: 1,
+    });
+    await t.mutation(api.componentBuildJobs.claim, {
+      workerToken: buildWorkerToken,
+      workerId: "build-worker",
+      leaseMs: 5_000,
+    });
+    await t.mutation(api.componentBuildJobs.transition, {
+      workerToken: buildWorkerToken,
+      jobId,
+      workerId: "build-worker",
+      leaseAttempt: 1,
+      nextState: "validating",
+      message: "Validating candidate.",
+    });
+    const validationEvidenceJson = JSON.stringify({
+      schemaVersion: 1,
+      checks: [
+        {
+          code: "preview_runtime",
+          status: "passed",
+          message: "All fixture frames rendered.",
+        },
+      ],
+      fixtureCount: 1,
+      checkpointCount: 2,
+      renderedFrameCount: 120,
+      renderFingerprint: "a".repeat(64),
+    });
+    await t.mutation(api.componentBuildJobs.transition, {
+      workerToken: buildWorkerToken,
+      jobId,
+      workerId: "build-worker",
+      leaseAttempt: 1,
+      nextState: "succeeded",
+      code: "validated",
+      message: "Candidate validation passed.",
+      candidateRef: `sha256:${"b".repeat(64)}`,
+      validationEvidenceJson,
+    });
+    await expect(
+      t.query(internal.componentBuildJobs.getSafeStatus, { jobId }),
+    ).resolves.toMatchObject({
+      state: "succeeded",
+      candidateRef: `sha256:${"b".repeat(64)}`,
+      validationEvidenceJson,
+    });
   });
 });
 

@@ -179,6 +179,7 @@ export const transition = mutation({
     candidateRef: v.optional(v.string()),
     stdout: v.optional(v.string()),
     stderr: v.optional(v.string()),
+    validationEvidenceJson: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     authorize(args.workerToken);
@@ -199,20 +200,104 @@ export const transition = mutation({
     if (!allowedTransition(job.state, args.nextState))
       throw new Error("Invalid build state transition.");
     const message = bounded(args.message, "message", MAX_TEXT);
-    const terminal = isTerminal(args.nextState);
+    const validationEvidenceJson = sanitizeEvidence(
+      boundedEvidence(args.validationEvidenceJson),
+    );
+    let nextState = args.nextState;
+    let repairTurnId: Doc<"authoringTurns">["_id"] | undefined;
+    if (args.nextState === "failed") {
+      const authoringTurn = await ctx.db
+        .query("authoringTurns")
+        .withIndex("by_channel_thread_turn", (q) =>
+          q
+            .eq("channelId", job.channelId)
+            .eq("threadId", job.threadId)
+            .eq("turnId", job.turnId),
+        )
+        .unique();
+      if (authoringTurn) {
+        const repairAttempt = (job.repairAttempt ?? 0) + 1;
+        const remaining = remainingBudgets(authoringTurn);
+        const canRepair =
+          repairAttempt <= (job.maxRepairAttempts ?? 0) &&
+          remaining.maxWallTimeMs >= 1_000 &&
+          remaining.maxModelTurns >= 1 &&
+          remaining.maxToolCalls >= 4 &&
+          remaining.maxTokens >= 100 &&
+          remaining.maxCostUsd >= 0;
+        if (canRepair) {
+          const repairTurnKey = `repair:${authoringTurn._id}:${repairAttempt}`;
+          repairTurnId = await ctx.db.insert("authoringTurns", {
+            channelId: authoringTurn.channelId,
+            threadId: authoringTurn.threadId,
+            turnId: repairTurnKey,
+            rootTurnId: authoringTurn.rootTurnId ?? authoringTurn.turnId,
+            repairAttempt,
+            maxRepairAttempts: job.maxRepairAttempts ?? 0,
+            userRequest: authoringTurn.userRequest,
+            acceptanceCriteria: authoringTurn.acceptanceCriteria,
+            baseSource: job.sourceSnapshot,
+            baseSourceHash: job.sourceHash,
+            parentCandidateId: authoringTurn.parentCandidateId,
+            baseSnapshotId: authoringTurn.baseSnapshotId,
+            channelThemeJson: authoringTurn.channelThemeJson,
+            assetsMetadataJson: authoringTurn.assetsMetadataJson,
+            priorSummaries: [
+              ...authoringTurn.priorSummaries.slice(-18),
+              repairSummary(validationEvidenceJson, args.code, message),
+            ],
+            validationEvidenceJson,
+            state: "queued",
+            attempt: 0,
+            maxAttempts: 1,
+            cancelRequested: false,
+            createdAt: now,
+            updatedAt: now,
+            sessionRef: authoringTurn.sessionRef,
+            ...remaining,
+          });
+          await ctx.db.insert("authoringEvents", {
+            turnId: repairTurnId,
+            createdAt: now,
+            kind: "repair_enqueued",
+            state: "queued",
+            message:
+              "Structured validation evidence queued for bounded repair.",
+          });
+          const thread = await ctx.db
+            .query("authoringThreads")
+            .withIndex("by_channel_thread", (q) =>
+              q
+                .eq("channelId", authoringTurn.channelId)
+                .eq("threadId", authoringTurn.threadId),
+            )
+            .unique();
+          if (thread)
+            await ctx.db.patch(thread._id, {
+              updatedAt: now,
+              latestTurnId: repairTurnKey,
+            });
+        } else {
+          nextState = "needs_intervention";
+        }
+      }
+    }
+    const terminal = isTerminal(nextState);
     const stdout = boundedLog(args.stdout);
     const stderr = boundedLog(args.stderr);
     await ctx.db.patch(args.jobId, {
-      state: args.nextState,
+      state: nextState,
       updatedAt: now,
       terminalCode: terminal ? boundedOptional(args.code, 80) : undefined,
       terminalMessage: terminal ? message : undefined,
       candidateRef:
-        args.nextState === "succeeded"
+        nextState === "succeeded"
           ? boundedOptional(args.candidateRef, 200)
           : undefined,
       boundedStdout: terminal ? stdout : undefined,
       boundedStderr: terminal ? stderr : undefined,
+      validationEvidenceJson: terminal ? validationEvidenceJson : undefined,
+      repairTurnId,
       leaseOwner: terminal ? undefined : job.leaseOwner,
       leaseExpiresAt: terminal ? undefined : job.leaseExpiresAt,
     });
@@ -220,7 +305,7 @@ export const transition = mutation({
       jobId: args.jobId,
       createdAt: now,
       kind: terminal ? "terminal" : "transition",
-      state: args.nextState,
+      state: nextState,
       message,
     });
     return true;
@@ -363,6 +448,8 @@ function safeJob(job: Doc<"componentBuildJobs">) {
     terminalCode: job.terminalCode,
     terminalMessage: job.terminalMessage,
     candidateRef: job.candidateRef,
+    validationEvidenceJson: job.validationEvidenceJson,
+    repairTurnId: job.repairTurnId,
   };
 }
 
@@ -386,6 +473,53 @@ function boundedLog(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   if (value.length > 64_000) throw new Error("Build log exceeds 64 KB.");
   return value;
+}
+function boundedEvidence(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (value.length > 32_000)
+    throw new Error("Validation evidence exceeds 32 KB.");
+  const parsed = JSON.parse(value) as { schemaVersion?: unknown };
+  if (parsed.schemaVersion !== 1)
+    throw new Error("Validation evidence schema is invalid.");
+  return value;
+}
+function sanitizeEvidence(value: string | undefined): string | undefined {
+  return value?.replace(
+    /(?:\bBearer\s+\S+|\bsk-[a-z0-9_-]{8,}|(?:^|[\s?&])(?:api_?key|signature|token)=[^&\s]+)/gi,
+    "[redacted]",
+  );
+}
+function remainingBudgets(turn: Doc<"authoringTurns">) {
+  return {
+    maxWallTimeMs: Math.max(0, turn.maxWallTimeMs - (turn.wallTimeMs ?? 0)),
+    maxModelTurns: Math.max(0, turn.maxModelTurns - (turn.modelTurns ?? 0)),
+    maxToolCalls: Math.max(0, turn.maxToolCalls - (turn.toolCalls ?? 0)),
+    maxTokens: Math.max(
+      0,
+      turn.maxTokens -
+        (turn.inputTokens ?? 0) -
+        (turn.outputTokens ?? 0) -
+        (turn.cacheReadTokens ?? 0) -
+        (turn.cacheWriteTokens ?? 0),
+    ),
+    maxCostUsd: Math.max(0, turn.maxCostUsd - (turn.costUsd ?? 0)),
+  };
+}
+function repairSummary(
+  evidence: string | undefined,
+  code: string | undefined,
+  message: string,
+): string {
+  const compact = evidence
+    ? evidence.replace(
+        /(?:\bBearer\s+\S+|\bsk-[a-z0-9_-]{8,}|(?:^|[\s?&])(?:api_?key|signature|token)=[^&\s]+)/gi,
+        "[redacted]",
+      )
+    : JSON.stringify({ code, message });
+  return `Independent validation failed. Repair only the reported checks: ${compact}`.slice(
+    0,
+    2_000,
+  );
 }
 function boundedLease(value: number): number {
   if (!Number.isFinite(value)) throw new Error("leaseMs is invalid.");
