@@ -52,6 +52,7 @@ export class RemotionDraftRenderExecutor implements DraftRenderExecutor {
     hooks.signal.addEventListener("abort", cancel, { once: true });
     try {
       await renderMedia({
+        ...safeRenderResourcePolicy(),
         cancelSignal: cancellation.cancelSignal,
         codec: request.quality.codec,
         composition,
@@ -121,6 +122,20 @@ export class RemotionDraftRenderExecutor implements DraftRenderExecutor {
       }),
     );
   }
+}
+
+export function safeRenderResourcePolicy(): {
+  readonly concurrency: 1;
+  readonly disallowParallelEncoding: true;
+  readonly offthreadVideoThreads: 1;
+  readonly x264Preset: "veryfast";
+} {
+  return {
+    concurrency: 1,
+    disallowParallelEncoding: true,
+    offthreadVideoThreads: 1,
+    x264Preset: "veryfast",
+  };
 }
 
 export function bundleProgress(percentage: number): number {

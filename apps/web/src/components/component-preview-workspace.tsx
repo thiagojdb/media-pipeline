@@ -694,7 +694,9 @@ function ResolvedPreviewWorkspace({
               ))}
             </select>
             <p className="text-muted-foreground mt-2 text-xs">
-              Higher resolutions take longer and use more worker memory.
+              Higher resolutions take longer and use more worker memory. Safe
+              processing runs one render and one frame worker at a time with
+              reduced OS priority.
             </p>
 
             <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">

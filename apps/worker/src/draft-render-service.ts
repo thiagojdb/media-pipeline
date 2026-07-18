@@ -39,6 +39,8 @@ export class DraftRenderRequestError extends Error {
 
 export class DraftRenderService {
   readonly #jobs = new Map<string, InternalJob>();
+  readonly #queue: InternalJob[] = [];
+  #draining = false;
 
   constructor(
     private readonly executor: DraftRenderExecutor,
@@ -75,7 +77,8 @@ export class DraftRenderService {
       controller: new AbortController(),
     };
     this.#jobs.set(id, job);
-    queueMicrotask(() => void this.#run(job));
+    this.#queue.push(job);
+    queueMicrotask(() => void this.#drain());
     return snapshot;
   }
 
@@ -119,6 +122,20 @@ export class DraftRenderService {
       );
     }
     return { path: job.outputPath, sizeBytes: details.size };
+  }
+
+  async #drain(): Promise<void> {
+    if (this.#draining) return;
+    this.#draining = true;
+    try {
+      while (this.#queue.length > 0) {
+        const job = this.#queue.shift();
+        if (job) await this.#run(job);
+      }
+    } finally {
+      this.#draining = false;
+      if (this.#queue.length > 0) queueMicrotask(() => void this.#drain());
+    }
   }
 
   async #run(job: InternalJob): Promise<void> {

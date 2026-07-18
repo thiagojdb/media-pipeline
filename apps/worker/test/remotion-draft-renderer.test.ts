@@ -7,10 +7,20 @@ import { describe, expect, it, vi } from "vitest";
 import {
   bundleProgress,
   resolveRemotionEntryPoint,
+  safeRenderResourcePolicy,
   RetryableAsyncValue,
 } from "../src/remotion-draft-renderer.js";
 
 describe("Remotion draft renderer", () => {
+  it("uses a low-impact rendering policy at every resolution", () => {
+    expect(safeRenderResourcePolicy()).toEqual({
+      concurrency: 1,
+      disallowParallelEncoding: true,
+      offthreadVideoThreads: 1,
+      x264Preset: "veryfast",
+    });
+  });
+
   it("maps bundler percentages into the initial progress segment", () => {
     expect(bundleProgress(-1)).toBe(0);
     expect(bundleProgress(50)).toBeCloseTo(0.075);

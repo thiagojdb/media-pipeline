@@ -91,7 +91,7 @@ The component preview registry is a closed allowlist of trusted reference defini
 - `packages/component-testkit` — deterministic component validation boundary
 - `packages/rendering` — shared Remotion composition and rendering integration
 
-The worker exposes health and process-local MP4 render endpoints with explicit 720p, 1080p, 1440p, and 4K choices. It owns Remotion bundling, rendering, progress, cancellation, and output files under `.relay/`. Higher resolutions use more worker time and memory. These render records deliberately do not survive worker restart; durable job claiming, recovery, and isolated candidate workspaces belong to MED-133. Pi execution belongs to MED-128.
+The worker exposes health and process-local MP4 render endpoints with explicit 720p, 1080p, 1440p, and 4K choices. It owns Remotion bundling, rendering, progress, cancellation, and output files under `.relay/`. To keep the development machine responsive, render jobs are serialized, Remotion uses one frame worker, encoding does not overlap frame rendering, H.264 uses the `veryfast` preset, and the real worker lowers its OS scheduling priority. Higher resolutions still take longer and use more memory. These render records deliberately do not survive worker restart; durable job claiming, recovery, and isolated candidate workspaces belong to MED-133. Pi execution belongs to MED-128.
 
 ## Foundation documents
 

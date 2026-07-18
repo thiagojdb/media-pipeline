@@ -74,6 +74,37 @@ describe("draft render service", () => {
     );
   });
 
+  it("serializes render jobs so only one resource-intensive executor runs", async () => {
+    const fake = createFakeDraftRenderExecutor(10);
+    let active = 0;
+    let maximumActive = 0;
+    const controlled: DraftRenderExecutor = {
+      async execute(request, outputPath, hooks) {
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        try {
+          return await fake.execute(request, outputPath, hooks);
+        } finally {
+          active -= 1;
+        }
+      },
+    };
+    const renders = await service(controlled);
+    const first = await renders.create(validRequest());
+    const second = await renders.create({
+      ...validRequest(),
+      dimensions: { width: 3840, height: 2160 },
+    });
+
+    await waitForState(renders, first.id, "running");
+    expect(renders.get(second.id).state).toBe("queued");
+    await Promise.all([
+      waitForTerminal(renders, first.id),
+      waitForTerminal(renders, second.id),
+    ]);
+    expect(maximumActive).toBe(1);
+  });
+
   it("accepts selectable HD through 4K output resolutions", async () => {
     const renders = await service();
     for (const dimensions of [
