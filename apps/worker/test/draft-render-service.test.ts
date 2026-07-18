@@ -122,6 +122,24 @@ describe("draft render service", () => {
     }
   });
 
+  it("accepts graphics-master 4:4:4 quality and pins it reproducibly", async () => {
+    const renders = await service();
+    const request = {
+      ...validRequest(),
+      quality: { codec: "h264", crf: 1, pixelFormat: "yuv444p" },
+    } as const;
+    const first = await waitForTerminal(
+      renders,
+      (await renders.create(request)).id,
+    );
+    const repeated = await waitForTerminal(
+      renders,
+      (await renders.create(request)).id,
+    );
+    expect(first.settings.quality).toEqual(request.quality);
+    expect(repeated.reproducibilityKey).toBe(first.reproducibilityKey);
+  });
+
   it("rejects unpinned metadata, invalid inputs, and unsupported dimensions", async () => {
     const renders = await service();
     for (const [candidate, code] of [
@@ -131,6 +149,13 @@ describe("draft render service", () => {
       ],
       [{ ...validRequest(), fps: 24 }, "fps_mismatch"],
       [{ ...validRequest(), durationInFrames: 119 }, "duration_mismatch"],
+      [
+        {
+          ...validRequest(),
+          quality: { codec: "h264", crf: 0, pixelFormat: "yuv444p" },
+        },
+        "request_invalid",
+      ],
       [
         { ...validRequest(), dimensions: { width: 7680, height: 4320 } },
         "dimensions_unsupported",

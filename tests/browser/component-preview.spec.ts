@@ -220,12 +220,15 @@ test("starts a worker draft render, observes success, and downloads the pinned M
   await expect(page.getByText("3840×2160", { exact: true })).toBeVisible();
   const renderQuality = page.getByLabel("Render quality");
   await expect(renderQuality.locator("option")).toHaveText([
-    "High · CRF 18",
-    "Balanced · CRF 22",
-    "Compact · CRF 28",
+    "Master graphics · CRF 1 · 4:4:4",
+    "High · CRF 10 · 4:4:4",
+    "Compatible · CRF 18 · 4:2:0",
+    "Compact · CRF 28 · 4:2:0",
   ]);
-  await expect(renderQuality).toHaveValue("high");
-  await expect(page.getByText("H.264 · High · CRF 18")).toBeVisible();
+  await expect(renderQuality).toHaveValue("master");
+  await expect(
+    page.getByText("H.264 · Master graphics · CRF 1 · 4:4:4"),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Render MP4" }).click();
 
   const status = page.getByTestId("draft-render-status");

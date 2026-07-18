@@ -37,7 +37,7 @@ const request: PinnedDraftRenderRequest = {
     fonts: { heading: "Arial, sans-serif", body: "Arial, sans-serif" },
     spacing: { outer: 72 },
   },
-  quality: { codec: "h264", crf: 18, pixelFormat: "yuv420p" },
+  quality: { codec: "h264", crf: 1, pixelFormat: "yuv444p" },
 };
 
 const projectRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -122,6 +122,7 @@ async function assertPlayableMp4(outputPath: string) {
     height: metadata.height,
     fps: metadata.fps,
     canPlayInVideoTag: metadata.canPlayInVideoTag,
+    pixelFormat: metadata.pixelFormat,
   };
   assert.deepEqual(proof, {
     codec: "h264",
@@ -129,6 +130,7 @@ async function assertPlayableMp4(outputPath: string) {
     height: 540,
     fps: 30,
     canPlayInVideoTag: true,
+    pixelFormat: "yuvj444p",
   });
   return proof;
 }

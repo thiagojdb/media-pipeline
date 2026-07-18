@@ -81,9 +81,15 @@ const renderResolutionPresets = [
 ] as const;
 
 const renderQualityPresets = [
-  { id: "high", label: "High", crf: 18 },
-  { id: "balanced", label: "Balanced", crf: 22 },
-  { id: "compact", label: "Compact", crf: 28 },
+  {
+    id: "master",
+    label: "Master graphics",
+    crf: 1,
+    pixelFormat: "yuv444p",
+  },
+  { id: "high", label: "High", crf: 10, pixelFormat: "yuv444p" },
+  { id: "compatible", label: "Compatible", crf: 18, pixelFormat: "yuv420p" },
+  { id: "compact", label: "Compact", crf: 28, pixelFormat: "yuv420p" },
 ] as const;
 
 type DraftRenderSnapshot = {
@@ -102,7 +108,7 @@ type DraftRenderSnapshot = {
     readonly quality: {
       readonly codec: "h264";
       readonly crf: number;
-      readonly pixelFormat: "yuv420p";
+      readonly pixelFormat: "yuv420p" | "yuv444p";
     };
   };
   readonly reproducibilityKey: string;
@@ -167,7 +173,7 @@ function ResolvedPreviewWorkspace({
     const preset = renderResolutionOptions[0];
     return preset ? { width: preset.width, height: preset.height } : undefined;
   });
-  const [renderQualityId, setRenderQualityId] = useState("high");
+  const [renderQualityId, setRenderQualityId] = useState("master");
   const renderQuality =
     renderQualityPresets.find(({ id }) => id === renderQualityId) ??
     renderQualityPresets[0];
@@ -386,7 +392,7 @@ function ResolvedPreviewWorkspace({
           quality: {
             codec: "h264",
             crf: renderQuality.crf,
-            pixelFormat: "yuv420p",
+            pixelFormat: renderQuality.pixelFormat,
           },
         }),
       });
@@ -727,13 +733,15 @@ function ResolvedPreviewWorkspace({
             >
               {renderQualityPresets.map((preset) => (
                 <option key={preset.id} value={preset.id}>
-                  {preset.label} · CRF {preset.crf}
+                  {preset.label} · CRF {preset.crf} ·{" "}
+                  {preset.pixelFormat === "yuv444p" ? "4:4:4" : "4:2:0"}
                 </option>
               ))}
             </select>
             <p className="text-muted-foreground mt-2 text-xs">
-              High is the default for crisp text and graphics. Compact creates
-              smaller files with more visible compression.
+              Master graphics is the default and preserves colored edges and
+              text with 4:4:4 chroma. Compatible uses 4:2:0 for older playback
+              hardware but can show edge noise.
             </p>
 
             <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
@@ -748,7 +756,8 @@ function ResolvedPreviewWorkspace({
               <div className="rounded-md bg-slate-50 p-2">
                 <dt className="text-muted-foreground">Quality</dt>
                 <dd className="mt-1 font-mono">
-                  H.264 · {renderQuality.label} · CRF {renderQuality.crf}
+                  H.264 · {renderQuality.label} · CRF {renderQuality.crf} ·{" "}
+                  {renderQuality.pixelFormat === "yuv444p" ? "4:4:4" : "4:2:0"}
                 </dd>
               </div>
             </dl>

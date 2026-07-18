@@ -9,8 +9,8 @@ import { z } from "zod";
 export const draftRenderQualitySchema = z
   .object({
     codec: z.literal("h264"),
-    crf: z.number().int().min(18).max(35),
-    pixelFormat: z.literal("yuv420p"),
+    crf: z.number().int().min(1).max(35),
+    pixelFormat: z.enum(["yuv420p", "yuv444p"]),
   })
   .strict();
 
