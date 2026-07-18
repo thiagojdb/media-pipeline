@@ -5,6 +5,7 @@ coverage/
 playwright-report/
 test-results/
 blob-report/
+.relay/
 .env
 .env.local
 .env.*.local

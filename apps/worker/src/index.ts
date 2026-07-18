@@ -1,7 +1,22 @@
+import path from "node:path";
+
+import {
+  createFakeDraftRenderExecutor,
+  DraftRenderService,
+} from "./draft-render-service.js";
+import { RemotionDraftRenderExecutor } from "./remotion-draft-renderer.js";
 import { createWorkerServer } from "./server.js";
 
 const port = Number.parseInt(process.env.WORKER_PORT ?? "3212", 10);
-const server = createWorkerServer();
+const executor =
+  process.env.RELAY_RENDER_MODE === "fake"
+    ? createFakeDraftRenderExecutor()
+    : new RemotionDraftRenderExecutor();
+const draftRenders = new DraftRenderService(
+  executor,
+  path.resolve(process.env.RELAY_RENDER_OUTPUT_DIR ?? ".relay/draft-renders"),
+);
+const server = createWorkerServer({ draftRenders });
 
 server.listen(port, "127.0.0.1", () => {
   console.log(`Relay worker ready at http://127.0.0.1:${port}/health`);

@@ -60,13 +60,23 @@ Install the pinned Playwright Chromium runtime once after `npm install`:
 npx playwright install chromium
 ```
 
-Then run the browser suite deterministically against a test-owned production Next.js server:
+Then run the browser suite deterministically against test-owned production web and fake-render worker processes:
 
 ```bash
 npm run test:browser
 ```
 
-The command first performs the production build, starts `next start` on `127.0.0.1:3100`, and refuses to reuse a process already listening there. Browser tests remain explicit rather than part of `npm run verify`. Playwright reports, traces, and test-result directories are ignored build artifacts.
+The command first performs the production build, starts the worker on `127.0.0.1:3213` and `next start` on `127.0.0.1:3100`, and refuses to reuse processes already listening there. Browser tests use an explicitly selected fake renderer; they still exercise the real browser → Next.js proxy → worker HTTP path without invoking Chromium or FFmpeg. Browser tests remain explicit rather than part of `npm run verify`. Playwright reports, traces, render outputs, and test-result directories are ignored build artifacts.
+
+### Draft render smoke test
+
+Run the explicit Remotion/Chromium/FFmpeg proof with:
+
+```bash
+npm run render:smoke
+```
+
+It renders the reference line chart twice at 960×540, verifies both outputs as playable H.264 MP4s, and proves declared checkpoint agreement across the browser preview, Remotion stills, and frames decoded from the MP4. It also confirms identical requests produce identical Remotion checkpoint fingerprints. This expensive proof is separate from the normal repository gate.
 
 ## MED-129 trust boundary
 
@@ -81,7 +91,7 @@ The component preview registry is a closed allowlist of trusted reference defini
 - `packages/component-testkit` — deterministic component validation boundary
 - `packages/rendering` — shared Remotion composition and rendering integration
 
-The worker currently exposes only a health endpoint. Job claiming, agent execution, component contracts, and rendering workflows belong to later scoped issues.
+The worker exposes health and process-local low-resolution draft-render endpoints. It owns Remotion bundling, rendering, progress, cancellation, and output files under `.relay/`. These render records deliberately do not survive worker restart; durable job claiming, recovery, and isolated candidate workspaces belong to MED-133. Pi execution belongs to MED-128.
 
 ## Foundation documents
 

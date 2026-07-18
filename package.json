@@ -18,6 +18,8 @@
     "test": "vitest run",
     "pretest:browser": "npm run build",
     "test:browser": "playwright test",
+    "prerender:smoke": "npm run build",
+    "render:smoke": "npm run render:smoke --workspace @relay/worker",
     "build": "npm run build:packages && npm run build --workspace @relay/worker && npm run build --workspace @relay/web",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"
   },

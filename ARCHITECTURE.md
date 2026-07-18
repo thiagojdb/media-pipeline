@@ -164,6 +164,8 @@ The browser preview and worker render must evaluate the same Remotion component 
 
 Verified candidate previews should run in a sandboxed frame isolated from the main application. Final and draft rendering occurs in the worker environment. The first render path produces a low-resolution MP4 from one exact component version; composition, audio, and quality options expand in later milestones.
 
+MED-131 uses a process-local worker render registry and worker-owned `.relay/` output files to prove this path before durable orchestration exists. Next.js only proxies creator commands and downloads; it does not bundle or render. Progress and cancellation are explicit within the live worker process, while restart recovery, Convex job records, disposable workspaces, and untrusted candidate isolation remain MED-133 responsibilities.
+
 Remotion is a deliberate product dependency. If measured licensing or scale requirements later justify replacement, migration is a future architecture project rather than complexity paid in advance.
 
 ## Storage

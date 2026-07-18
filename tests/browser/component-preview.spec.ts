@@ -202,6 +202,43 @@ test("applies valid controls and preserves the last valid preview for invalid ed
   ).toBeVisible();
 });
 
+test("starts a worker draft render, observes success, and downloads the pinned MP4", async ({
+  page,
+}) => {
+  await openPreview(page);
+  await page
+    .getByRole("textbox", { name: "Title", exact: true })
+    .fill("Pinned creator render");
+  await page.getByRole("button", { name: "Render low-resolution MP4" }).click();
+
+  const status = page.getByTestId("draft-render-status");
+  await expect(status).toContainText("animated-line-chart@1.0.0");
+  await expect(status).toContainText("channel-growth");
+  await expect(status).toContainText("succeeded", { timeout: 5_000 });
+  await expect(page.getByRole("progressbar")).toHaveAttribute(
+    "aria-valuenow",
+    "100",
+  );
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download MP4" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^relay-draft-.*\.mp4$/);
+  expect(await download.createReadStream()).not.toBeNull();
+});
+
+test("cancels an active worker draft without exposing a download", async ({
+  page,
+}) => {
+  await openPreview(page);
+  await page.getByRole("button", { name: "Render low-resolution MP4" }).click();
+  await page.getByRole("button", { name: "Cancel render" }).click();
+  await expect(page.getByTestId("draft-render-status")).toContainText(
+    "canceled",
+  );
+  await expect(page.getByRole("link", { name: "Download MP4" })).toHaveCount(0);
+});
+
 test("contains runtime failures and surfaces captured diagnostics", async ({
   page,
 }) => {

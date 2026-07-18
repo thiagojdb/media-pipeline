@@ -7,9 +7,27 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc --project tsconfig.test.json",
-    "build": "tsc"
+    "build": "tsc",
+    "render:smoke": "npm run build && node dist/render-smoke.js"
   },
   "devDependencies": {
+    "@types/pngjs": "^6.0.5",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.61.1",
+    "pngjs": "^7.0.0",
     "tsx": "^4.21.0"
+  },
+  "dependencies": {
+    "@relay/component-sdk": "0.1.0",
+    "@relay/reference-components": "0.1.0",
+    "@relay/rendering": "0.1.0",
+    "@remotion/bundler": "4.0.490",
+    "@remotion/renderer": "4.0.490",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "remotion": "4.0.490",
+    "zod": "^4.4.3"
   }
 }

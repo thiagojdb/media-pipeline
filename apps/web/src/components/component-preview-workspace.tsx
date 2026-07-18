@@ -20,8 +20,12 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
+  Download,
+  Film,
+  LoaderCircle,
   Pause,
   Play,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -69,6 +73,36 @@ type JsonSchema = {
 
 type InputRecord = Record<string, unknown>;
 
+type DraftRenderSnapshot = {
+  readonly id: string;
+  readonly state: "queued" | "running" | "succeeded" | "failed" | "canceled";
+  readonly progress: number;
+  readonly component: {
+    readonly id: string;
+    readonly version: string;
+    readonly fixtureId: string;
+  };
+  readonly settings: {
+    readonly fps: number;
+    readonly durationInFrames: number;
+    readonly dimensions: VideoDimensions;
+    readonly quality: {
+      readonly codec: "h264";
+      readonly crf: number;
+      readonly pixelFormat: "yuv420p";
+    };
+  };
+  readonly reproducibilityKey: string;
+  readonly output?: {
+    readonly href: string;
+    readonly mediaType: "video/mp4";
+    readonly sizeBytes: number;
+    readonly contentHash: string;
+    readonly visualFingerprint: string;
+  };
+  readonly error?: { readonly code: string; readonly message: string };
+};
+
 export function ComponentPreviewWorkspace({
   componentId,
   version,
@@ -112,11 +146,20 @@ function ResolvedPreviewWorkspace({
   const [renderRevision, setRenderRevision] = useState(0);
   const [runtimeFailure, setRuntimeFailure] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<readonly string[]>([]);
+  const [draftRender, setDraftRender] = useState<DraftRenderSnapshot | null>(
+    null,
+  );
+  const [draftRenderError, setDraftRenderError] = useState<string | null>(null);
   const durationInFrames = resolveVideoComponentDuration(
     definition,
     validInput,
   );
   const controls = definition.inputControls as JsonSchema;
+  const draftDimensions = [...definition.supportedDimensions]
+    .filter(({ width, height }) => width * height <= 1280 * 720)
+    .sort(
+      (left, right) => left.width * left.height - right.width * right.height,
+    )[0];
 
   useEffect(() => {
     if (!playing) return;
@@ -147,6 +190,41 @@ function ResolvedPreviewWorkspace({
     animationFrame = window.requestAnimationFrame(update);
     return () => window.cancelAnimationFrame(animationFrame);
   }, [definition.fps, durationInFrames, playing]);
+
+  useEffect(() => {
+    if (
+      !draftRender ||
+      (draftRender.state !== "queued" && draftRender.state !== "running")
+    ) {
+      return;
+    }
+    let disposed = false;
+    let timer = 0;
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/draft-renders/${draftRender.id}`, {
+          cache: "no-store",
+        });
+        const snapshot = await readRenderResponse(response);
+        if (disposed) return;
+        setDraftRender(snapshot);
+        if (snapshot.state === "queued" || snapshot.state === "running") {
+          timer = window.setTimeout(poll, 250);
+        }
+      } catch (error) {
+        if (!disposed) {
+          setDraftRenderError(
+            error instanceof Error ? error.message : "Render status failed.",
+          );
+        }
+      }
+    };
+    timer = window.setTimeout(poll, 100);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, [draftRender]);
 
   useEffect(() => {
     const originalWarn = console.warn;
@@ -264,6 +342,52 @@ function ResolvedPreviewWorkspace({
   const recoverRuntimeFailure = () => {
     if (runtimeFailure) setRenderRevision((current) => current + 1);
     setRuntimeFailure(null);
+  };
+
+  const startDraftRender = async () => {
+    if (!draftDimensions || issues.length > 0 || runtimeFailure) return;
+    setDraftRenderError(null);
+    try {
+      const response = await fetch("/api/draft-renders", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          componentId: definition.id,
+          version: definition.version,
+          fixtureId: fixture.id,
+          input: validInput,
+          fps: definition.fps,
+          durationInFrames,
+          dimensions: draftDimensions,
+          theme: previewTheme,
+          quality: { codec: "h264", crf: 28, pixelFormat: "yuv420p" },
+        }),
+      });
+      setDraftRender(await readRenderResponse(response));
+    } catch (error) {
+      setDraftRenderError(
+        error instanceof Error
+          ? error.message
+          : "Draft render could not start.",
+      );
+    }
+  };
+
+  const cancelDraftRender = async () => {
+    if (!draftRender) return;
+    try {
+      const response = await fetch(
+        `/api/draft-renders/${draftRender.id}/cancel`,
+        { method: "POST" },
+      );
+      setDraftRender(await readRenderResponse(response));
+    } catch (error) {
+      setDraftRenderError(
+        error instanceof Error
+          ? error.message
+          : "Draft render could not cancel.",
+      );
+    }
   };
 
   const renderKey = `${fixture.id}:${renderRevision}:${dimensionKey(selectedDimensions)}`;
@@ -513,6 +637,114 @@ function ResolvedPreviewWorkspace({
             <p className="text-muted-foreground mt-2 text-xs">
               Fixture id: {fixture.id}
             </p>
+          </section>
+
+          <section className="rounded-2xl border bg-white p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <Film className="mt-0.5 size-5 text-cyan-700" />
+              <div>
+                <h2 className="font-semibold">Low-resolution draft</h2>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  The Node worker renders the exact component version, fixture,
+                  validated input, and frame settings shown here.
+                </p>
+              </div>
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
+              <div className="rounded-md bg-slate-50 p-2">
+                <dt className="text-muted-foreground">Output</dt>
+                <dd className="mt-1 font-mono">
+                  {draftDimensions
+                    ? `${draftDimensions.width}×${draftDimensions.height}`
+                    : "Unavailable"}
+                </dd>
+              </div>
+              <div className="rounded-md bg-slate-50 p-2">
+                <dt className="text-muted-foreground">Quality</dt>
+                <dd className="mt-1 font-mono">H.264 · CRF 28</dd>
+              </div>
+            </dl>
+
+            {!draftRender ||
+            draftRender.state === "failed" ||
+            draftRender.state === "canceled" ||
+            draftRender.state === "succeeded" ? (
+              <Button
+                className="mt-4 w-full"
+                disabled={
+                  !draftDimensions ||
+                  issues.length > 0 ||
+                  runtimeFailure !== null
+                }
+                onClick={() => void startDraftRender()}
+              >
+                <Film /> Render low-resolution MP4
+              </Button>
+            ) : (
+              <Button
+                className="mt-4 w-full"
+                onClick={() => void cancelDraftRender()}
+                variant="outline"
+              >
+                <X /> Cancel render
+              </Button>
+            )}
+
+            {issues.length > 0 ? (
+              <p className="mt-2 text-xs text-amber-700">
+                Fix input errors before starting a render.
+              </p>
+            ) : null}
+            {draftRender ? (
+              <div className="mt-4" data-testid="draft-render-status">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-1.5 font-medium capitalize">
+                    {draftRender.state === "queued" ||
+                    draftRender.state === "running" ? (
+                      <LoaderCircle className="size-3.5 animate-spin" />
+                    ) : null}
+                    {draftRender.state}
+                  </span>
+                  <span>{Math.round(draftRender.progress * 100)}%</span>
+                </div>
+                <div
+                  aria-label="Draft render progress"
+                  aria-valuemax={100}
+                  aria-valuemin={0}
+                  aria-valuenow={Math.round(draftRender.progress * 100)}
+                  className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"
+                  role="progressbar"
+                >
+                  <div
+                    className="h-full bg-cyan-600 transition-[width]"
+                    style={{ width: `${draftRender.progress * 100}%` }}
+                  />
+                </div>
+                <p className="text-muted-foreground mt-2 truncate font-mono text-[10px]">
+                  {draftRender.component.id}@{draftRender.component.version} ·{" "}
+                  {draftRender.component.fixtureId}
+                </p>
+                {draftRender.state === "succeeded" && draftRender.output ? (
+                  <a
+                    className="mt-3 flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-medium text-white"
+                    download
+                    href={`/api/draft-renders/${draftRender.id}/output`}
+                  >
+                    <Download /> Download MP4
+                  </a>
+                ) : null}
+                {draftRender.error ? (
+                  <p className="mt-3 text-sm text-red-700" role="alert">
+                    {draftRender.error.message}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {draftRenderError ? (
+              <p className="mt-3 text-sm text-red-700" role="alert">
+                {draftRenderError}
+              </p>
+            ) : null}
           </section>
 
           <section className="rounded-2xl border bg-white p-5 shadow-sm">
@@ -858,6 +1090,21 @@ function appendDiagnostic(
     if (current.includes(message)) return current;
     return [...current.slice(-19), message];
   });
+}
+
+async function readRenderResponse(
+  response: Response,
+): Promise<DraftRenderSnapshot> {
+  const body = (await response.json()) as
+    DraftRenderSnapshot | { readonly message?: string };
+  if (!response.ok) {
+    throw new Error(
+      "message" in body && body.message
+        ? body.message
+        : `Render worker request failed with status ${response.status}.`,
+    );
+  }
+  return body as DraftRenderSnapshot;
 }
 
 function safeDiagnostic(values: readonly unknown[]): string {
