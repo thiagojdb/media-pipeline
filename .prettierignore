@@ -1,0 +1,6 @@
+**/.next
+**/dist
+**/coverage
+**/node_modules
+convex/_generated
+package-lock.json

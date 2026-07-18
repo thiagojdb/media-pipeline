@@ -1,0 +1,33 @@
+{
+  "name": "relay",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names web,convex,worker --prefix-colors blue,magenta,green \"npm run dev --workspace @relay/web\" \"convex dev\" \"npm run dev --workspace @relay/worker\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --project convex/tsconfig.json --noEmit && npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "build": "npm run build --workspaces --if-present",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "concurrently": "^10.0.3",
+    "convex": "^1.42.3",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "16.2.10",
+    "prettier": "^3.9.0",
+    "prettier-plugin-tailwindcss": "^0.7.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
