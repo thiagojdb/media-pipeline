@@ -224,6 +224,16 @@ The Node worker is the only candidate execution host. It removes abandoned local
 
 The first implementation keeps successful candidates as immutable content-addressed references rather than durable object-storage artifacts. Durable artifact storage, Pi commands, independent repair, approval, and chat UI remain later issue scope.
 
+### Component-authoring agent boundary
+
+MED-128 adds durable authoring threads and turns above MED-133 jobs. Each turn pins the exact base source/hash, optional parent candidate and base snapshot, user request, acceptance criteria, channel theme and non-secret asset metadata, relevant prior summaries, and explicit wall-time/model-turn/tool/token/cost budgets. Enqueue binds every immutable input and is idempotent per channel/thread/turn; leases use server time and attempt fencing. Paid-capable turns allow exactly one infrastructure attempt, so retrying requires an explicit successor turn rather than silently multiplying spend. Provider token/cost accounting is enforced at response boundaries with output capped to the remaining token allowance; any single-response overshoot is persisted and blocks further model work. A candidate submission atomically creates or reuses one MED-133 validation job and means only `candidate_submitted`, never validated or approved.
+
+Relay constructs a deterministic, size-bounded, hashed context pack from the public SDK, reference component, fixtures, exact base, theme/assets metadata, prior summaries, and explicit dependency/tool policy. Context construction rejects source hash mismatch, symlinks, traversal, oversized files, malformed JSON, and credential-like fields. A disposable authoring workspace exposes the context read-only and only candidate source as writable.
+
+Pi receives no built-in filesystem or shell tools. The only tools are Relay-owned operations to read context, replace complete candidate source, check syntax/source policy without executing candidate code, and declare a checked candidate ready. Resource discovery is disabled: no global/project extensions, skills, prompt templates, themes, or context files. Settings are in memory, and a single server-injected API-key or OAuth credential is parsed into an app-owned in-memory credential store; ModelRuntime is never allowed to fall back to Pi's global auth file. Credentials never enter sessions, context, logs, or workspaces. The model is exact, provider continuations recheck cumulative budgets, and session files are constrained to a Relay-owned root. Convex summaries/base source remain authoritative when a session file cannot be resumed.
+
+Normal CI and development use the deterministic fake agent and never initialize a model runtime. Real Pi is dynamically loaded only behind separate authoring, real-mode, paid-smoke confirmation, exact-model, and small-budget gates. MED-123 owns independent repair, MED-125 owns review/approval, and MED-124 owns the creator chat-like end-to-end proof.
+
 ## Testing strategy
 
 Normal tests and CI must not require a model provider or spend tokens.

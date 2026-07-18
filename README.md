@@ -78,6 +78,25 @@ npm run render:smoke
 
 It renders the reference line chart twice at 960×540, verifies both outputs as playable H.264 MP4s, and proves declared checkpoint agreement across the browser preview, Remotion stills, and frames decoded from the MP4. It also confirms identical requests produce identical Remotion checkpoint fingerprints. This expensive proof is separate from the normal repository gate.
 
+### Deterministic authoring smoke test
+
+Run the free MED-128 create → Relay tools → candidate → MED-133 handoff without a model or network call:
+
+```bash
+npm run authoring:smoke
+```
+
+Real Pi dogfood is a separate paid command and fails closed unless all explicit activation variables are present:
+
+```bash
+AUTHORING_REAL_PI_ENABLED=true \
+AUTHORING_PI_SMOKE_CONFIRM=spend-model-tokens \
+AUTHORING_PI_MODEL=provider/exact-model \
+npm run pi:smoke
+```
+
+The paid smoke enforces wall-time and tool limits before work, caps each provider response to the remaining token allowance, persists cumulative usage after provider responses, and prevents another model turn once token, turn, or cost ceilings are reached. Provider-reported token/cost usage arrives at response boundaries, so one in-flight response may exceed a total estimate; that overshoot is retained and no automatic paid retry is allowed. Normal `npm run verify`, `npm run dev`, browser tests, and `npm run authoring:smoke` never initialize Pi `ModelRuntime` or call a provider.
+
 ### Isolated component-build smoke test
 
 On the Linux worker target, prove through adversarial probes that Bubblewrap and `prlimit` execute the fixed candidate validator with blocked network, hidden host home/repository paths, a cleared parent environment, a read-only candidate workspace, and root writes contained inside the disposable namespace:
@@ -93,6 +112,16 @@ Normal `npm run verify` uses the deterministic fake executor and does not requir
 Component-build execution is explicitly opt-in. Normal `npm run dev` keeps `COMPONENT_BUILD_ENABLED=false`, even if a shell contains stale build URL/token variables. Enabling it requires `COMPONENT_BUILD_ENABLED=true` plus matching `COMPONENT_BUILD_CONVEX_URL` and `COMPONENT_BUILD_WORKER_TOKEN` values configured in both Convex and the worker environment. Health reports the live loop as `running`, `degraded`, `stopped`, or `disabled`. When enabled, one serialized worker loop claims durable Convex jobs with server-time leases, fenced claim attempts, and heartbeats; removes abandoned local workspaces at startup; creates a disposable bounded workspace; and runs only the fixed validator under fail-closed Bubblewrap/`prlimit` isolation. No fallback ordinary spawn exists. Expired leases recover only within the bounded attempt budget, and stale workers or late cancellation races cannot publish candidates.
 
 Jobs retain opaque `channelId`, `threadId`, `turnId`, optional parent-candidate, and base-snapshot associations for later conversational Pi turns. Enqueue is idempotent per channel/thread/turn. Safe internal Convex queries expose ordered thread state and events without source, raw logs, lease fields, or worker credentials. MED-133 does not add chat, Pi execution, repair, approval, or browser enqueue APIs. Worker mutations require a server-only token; enqueue is an internal Convex mutation. Generated candidates never execute in Next.js or Convex. Successful references hash both exact source and validator/scaffold policy; durable artifact storage remains later work.
+
+## MED-128 authoring boundary
+
+Component authoring is explicitly opt-in with `AUTHORING_ENABLED=true`; normal development reports `authoring: disabled`. Fake mode is deterministic and follows the same context, workspace, Relay-tool, activity, usage, and MED-133 publication path as real mode without network/model calls. Real mode additionally requires `AUTHORING_MODE=real`, `AUTHORING_REAL_PI_ENABLED=true`, an exact `AUTHORING_PI_MODEL=provider/model`, a server-only `AUTHORING_PI_CREDENTIAL_JSON` containing one Pi `api_key` or OAuth credential, and per-turn budgets below reviewed ceilings. The worker parses that credential into an app-owned in-memory store; it never falls back to Pi's global auth file and never copies credentials into sessions, context, logs, or workspaces.
+
+Authoring threads and turns are durable Convex records separate from build jobs. They retain opaque channel/thread/turn lineage, exact base source/hash, optional parent/base references, prior summaries, bounded tool activity, cumulative tokens/cache/cost/wall time, and an opaque Pi session reference. Every paid-capable turn gets exactly one infrastructure attempt; retrying is an explicit new turn rather than a hidden second spend. Candidate submission atomically creates or reuses the idempotent MED-133 validation job; it never validates, approves, promotes, or mutates a prior version.
+
+Pi SDK integration is pinned to reviewed version `0.80.10`. Pi receives a deterministic hashed context pack and only four Relay-owned tools: read context, replace candidate source, check syntax/source policy without evaluation, and declare candidate ready. Built-in shell/read/write/edit/search tools and discovered extensions, skills, prompts, themes, and context files are disabled. Session files live only under Relay's owned session root; the latest opaque session reference is carried into the next thread turn when available, while Convex remains authoritative and permits deterministic reconstruction when the file is absent. Before every provider continuation, the worker rechecks cumulative turns, tokens, and cost and reduces the model output cap to the remaining durable token allowance.
+
+MED-128 does not add creator chat UI, authentication UI, independent repair, approval, or version promotion. Those remain MED-123, MED-125, and MED-124 work.
 
 ## MED-129 trust boundary
 

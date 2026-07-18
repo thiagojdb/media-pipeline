@@ -8,8 +8,11 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --project tsconfig.test.json",
     "build": "tsc",
-    "render:smoke": "npm run build && node dist/render-smoke.js",
-    "isolation:smoke": "npm run build && node dist/component-build/isolation-smoke.js"
+    "build:dependencies": "npm --prefix ../.. run build:packages",
+    "render:smoke": "npm run build:dependencies && npm run build && node dist/render-smoke.js",
+    "isolation:smoke": "npm run build:dependencies && npm run build && node dist/component-build/isolation-smoke.js",
+    "authoring:smoke": "npm run build:dependencies && npm run build && node dist/component-authoring/authoring-smoke.js",
+    "pi:smoke": "npm run build:dependencies && npm run build && node dist/component-authoring/pi-smoke.js"
   },
   "devDependencies": {
     "@types/pngjs": "^6.0.5",
@@ -21,7 +24,10 @@
     "tsx": "^4.21.0"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "0.80.10",
+    "@earendil-works/pi-coding-agent": "0.80.10",
     "@relay/component-sdk": "0.1.0",
+    "@relay/component-testkit": "0.1.0",
     "@relay/reference-components": "0.1.0",
     "@relay/rendering": "0.1.0",
     "@remotion/bundler": "4.0.490",
@@ -30,6 +36,8 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "remotion": "4.0.490",
+    "typebox": "1.1.38",
+    "typescript": "^5.9.3",
     "zod": "^4.4.3"
   }
 }

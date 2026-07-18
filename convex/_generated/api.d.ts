@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as componentAuthoring from "../componentAuthoring.js";
 import type * as componentBuildJobs from "../componentBuildJobs.js";
 
 import type {
@@ -17,6 +18,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  componentAuthoring: typeof componentAuthoring;
   componentBuildJobs: typeof componentBuildJobs;
 }>;
 

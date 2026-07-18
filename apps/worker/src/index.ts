@@ -14,6 +14,11 @@ import { ComponentBuildLoop } from "./component-build/loop.js";
 import { ComponentBuildService } from "./component-build/service.js";
 import { ConvexComponentBuildJobStore } from "./component-build/store.js";
 import { CandidateWorkspaceManager } from "./component-build/workspace.js";
+import { DeterministicFakeAuthoringAgent } from "./component-authoring/fake-agent.js";
+import { ComponentAuthoringLoop } from "./component-authoring/loop.js";
+import { ComponentAuthoringService } from "./component-authoring/service.js";
+import { ConvexAuthoringTurnStore } from "./component-authoring/store.js";
+import { AuthoringWorkspaceManager } from "./component-authoring/workspace.js";
 
 const port = Number.parseInt(process.env.WORKER_PORT ?? "3212", 10);
 const useFakeRenderer = process.env.RELAY_RENDER_MODE === "fake";
@@ -55,10 +60,67 @@ if (componentBuildsEnabled && buildUrl && buildToken) {
   componentBuildLoop = new ComponentBuildLoop(store, service, workerId);
   componentBuildLoop.start();
 }
+const authoringEnabled = process.env.AUTHORING_ENABLED === "true";
+const authoringMode = process.env.AUTHORING_MODE ?? "fake";
+const authoringUrl = process.env.AUTHORING_CONVEX_URL;
+const authoringToken = process.env.AUTHORING_WORKER_TOKEN;
+if (authoringEnabled && (!authoringUrl || !authoringToken)) {
+  throw new Error(
+    "AUTHORING_ENABLED=true requires AUTHORING_CONVEX_URL and AUTHORING_WORKER_TOKEN.",
+  );
+}
+if (authoringEnabled && !["fake", "real"].includes(authoringMode))
+  throw new Error("AUTHORING_MODE must be fake or real.");
+if (
+  authoringEnabled &&
+  authoringMode === "real" &&
+  (process.env.AUTHORING_REAL_PI_ENABLED !== "true" ||
+    !process.env.AUTHORING_PI_MODEL?.includes("/") ||
+    !process.env.AUTHORING_PI_CREDENTIAL_JSON)
+)
+  throw new Error(
+    "Real authoring requires AUTHORING_REAL_PI_ENABLED=true, exact AUTHORING_PI_MODEL=provider/model, and server-only AUTHORING_PI_CREDENTIAL_JSON.",
+  );
+let authoringLoop: ComponentAuthoringLoop | undefined;
+if (authoringEnabled && authoringUrl && authoringToken) {
+  const workerId = `${os.hostname()}:${process.pid}:${randomUUID()}`;
+  const store = new ConvexAuthoringTurnStore(authoringUrl, authoringToken);
+  const workspaces = new AuthoringWorkspaceManager(
+    path.resolve(
+      process.env.AUTHORING_WORKSPACE_ROOT ??
+        ".relay/component-authoring-workspaces",
+    ),
+  );
+  await workspaces.cleanupOrphans();
+  const agent =
+    authoringMode === "real"
+      ? new (
+          await import("./component-authoring/real-pi-agent.js")
+        ).RealPiAuthoringAgent(
+          process.env.AUTHORING_PI_MODEL ?? "",
+          path.resolve(
+            process.env.AUTHORING_PI_SESSION_ROOT ??
+              ".relay/component-authoring-sessions",
+          ),
+          process.env.AUTHORING_PI_CREDENTIAL_JSON,
+        )
+      : new DeterministicFakeAuthoringAgent();
+  const service = new ComponentAuthoringService(
+    store,
+    workspaces,
+    agent,
+    workerId,
+    path.resolve(fileURLToPath(new URL("../../..", import.meta.url))),
+  );
+  authoringLoop = new ComponentAuthoringLoop(store, service, workerId);
+  authoringLoop.start();
+}
+
 const server = createWorkerServer({
   draftRenders,
   componentBuildsEnabled,
   componentBuildStatus: () => componentBuildLoop?.status ?? "disabled",
+  authoringStatus: () => authoringLoop?.status ?? "disabled",
 });
 
 server.listen(port, "127.0.0.1", () => {
@@ -84,6 +146,7 @@ const shutdown = (): void => {
 
   shuttingDown = true;
   componentBuildLoop?.stop();
+  authoringLoop?.stop();
   server.close((error) => {
     if (error) {
       console.error(error);

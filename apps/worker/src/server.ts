@@ -17,10 +17,13 @@ export const createWorkerServer = ({
   draftRenders,
   componentBuildsEnabled = false,
   componentBuildStatus,
+  authoringStatus,
 }: {
   readonly draftRenders?: DraftRenderService;
   readonly componentBuildsEnabled?: boolean;
   readonly componentBuildStatus?: () =>
+    "disabled" | "running" | "degraded" | "stopped";
+  readonly authoringStatus?: () =>
     "disabled" | "running" | "degraded" | "stopped";
 } = {}): Server =>
   createServer(async (request, response) => {
@@ -33,6 +36,7 @@ export const createWorkerServer = ({
           componentBuilds:
             componentBuildStatus?.() ??
             (componentBuildsEnabled ? "running" : "disabled"),
+          authoring: authoringStatus?.() ?? "disabled",
         });
         return;
       }

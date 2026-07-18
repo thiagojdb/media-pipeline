@@ -21,6 +21,8 @@
     "prerender:smoke": "npm run build",
     "render:smoke": "npm run render:smoke --workspace @relay/worker",
     "isolation:smoke": "npm run isolation:smoke --workspace @relay/worker",
+    "authoring:smoke": "npm run authoring:smoke --workspace @relay/worker",
+    "pi:smoke": "npm run pi:smoke --workspace @relay/worker",
     "build": "npm run build:packages && npm run build --workspace @relay/worker && npm run build --workspace @relay/web",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"
   },
@@ -29,6 +31,7 @@
     "@types/node": "^24.10.1",
     "concurrently": "^10.0.3",
     "convex": "^1.42.3",
+    "convex-test": "^0.0.54",
     "eslint": "^9.39.2",
     "eslint-config-next": "16.2.10",
     "prettier": "^3.9.0",

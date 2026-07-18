@@ -44,13 +44,16 @@ describe("worker HTTP boundary", () => {
       service: "relay-worker",
       status: "ready",
       componentBuilds: "disabled",
+      authoring: "disabled",
     });
   });
 
   it("reports the live component-build control-loop state", async () => {
     let componentBuildState: "running" | "degraded" = "running";
+    let authoringState: "running" | "degraded" = "running";
     const server = createWorkerServer({
       componentBuildStatus: () => componentBuildState,
+      authoringStatus: () => authoringState,
     }).listen(0, "127.0.0.1");
     servers.add(server);
     await new Promise<void>((resolve) => server.once("listening", resolve));
@@ -59,11 +62,14 @@ describe("worker HTTP boundary", () => {
     let response = await fetch(`http://127.0.0.1:${port}/health`);
     await expect(response.json()).resolves.toMatchObject({
       componentBuilds: "running",
+      authoring: "running",
     });
     componentBuildState = "degraded";
+    authoringState = "degraded";
     response = await fetch(`http://127.0.0.1:${port}/health`);
     await expect(response.json()).resolves.toMatchObject({
       componentBuilds: "degraded",
+      authoring: "degraded",
     });
   });
 
