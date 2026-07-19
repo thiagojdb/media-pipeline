@@ -20,6 +20,7 @@ export default defineSchema({
       v.literal("authoring"),
       v.literal("review"),
     ),
+    selectedBaseVersionId: v.optional(v.id("componentVersions")),
     themeJson: v.string(),
     sessionRef: v.optional(v.string()),
     contextTokens: v.optional(v.number()),

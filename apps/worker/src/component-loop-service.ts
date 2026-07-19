@@ -16,6 +16,11 @@ const themeSchema = z.object({
   fonts: z.object({ heading: z.string().trim().min(1).max(100) }),
   spacing: z.object({}).optional().default({}),
 });
+const defaultTheme = {
+  colors: { accent: "#ef4444", background: "#07111f" },
+  fonts: { heading: "Arial, sans-serif" },
+  spacing: {},
+};
 
 export class ComponentLoopRequestError extends Error {
   constructor(
@@ -109,6 +114,69 @@ export class ComponentLoopService {
     return { messageId: assistantMessageId };
   }
 
+  async library(): Promise<unknown> {
+    return this.#client.query(
+      api.componentReview!.listLibrary as never,
+      {
+        workerToken: this.token,
+        channelId,
+      } as never,
+    );
+  }
+
+  async libraryComponent(componentId: string): Promise<unknown> {
+    const component = await this.#client.query(
+      api.componentReview!.getLibraryComponent as never,
+      {
+        workerToken: this.token,
+        channelId,
+        componentId: bounded(componentId, "componentId", 200),
+      } as never,
+    );
+    if (!component)
+      throw new ComponentLoopRequestError(
+        "component_not_found",
+        "Approved channel component was not found.",
+        404,
+      );
+    return component;
+  }
+
+  async startRevisionConversation(
+    versionId: string,
+  ): Promise<{ threadId: string }> {
+    const version = (await this.#client.query(
+      api.componentReview!.getVersionSummary as never,
+      {
+        workerToken: this.token,
+        versionId: bounded(versionId, "versionId", 200),
+      } as never,
+    )) as {
+      id?: string;
+      _id?: string;
+      themeJson?: string;
+    } | null;
+    if (!version)
+      throw new ComponentLoopRequestError(
+        "version_not_found",
+        "Approved version was not found.",
+        404,
+      );
+    const threadId = `loop-${randomUUID()}`;
+    await this.#client.mutation(
+      api.componentConversation!.startFromVersion as never,
+      {
+        workerToken: this.token,
+        channelId,
+        threadId,
+        assistantMessageId: `message-${randomUUID()}`,
+        versionId: version._id ?? version.id ?? versionId,
+        themeJson: version.themeJson ?? JSON.stringify(defaultTheme),
+      } as never,
+    );
+    return { threadId };
+  }
+
   async status(threadId: string): Promise<unknown> {
     const [status, conversation] = (await Promise.all([
       this.#client.query(
@@ -133,6 +201,7 @@ export class ComponentLoopService {
         thread: {
           phase: string;
           themeJson: string;
+          selectedBaseVersionId?: string;
           sessionRef?: string;
           contextTokens?: number;
           contextWindow?: number;
@@ -154,10 +223,36 @@ export class ComponentLoopService {
         "This Relay conversation is unavailable. Start a new chat or open a valid conversation link.",
         404,
       );
+    const selectedBaseVersion = conversation.thread.selectedBaseVersionId
+      ? ((await this.#client.query(
+          api.componentReview!.getVersionSummary as never,
+          {
+            workerToken: this.token,
+            versionId: conversation.thread.selectedBaseVersionId,
+          } as never,
+        )) as {
+          _id: string;
+          componentId: string;
+          version: string;
+          sourceHash: string;
+          originThreadId: string;
+          approvedAt: number;
+        } | null)
+      : null;
     return {
       ...status,
       phase: conversation.thread.phase,
       messages: conversation.messages,
+      selectedBaseVersion: selectedBaseVersion
+        ? {
+            id: selectedBaseVersion._id,
+            componentId: selectedBaseVersion.componentId,
+            version: selectedBaseVersion.version,
+            sourceHash: selectedBaseVersion.sourceHash,
+            originThreadId: selectedBaseVersion.originThreadId,
+            approvedAt: selectedBaseVersion.approvedAt,
+          }
+        : undefined,
       theme: JSON.parse(conversation.thread.themeJson) as unknown,
       context: {
         usedTokens: conversation.thread.contextTokens,
@@ -231,7 +326,7 @@ export class ComponentLoopService {
       ),
     ])) as [
       {
-        thread: { sessionRef?: string };
+        thread: { sessionRef?: string; selectedBaseVersionId?: string };
         messages: Array<{ role: "user" | "assistant"; content: string }>;
       },
       {
@@ -241,6 +336,15 @@ export class ComponentLoopService {
         versions: Array<{ version: string }>;
       },
     ];
+    const selectedBaseVersion = conversation.thread.selectedBaseVersionId
+      ? ((await this.#client.query(
+          api.componentReview!.getVersionSummary as never,
+          {
+            workerToken: this.token,
+            versionId: conversation.thread.selectedBaseVersionId,
+          } as never,
+        )) as { componentId: string; version: string } | null)
+      : null;
     const result = await this.dialogueAgent.run({
       ...(conversation.thread.sessionRef
         ? { sessionRef: conversation.thread.sessionRef }
@@ -248,7 +352,7 @@ export class ComponentLoopService {
       history: conversation.messages
         .filter((message) => message.content)
         .map(({ role, content }) => ({ role, content })),
-      workState: summarizeCurrentWork(currentWork),
+      workState: summarizeCurrentWork(currentWork, selectedBaseVersion),
       onTextDelta: async (delta) => {
         await this.#client.mutation(
           api.componentConversation!.appendDelta as never,
@@ -354,17 +458,30 @@ export class ComponentLoopService {
     theme: z.infer<typeof themeSchema>,
     sessionRef?: string,
   ) {
-    const status = (await this.#client.query(
-      api.componentLoop!.status as never,
+    const [status, conversation] = (await Promise.all([
+      this.#client.query(
+        api.componentLoop!.status as never,
+        {
+          workerToken: this.token,
+          channelId,
+          threadId,
+        } as never,
+      ),
+      this.#client.query(
+        api.componentConversation!.get as never,
+        {
+          workerToken: this.token,
+          channelId,
+          threadId,
+        } as never,
+      ),
+    ])) as [
       {
-        workerToken: this.token,
-        channelId,
-        threadId,
-      } as never,
-    )) as {
-      candidates: Array<{ id: string; status: string }>;
-      versions: Array<{ id: string }>;
-    };
+        candidates: Array<{ id: string; status: string }>;
+        versions: Array<{ id: string }>;
+      },
+      { thread: { selectedBaseVersionId?: string } } | null,
+    ];
     const candidate = status.candidates
       .filter((item) =>
         ["reviewable", "changes_requested"].includes(item.status),
@@ -376,6 +493,14 @@ export class ComponentLoopService {
         ...(candidate
           ? { candidateId: candidate.id }
           : { versionId: version!.id }),
+        prompt: brief,
+        theme,
+      });
+      return;
+    }
+    if (conversation?.thread.selectedBaseVersionId) {
+      await this.revise(threadId, {
+        versionId: conversation.thread.selectedBaseVersionId,
         prompt: brief,
         theme,
       });
@@ -614,12 +739,15 @@ function sha(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function summarizeCurrentWork(status: {
-  turns: Array<{ state: string; terminalMessage?: string }>;
-  builds: Array<{ state: string; failureMessage?: string }>;
-  candidates: Array<{ status: string; version: string }>;
-  versions: Array<{ version: string }>;
-}): string {
+function summarizeCurrentWork(
+  status: {
+    turns: Array<{ state: string; terminalMessage?: string }>;
+    builds: Array<{ state: string; failureMessage?: string }>;
+    candidates: Array<{ status: string; version: string }>;
+    versions: Array<{ version: string }>;
+  },
+  selectedBaseVersion?: { componentId: string; version: string } | null,
+): string {
   const turn = status.turns.at(-1);
   const build = status.builds.at(-1);
   const candidate = status.candidates.at(-1);
@@ -635,5 +763,8 @@ function summarizeCurrentWork(status: {
       ? { state: candidate.status, version: candidate.version }
       : null,
     approvedVersion: version?.version ?? null,
+    selectedBaseVersion: selectedBaseVersion
+      ? `${selectedBaseVersion.componentId}@${selectedBaseVersion.version}`
+      : null,
   });
 }

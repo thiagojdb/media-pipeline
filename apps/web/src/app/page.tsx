@@ -39,6 +39,12 @@ export default function Home() {
           </a>
         </Button>
         <Button asChild variant="outline">
+          <a href="/components">
+            Open component library
+            <ArrowUpRight aria-hidden="true" />
+          </a>
+        </Button>
+        <Button asChild variant="outline">
           <a href="/components/animated-line-chart/versions/1.0.0/preview">
             Preview the line chart
             <ArrowUpRight aria-hidden="true" />

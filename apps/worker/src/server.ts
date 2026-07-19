@@ -148,6 +148,32 @@ async function handleComponentLoop(
     sendJson(response, 202, await service.start(await readJson(request)));
     return;
   }
+  if (request.method === "GET" && url.pathname === "/component-loop/library") {
+    sendJson(response, 200, await service.library());
+    return;
+  }
+  const libraryComponent = url.pathname.match(
+    /^\/component-loop\/library\/([^/]+)$/,
+  );
+  if (request.method === "GET" && libraryComponent) {
+    sendJson(
+      response,
+      200,
+      await service.libraryComponent(decodeURIComponent(libraryComponent[1]!)),
+    );
+    return;
+  }
+  const revisionConversation = url.pathname.match(
+    /^\/component-loop\/versions\/([^/]+)\/revision-thread$/,
+  );
+  if (request.method === "POST" && revisionConversation) {
+    sendJson(
+      response,
+      201,
+      await service.startRevisionConversation(revisionConversation[1]!),
+    );
+    return;
+  }
   const thread = url.pathname.match(
     /^\/component-loop\/threads\/([^/]+)(?:\/(revisions|messages))?$/,
   );

@@ -200,6 +200,101 @@ export const listVersions = query({
   },
 });
 
+export const listLibrary = query({
+  args: { workerToken: v.string(), channelId: v.string() },
+  handler: async (ctx, args) => {
+    authorize(args.workerToken);
+    const components = await ctx.db
+      .query("components")
+      .withIndex("by_channel_component", (q) =>
+        q.eq("channelId", args.channelId),
+      )
+      .collect();
+    const items = await Promise.all(
+      components.map(async (component) => {
+        if (!component.latestApprovedVersionId) return null;
+        const latest = await ctx.db.get(component.latestApprovedVersionId);
+        if (!latest) return null;
+        const [build, versions] = await Promise.all([
+          ctx.db.get(latest.buildJobId),
+          ctx.db
+            .query("componentVersions")
+            .withIndex("by_channel_component_approved", (q) =>
+              q
+                .eq("channelId", args.channelId)
+                .eq("componentId", component.componentId),
+            )
+            .collect(),
+        ]);
+        const fixtures = JSON.parse(latest.fixturesJson) as Array<{
+          id: string;
+          checkpoints?: Array<{ frame: number }>;
+        }>;
+        return {
+          id: component._id,
+          componentId: component.componentId,
+          updatedAt: component.updatedAt,
+          versionCount: versions.length,
+          latestVersion: libraryVersion(latest, build?.threadId, fixtures),
+        };
+      }),
+    );
+    return items
+      .filter((item) => item !== null)
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+  },
+});
+
+export const getLibraryComponent = query({
+  args: {
+    workerToken: v.string(),
+    channelId: v.string(),
+    componentId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    authorize(args.workerToken);
+    const componentId = bounded(args.componentId, "componentId", 200);
+    const component = await ctx.db
+      .query("components")
+      .withIndex("by_channel_component", (q) =>
+        q.eq("channelId", args.channelId).eq("componentId", componentId),
+      )
+      .unique();
+    if (!component?.latestApprovedVersionId) return null;
+    const versions = await ctx.db
+      .query("componentVersions")
+      .withIndex("by_channel_component_approved", (q) =>
+        q.eq("channelId", args.channelId).eq("componentId", componentId),
+      )
+      .order("desc")
+      .collect();
+    const details = await Promise.all(
+      versions.map(async (version) => {
+        const build = await ctx.db.get(version.buildJobId);
+        const fixtures = JSON.parse(version.fixturesJson) as Array<{
+          id: string;
+          name?: string;
+          checkpoints?: Array<{ frame: number }>;
+        }>;
+        return {
+          ...libraryVersion(version, build?.threadId, fixtures),
+          fixtures,
+          dimensions: JSON.parse(version.dimensionsJson) as unknown,
+          previousVersionId: version.previousVersionId,
+        };
+      }),
+    );
+    return {
+      id: component._id,
+      componentId: component.componentId,
+      latestApprovedVersionId: component.latestApprovedVersionId,
+      createdAt: component.createdAt,
+      updatedAt: component.updatedAt,
+      versions: details,
+    };
+  },
+});
+
 export const getVersion = query({
   args: { workerToken: v.string(), versionId: v.id("componentVersions") },
   handler: async (ctx, { workerToken, versionId }) => {
@@ -209,7 +304,45 @@ export const getVersion = query({
     const build = await ctx.db.get(version.buildJobId);
     if (!build || build.state !== "succeeded")
       throw new Error("Approved version source is unavailable.");
-    return { ...version, sourceSnapshot: build.sourceSnapshot };
+    const conversation = await ctx.db
+      .query("componentConversationThreads")
+      .withIndex("by_channel_thread", (q) =>
+        q.eq("channelId", version.channelId).eq("threadId", build.threadId),
+      )
+      .unique();
+    return {
+      ...version,
+      sourceSnapshot: build.sourceSnapshot,
+      originThreadId: build.threadId,
+      themeJson: conversation?.themeJson,
+    };
+  },
+});
+
+export const getVersionSummary = query({
+  args: { workerToken: v.string(), versionId: v.id("componentVersions") },
+  handler: async (ctx, { workerToken, versionId }) => {
+    authorize(workerToken);
+    const version = await ctx.db.get(versionId);
+    if (!version) return null;
+    const build = await ctx.db.get(version.buildJobId);
+    if (!build || build.state !== "succeeded")
+      throw new Error("Approved version is unavailable.");
+    const conversation = await ctx.db
+      .query("componentConversationThreads")
+      .withIndex("by_channel_thread", (q) =>
+        q.eq("channelId", version.channelId).eq("threadId", build.threadId),
+      )
+      .unique();
+    return {
+      _id: version._id,
+      componentId: version.componentId,
+      version: version.version,
+      sourceHash: version.sourceHash,
+      approvedAt: version.approvedAt,
+      originThreadId: build.threadId,
+      themeJson: conversation?.themeJson,
+    };
   },
 });
 
@@ -527,6 +660,27 @@ async function requireCandidate(
   const candidate = await ctx.db.get(candidateId);
   if (!candidate) throw new Error("Component candidate was not found.");
   return candidate;
+}
+
+function libraryVersion(
+  version: Doc<"componentVersions">,
+  originThreadId: string | undefined,
+  fixtures: Array<{
+    id: string;
+    checkpoints?: Array<{ frame: number }>;
+  }>,
+) {
+  const fixture = fixtures[0];
+  return {
+    id: version._id,
+    version: version.version,
+    approvedAt: version.approvedAt,
+    sourceHash: version.sourceHash,
+    fixtureCount: fixtures.length,
+    previewFixtureId: fixture?.id,
+    previewFrame: fixture?.checkpoints?.at(-1)?.frame ?? 0,
+    originThreadId,
+  };
 }
 
 function candidateDetails(candidate: Doc<"componentCandidates">) {

@@ -71,6 +71,8 @@ These are React/Remotion video components, not shadcn application-interface comp
 
 Each component declares structured inputs, fixtures, timing behavior, supported dimensions, asset needs, and preview checkpoints. Projects use an exact component version with project-specific inputs. Later component revisions do not silently change an existing project.
 
+Approved components appear in the owning channel's reusable component library, grouped by stable component identity with immutable version history. From an exact approved version, a creator can return to the conversation that produced it or open a fresh revision conversation. A fresh revision chat names and pins its selected base immediately, while leaving the approved source untouched unless a validated successor is explicitly approved.
+
 ## Component-authoring workflow
 
 The central product loop is:
@@ -86,6 +88,7 @@ The central product loop is:
 9. The creator exercises fixtures, changes inputs, and inspects arbitrary frames.
 10. The creator approves, rejects, or asks for another revision in the same conversation.
 11. Approval creates an immutable version available to channel projects.
+12. The approved version appears in the channel component library for later inspection, reuse, or revision.
 
 The conversation has a shareable thread URL and reopens after a browser reload with its messages, activity, candidates, approved versions, and channel theme intact. “New chat” starts a fresh browser conversation without deleting the durable prior thread.
 

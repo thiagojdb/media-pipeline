@@ -27,6 +27,49 @@ export const start = mutation({
   },
 });
 
+export const startFromVersion = mutation({
+  args: {
+    workerToken: v.string(),
+    channelId: v.string(),
+    threadId: v.string(),
+    assistantMessageId: v.string(),
+    versionId: v.id("componentVersions"),
+    themeJson: v.string(),
+  },
+  handler: async (ctx, args) => {
+    authorize(args.workerToken);
+    const channelId = bounded(args.channelId, 200);
+    const threadId = bounded(args.threadId, 200);
+    const version = await ctx.db.get(args.versionId);
+    if (!version || version.channelId !== channelId)
+      throw new Error("Selected approved component version was not found.");
+    const existing = await threadFor(ctx, channelId, threadId);
+    if (existing) throw new Error("Conversation thread already exists.");
+    const now = Date.now();
+    await ctx.db.insert("componentConversationThreads", {
+      channelId,
+      threadId,
+      phase: "dialogue",
+      selectedBaseVersionId: version._id,
+      themeJson: bounded(args.themeJson, 64_000),
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("componentConversationMessages", {
+      channelId,
+      threadId,
+      messageId: bounded(args.assistantMessageId, 200),
+      role: "assistant",
+      state: "complete",
+      content: `I’m ready to help revise ${version.componentId}@${version.version}. Tell me what you want to change, and I’ll keep this approved version untouched while we work.`,
+      safeStatus:
+        "Fresh revision conversation opened from an exact approved version.",
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
 export const addTurn = mutation({
   args: {
     workerToken: v.string(),

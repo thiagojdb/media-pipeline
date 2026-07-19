@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { type ChannelTheme } from "@relay/component-sdk";
 import {
   AlertTriangle,
+  Boxes,
   Check,
   ChevronDown,
   LoaderCircle,
@@ -87,6 +88,14 @@ type LoopStatus = {
   authoringMode: "fake" | "real";
   model?: string;
   theme?: ChannelTheme;
+  selectedBaseVersion?: {
+    id: string;
+    componentId: string;
+    version: string;
+    sourceHash: string;
+    originThreadId: string;
+    approvedAt: number;
+  };
   phase: "dialogue" | "authoring" | "review";
   messages: ConversationMessage[];
   turns: Turn[];
@@ -256,6 +265,23 @@ export function ComponentLoopWorkspace() {
   };
 
   const canSend = Boolean(draft.trim()) && !busy && !working;
+  const visibleVersions = status?.selectedBaseVersion
+    ? [
+        ...status.versions,
+        ...(status.versions.some(
+          (version) => version.id === status.selectedBaseVersion?.id,
+        )
+          ? []
+          : [
+              {
+                id: status.selectedBaseVersion.id,
+                componentId: status.selectedBaseVersion.componentId,
+                version: status.selectedBaseVersion.version,
+                approvedAt: status.selectedBaseVersion.approvedAt,
+              },
+            ]),
+      ]
+    : (status?.versions ?? []);
   const newChat = () => {
     forgetThread();
     restoredThemeThread.current = undefined;
@@ -281,6 +307,11 @@ export function ComponentLoopWorkspace() {
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
+            <Button asChild size="sm" variant="ghost">
+              <a href="/components">
+                <Boxes /> Library
+              </a>
+            </Button>
             {threadId && (
               <Button onClick={newChat} size="sm" variant="outline">
                 New chat
@@ -369,9 +400,11 @@ export function ComponentLoopWorkspace() {
                 placeholder={
                   working
                     ? "Relay is responding…"
-                    : status?.versions.length
-                      ? "Talk through the next revision…"
-                      : "Talk with Relay about what you want to build…"
+                    : status?.selectedBaseVersion
+                      ? "Describe what you want to change…"
+                      : status?.versions.length
+                        ? "Talk through the next revision…"
+                        : "Talk with Relay about what you want to build…"
                 }
                 value={draft}
               />
@@ -407,7 +440,7 @@ export function ComponentLoopWorkspace() {
             onBackground={setBackground}
             onFont={setFont}
           />
-          <VersionHistory versions={status?.versions ?? []} />
+          <VersionHistory versions={visibleVersions} />
         </aside>
       </div>
     </main>
@@ -458,6 +491,26 @@ function Conversation({
   ].sort((left, right) => left.createdAt - right.createdAt);
   return (
     <div className="space-y-9">
+      {status.selectedBaseVersion ? (
+        <section className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-950">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <strong>Fresh revision chat</strong>
+              <p className="mt-1 text-xs text-indigo-700">
+                Based on exact approved {status.selectedBaseVersion.componentId}
+                @{status.selectedBaseVersion.version}. The approved source stays
+                untouched until you approve a successor.
+              </p>
+            </div>
+            <a
+              className="text-xs font-medium underline underline-offset-4"
+              href={`/components/${encodeURIComponent(status.selectedBaseVersion.componentId)}?version=${status.selectedBaseVersion.id}`}
+            >
+              View base version
+            </a>
+          </div>
+        </section>
+      ) : null}
       {timeline.map((item) => {
         if (item.kind === "message")
           return <ChatMessage key={item.message._id} message={item.message} />;

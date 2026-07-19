@@ -225,6 +225,86 @@ describe("component review and immutable version lifecycle", () => {
     expect(turn?.priorSummaries[0]).toContain("animated-line-chart@1.0.0");
   });
 
+  it("lists only approved channel components and opens a fresh pinned revision conversation", async () => {
+    const t = convexTest(schema, modules);
+    const approvedCandidate = await validatedCandidate(t, {
+      turnId: "library-approved",
+      source: "export default 'library-approved';",
+      version: "1.0.0",
+      inputSchemaJson: '{"type":"object"}',
+    });
+    const versionId = await t.mutation(api.componentReview.approve, {
+      workerToken: loopWorkerToken,
+      candidateId: approvedCandidate,
+    });
+    await validatedCandidate(t, {
+      turnId: "library-reviewable",
+      source: "export default 'library-reviewable';",
+      version: "1.1.0",
+      inputSchemaJson: '{"type":"object"}',
+      baseVersionId: versionId,
+    });
+
+    const library = await t.query(api.componentReview.listLibrary, {
+      workerToken: loopWorkerToken,
+      channelId: "channel-review",
+    });
+    expect(library).toHaveLength(1);
+    expect(library[0]).toMatchObject({
+      componentId: "animated-line-chart",
+      versionCount: 1,
+      latestVersion: {
+        id: versionId,
+        version: "1.0.0",
+        fixtureCount: 1,
+        previewFixtureId: "default",
+        previewFrame: 119,
+        originThreadId: "thread-review",
+      },
+    });
+    const detail = await t.query(api.componentReview.getLibraryComponent, {
+      workerToken: loopWorkerToken,
+      channelId: "channel-review",
+      componentId: "animated-line-chart",
+    });
+    expect(detail?.versions).toHaveLength(1);
+    const summary = await t.query(api.componentReview.getVersionSummary, {
+      workerToken: loopWorkerToken,
+      versionId,
+    });
+    expect(summary).toMatchObject({
+      componentId: "animated-line-chart",
+      version: "1.0.0",
+      originThreadId: "thread-review",
+    });
+    expect(summary).not.toHaveProperty("sourceSnapshot");
+
+    await t.mutation(api.componentConversation.startFromVersion, {
+      workerToken: loopWorkerToken,
+      channelId: "channel-review",
+      threadId: "fresh-library-revision",
+      assistantMessageId: "selected-base-intro",
+      versionId,
+      themeJson: '{"colors":{"accent":"#ef4444"}}',
+    });
+    const conversation = await t.query(api.componentConversation.get, {
+      workerToken: loopWorkerToken,
+      channelId: "channel-review",
+      threadId: "fresh-library-revision",
+    });
+    expect(conversation?.thread.selectedBaseVersionId).toBe(versionId);
+    expect(conversation?.messages).toEqual([
+      expect.objectContaining({
+        role: "assistant",
+        state: "complete",
+        content: expect.stringContaining("animated-line-chart@1.0.0"),
+      }),
+    ]);
+    await expect(
+      t.run(async (ctx) => ctx.db.query("authoringTurns").collect()),
+    ).resolves.toHaveLength(0);
+  });
+
   it("records changes requested without approving or mutating another version", async () => {
     const t = convexTest(schema, modules);
     const candidateId = await validatedCandidate(t, {

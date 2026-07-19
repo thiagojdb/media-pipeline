@@ -8,7 +8,7 @@ Relay expands one working vertical slice at a time. A milestone is complete only
 
 Issue completion, generated code volume, passing isolated tests, or an agent’s success claim is not sufficient evidence by itself.
 
-Only Foundation and Dependable Component Loop are decomposed into implementation issues now. Later milestones remain outcome-level to avoid another speculative backlog.
+Foundation and Dependable Component Loop are fully decomposed. M2 begins with one proven bridge issue for the channel component library; its remaining work stays outcome-level until that reusable boundary is exercised.
 
 ## M0 — Foundation
 
@@ -130,6 +130,7 @@ This order separates SDK/rendering defects from agent defects. Pi should not be 
 ## M2 — Source-to-Draft Video
 
 **Linear milestone:** Source-to-Draft Video
+**Active issue:** MED-141 — Build the channel component library and revision chat entrypoints
 
 ### Outcome
 
@@ -137,6 +138,7 @@ A channel member can create a project, add source material, produce or import sc
 
 ### Expected scope
 
+- Approved channel component library, immutable version history, and fresh exact-version revision chats
 - Channel and membership-backed projects
 - Basic URL and file sources
 - Script editing or import
