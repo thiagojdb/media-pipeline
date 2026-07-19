@@ -56,6 +56,7 @@ export async function forwardWorkerRequest(
     for (const name of [
       "content-disposition",
       "content-length",
+      "content-security-policy",
       "content-type",
       "x-content-type-options",
     ]) {

@@ -21,6 +21,29 @@ export const getCandidate = query({
   },
 });
 
+export const getCandidateArtifact = query({
+  args: { workerToken: v.string(), candidateId: v.id("componentCandidates") },
+  handler: async (ctx, { workerToken, candidateId }) => {
+    authorize(workerToken);
+    const candidate = await ctx.db.get(candidateId);
+    if (!candidate) return null;
+    const build = await ctx.db.get(candidate.buildJobId);
+    if (!build || build.state !== "succeeded")
+      throw new Error("Validated candidate source is unavailable.");
+    return {
+      id: candidate._id,
+      componentId: candidate.componentId,
+      version: candidate.declaredVersion,
+      status: candidate.status,
+      sourceHash: candidate.sourceHash,
+      candidateRef: candidate.candidateRef,
+      sourceSnapshot: build.sourceSnapshot,
+      fixtures: JSON.parse(candidate.fixturesJson) as unknown,
+      dimensions: JSON.parse(candidate.dimensionsJson) as unknown,
+    };
+  },
+});
+
 export const listCandidates = query({
   args: {
     workerToken: v.string(),
@@ -57,6 +80,28 @@ export const approve = mutation({
     if (existing) return existing._id;
     if (candidate.status !== "reviewable")
       throw new Error("Only a reviewable candidate can be approved.");
+    const candidateBuild = await ctx.db.get(candidate.buildJobId);
+    if (!candidateBuild) throw new Error("Candidate build is unavailable.");
+    const successor = (
+      await ctx.db
+        .query("componentBuildJobs")
+        .withIndex("by_channel_thread_created", (q) =>
+          q
+            .eq("channelId", candidate.channelId)
+            .eq("threadId", candidateBuild.threadId),
+        )
+        .order("desc")
+        .take(100)
+    ).find(
+      (build) =>
+        build.parentCandidateId === String(candidate._id) &&
+        build.state === "succeeded" &&
+        build.candidateId,
+    );
+    if (successor)
+      throw new Error(
+        "This candidate has a validated successor; review and approve the successor instead.",
+      );
     if (candidate.compatibilityWarning && !args.acknowledgeCompatibilityWarning)
       throw new Error(
         "Acknowledge the input-schema compatibility warning before approval.",
@@ -336,6 +381,124 @@ export const enqueueRevision = mutation({
       kind: "revision_enqueued",
       state: "queued",
       message: `Revision queued from exact approved ${version.componentId}@${version.version}.`,
+    });
+    return authoringTurnId;
+  },
+});
+
+export const enqueueCandidateRevision = mutation({
+  args: {
+    workerToken: v.string(),
+    candidateId: v.id("componentCandidates"),
+    threadId: v.string(),
+    turnId: v.string(),
+    userRequest: v.string(),
+    acceptanceCriteria: v.array(v.string()),
+    channelThemeJson: v.string(),
+    assetsMetadataJson: v.string(),
+    ...budgets,
+  },
+  handler: async (ctx, args) => {
+    authorize(args.workerToken);
+    const candidate = await requireCandidate(ctx, args.candidateId);
+    if (!["reviewable", "changes_requested"].includes(candidate.status))
+      throw new Error("Only a working candidate can be revised.");
+    const build = await ctx.db.get(candidate.buildJobId);
+    if (!build || build.state !== "succeeded")
+      throw new Error("Selected candidate source is unavailable.");
+    const threadId = bounded(args.threadId, "threadId", 200);
+    const turnId = bounded(args.turnId, "turnId", 200);
+    const userRequest = bounded(args.userRequest, "userRequest", 8_000);
+    rejectCredentialText(userRequest, "userRequest");
+    if (args.acceptanceCriteria.length > 30)
+      throw new Error("Too many acceptance criteria.");
+    args.acceptanceCriteria.forEach((item) => {
+      const criterion = bounded(item, "acceptanceCriterion", 1_000);
+      rejectCredentialText(criterion, "acceptanceCriterion");
+    });
+    const channelThemeJson = bounded(
+      args.channelThemeJson,
+      "channelThemeJson",
+      64_000,
+    );
+    const assetsMetadataJson = bounded(
+      args.assetsMetadataJson,
+      "assetsMetadataJson",
+      64_000,
+    );
+    rejectCredentialObject(parseJson(channelThemeJson, "channelThemeJson"));
+    rejectCredentialObject(parseJson(assetsMetadataJson, "assetsMetadataJson"));
+    validateBudgets(args);
+    const existing = await ctx.db
+      .query("authoringTurns")
+      .withIndex("by_channel_thread_turn", (q) =>
+        q
+          .eq("channelId", candidate.channelId)
+          .eq("threadId", threadId)
+          .eq("turnId", turnId),
+      )
+      .unique();
+    if (existing) return existing._id;
+    const now = Date.now();
+    const thread = await ctx.db
+      .query("authoringThreads")
+      .withIndex("by_channel_thread", (q) =>
+        q.eq("channelId", candidate.channelId).eq("threadId", threadId),
+      )
+      .unique();
+    if (!thread) {
+      await ctx.db.insert("authoringThreads", {
+        channelId: candidate.channelId,
+        threadId,
+        createdAt: now,
+        updatedAt: now,
+        latestTurnId: turnId,
+      });
+    } else {
+      await ctx.db.patch(thread._id, { updatedAt: now, latestTurnId: turnId });
+    }
+    const previous = await ctx.db
+      .query("authoringTurns")
+      .withIndex("by_channel_thread_created", (q) =>
+        q.eq("channelId", candidate.channelId).eq("threadId", threadId),
+      )
+      .order("desc")
+      .first();
+    const authoringTurnId = await ctx.db.insert("authoringTurns", {
+      channelId: candidate.channelId,
+      threadId,
+      turnId,
+      rootTurnId: turnId,
+      repairAttempt: 0,
+      maxRepairAttempts: 2,
+      userRequest,
+      acceptanceCriteria: args.acceptanceCriteria,
+      baseSource: build.sourceSnapshot,
+      baseSourceHash: candidate.sourceHash,
+      parentCandidateId: String(candidate._id),
+      baseSnapshotId: candidate.baseVersionId
+        ? String(candidate.baseVersionId)
+        : undefined,
+      channelThemeJson,
+      assetsMetadataJson,
+      priorSummaries: [
+        `Revise exact validated candidate ${candidate.componentId}@${candidate.declaredVersion} (${candidate.sourceHash}).`,
+      ],
+      state: "queued",
+      attempt: 0,
+      maxAttempts: 1,
+      cancelRequested: false,
+      createdAt: now,
+      updatedAt: now,
+      sessionRef: previous?.sessionRef,
+      ...pickBudgets(args),
+    });
+    await ctx.db.insert("authoringEvents", {
+      turnId: authoringTurnId,
+      createdAt: now,
+      kind: "candidate_revision_enqueued",
+      state: "queued",
+      message: `Revision queued from validated candidate ${candidate.componentId}@${candidate.declaredVersion}.`,
     });
     return authoringTurnId;
   },

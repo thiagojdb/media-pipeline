@@ -244,6 +244,8 @@ export const status = query({
         componentId: candidate.componentId,
         version: candidate.declaredVersion,
         status: candidate.status,
+        sourceHash: candidate.sourceHash,
+        candidateRef: candidate.candidateRef,
         versionAlreadyApproved: approvedVersions.has(candidate.declaredVersion),
         baseVersionId: candidate.baseVersionId,
         compatibilityWarning: candidate.compatibilityWarning,

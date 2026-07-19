@@ -81,7 +81,7 @@ export class DeterministicFakeAuthoringAgent implements AuthoringAgent {
       .digest("hex")
       .slice(0, 12);
     const candidate = turn.userRequest.includes("[FAKE_LINE_CHART_REVISION]")
-      ? prepareFakeRevisionCandidate(base)
+      ? prepareFakeRevisionCandidate(base, turn.userRequest)
       : base;
     await tools.replaceCandidate(
       `${candidate.trimEnd()}\n// Relay deterministic authoring turn ${requestHash}\n`,
@@ -102,7 +102,10 @@ export class DeterministicFakeAuthoringAgent implements AuthoringAgent {
   }
 }
 
-export function prepareFakeRevisionCandidate(base: string): string {
+export function prepareFakeRevisionCandidate(
+  base: string,
+  request = "",
+): string {
   const version = base.match(/version:\s*"(\d+)\.(\d+)\.(\d+)"/);
   if (!version)
     throw new Error("Fake revision base must declare a semantic version.");
@@ -112,10 +115,22 @@ export function prepareFakeRevisionCandidate(base: string): string {
     /compatibility:\s*\{ mode: "(?:initial|backward-compatible)"(?:, previousVersion: "[^"]+")? \}/;
   if (!compatibility.test(base))
     throw new Error("Fake revision base must declare compatibility metadata.");
-  return base
+  let candidate = base
     .replace(version[0], `version: "${successor}"`)
     .replace(
       compatibility,
       `compatibility: { mode: "backward-compatible", previousVersion: "${current}" }`,
     );
+  if (/\bpurple\b/i.test(request)) {
+    candidate = candidate.replace(
+      'colors.chartPrimary ?? colors.primary ?? "#38bdf8"',
+      'colors.chartPrimary ?? colors.primary ?? "#a855f7"',
+    );
+  } else if (/\bred\b/i.test(request)) {
+    candidate = candidate.replace(
+      /colors\.chartPrimary \?\? colors\.primary \?\? "#[0-9a-fA-F]{6}"/,
+      'colors.chartPrimary ?? colors.primary ?? "#ef4444"',
+    );
+  }
+  return candidate;
 }

@@ -6,6 +6,8 @@ import { ConvexHttpClient } from "convex/browser";
 import { anyApi } from "convex/server";
 import { z } from "zod";
 
+import { buildCandidatePreviewHtml } from "./candidate-preview.js";
+
 const api = anyApi as Record<string, Record<string, unknown>>;
 const channelId = "relay-local-channel";
 const themeSchema = z.object({
@@ -156,9 +158,13 @@ export class ComponentLoopService {
   async revise(threadId: string, input: unknown): Promise<{ turnId: string }> {
     const value = z
       .object({
-        versionId: z.string().min(1).max(200),
+        versionId: z.string().min(1).max(200).optional(),
+        candidateId: z.string().min(1).max(200).optional(),
         prompt: z.string().trim().min(1).max(8_000),
         theme: themeSchema,
+      })
+      .refine((item) => Boolean(item.versionId) !== Boolean(item.candidateId), {
+        message: "Select exactly one working candidate or approved version.",
       })
       .parse(input);
     const turnId = `revision-${randomUUID()}`;
@@ -167,10 +173,14 @@ export class ComponentLoopService {
         ? `[FAKE_LINE_CHART_REVISION] ${value.prompt}`
         : value.prompt;
     await this.#client.mutation(
-      api.componentReview!.enqueueRevision as never,
+      api.componentReview![
+        value.candidateId ? "enqueueCandidateRevision" : "enqueueRevision"
+      ] as never,
       {
         workerToken: this.token,
-        versionId: value.versionId,
+        ...(value.candidateId
+          ? { candidateId: value.candidateId }
+          : { versionId: value.versionId }),
         threadId: bounded(threadId, "threadId", 200),
         turnId,
         userRequest,
@@ -184,6 +194,44 @@ export class ComponentLoopService {
       } as never,
     );
     return { turnId };
+  }
+
+  async candidateSource(candidateId: string): Promise<string> {
+    const artifact = await this.#candidateArtifact(candidateId);
+    return artifact.sourceSnapshot;
+  }
+
+  async candidatePreview(
+    candidateId: string,
+    options: { fixtureId?: string; frame?: number; theme?: unknown },
+  ): Promise<string> {
+    const artifact = await this.#candidateArtifact(candidateId);
+    return buildCandidatePreviewHtml(artifact, options);
+  }
+
+  async versionPreview(
+    versionId: string,
+    options: { fixtureId?: string; frame?: number; theme?: unknown },
+  ): Promise<string> {
+    const artifact = (await this.#client.query(
+      api.componentReview!.getVersion as never,
+      {
+        workerToken: this.token,
+        versionId: bounded(versionId, "versionId", 200),
+      } as never,
+    )) as {
+      componentId: string;
+      version: string;
+      sourceHash: string;
+      sourceSnapshot: string;
+    } | null;
+    if (!artifact)
+      throw new ComponentLoopRequestError(
+        "version_not_found",
+        "Approved version was not found.",
+        404,
+      );
+    return buildCandidatePreviewHtml(artifact, options);
   }
 
   #budgets() {
@@ -207,6 +255,33 @@ export class ComponentLoopService {
     )) as Array<{ _id: string }>;
     const latest = versions.at(-1);
     return latest ? { id: String(latest._id) } : undefined;
+  }
+
+  async #candidateArtifact(candidateId: string): Promise<{
+    componentId: string;
+    version: string;
+    sourceHash: string;
+    sourceSnapshot: string;
+  }> {
+    const artifact = (await this.#client.query(
+      api.componentReview!.getCandidateArtifact as never,
+      {
+        workerToken: this.token,
+        candidateId: bounded(candidateId, "candidateId", 200),
+      } as never,
+    )) as {
+      componentId: string;
+      version: string;
+      sourceHash: string;
+      sourceSnapshot: string;
+    } | null;
+    if (!artifact)
+      throw new ComponentLoopRequestError(
+        "candidate_not_found",
+        "Validated candidate was not found.",
+        404,
+      );
+    return artifact;
   }
 }
 

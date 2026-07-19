@@ -1,14 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-test("runs the deterministic creator review and revision workflow", async ({
+test("previews exact source, revises in chat, approves, and reopens the version", async ({
   page,
 }) => {
-  let candidateVersion = "1.0.0";
-  let candidateStatus = "reviewable";
+  const candidates = [candidate("candidate-1.0.0", "1.0.0")];
   const versions: Array<{ id: string; version: string; approvedAt: number }> =
     [];
 
-  await page.route("**/api/component-loop/**", async (route) => {
+  await page.context().route("**/api/component-loop/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
     if (path.endsWith("/requests")) {
@@ -18,11 +17,31 @@ test("runs the deterministic creator review and revision workflow", async ({
       });
       return;
     }
+    if (path.endsWith("/source")) {
+      const id = path.split("/").at(-2)!;
+      const item = candidates.find((value) => value.id === id)!;
+      await route.fulfill({
+        status: 200,
+        contentType: "text/plain",
+        body: `export default defineVideoComponent({ version: "${item.version}" });`,
+      });
+      return;
+    }
+    if (path.endsWith("/preview")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: '<svg role="img" aria-label="Exact generated chart"><path stroke="#a855f7" /></svg>',
+      });
+      return;
+    }
     if (path.endsWith("/approve")) {
-      candidateStatus = "approved";
+      const id = path.split("/").at(-2)!;
+      const item = candidates.find((value) => value.id === id)!;
+      item.status = "approved";
       versions.push({
-        id: `version-${candidateVersion}`,
-        version: candidateVersion,
+        id: `version-${item.version}`,
+        version: item.version,
         approvedAt: Date.now(),
       });
       await route.fulfill({
@@ -32,61 +51,103 @@ test("runs the deterministic creator review and revision workflow", async ({
       return;
     }
     if (path.endsWith("/revisions")) {
-      candidateVersion = "1.1.0";
-      candidateStatus = "reviewable";
-      await route.fulfill({ status: 202, json: { turnId: "revision-test" } });
+      candidates.push(candidate("candidate-1.1.0", "1.1.0"));
+      await route.fulfill({ status: 202, json: { turnId: "turn-1.1.0" } });
       return;
     }
     await route.fulfill({
       status: 200,
-      json: {
-        turns: [
-          {
-            id: "turn-test",
-            state: "candidate_submitted",
-            repairAttempt: 0,
-            attempt: 1,
-            modelTurns: 1,
-            toolCalls: 4,
-            inputTokens: 20,
-            outputTokens: 10,
-            wallTimeMs: 75,
-          },
-        ],
-        candidates: [
-          {
-            id: `candidate-${candidateVersion}`,
-            version: candidateVersion,
-            status: candidateStatus,
-            validationEvidence: {
-              checks: [
-                {
-                  code: "preview_runtime",
-                  status: "passed",
-                  message: "All fixture frames passed.",
-                },
-              ],
-            },
-          },
-        ],
-        versions,
-      },
+      json: status(candidates, versions),
     });
   });
 
   await page.goto("/component-loop");
-  await page.getByRole("button", { name: "Build line chart" }).click();
-  await expect(page.getByText("All fixture frames passed.")).toBeVisible();
-  await page.getByRole("button", { name: "Approve" }).click();
+  await page.getByRole("button", { name: "Send message" }).click();
+
   await expect(
-    page.getByText("animated-line-chart@1.0.0").last(),
+    page.getByTitle("Exact preview of animated line chart 1.0.0"),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Start revision" }).click();
+  await page.getByRole("button", { name: /Inspect generated source/ }).click();
+  await expect(page.getByText(/defineVideoComponent/)).toBeVisible();
+
+  await page
+    .getByRole("textbox", { name: "Message Relay" })
+    .fill("Make the primary line purple and keep the drawn-on animation.");
+  await page.getByRole("button", { name: "Send message" }).click();
+
   await expect(
-    page.getByText("animated-line-chart@1.1.0").first(),
+    page.getByTitle("Exact preview of animated line chart 1.1.0"),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Approve" }).click();
+  await expect(page.getByText(/Preserved for comparison/)).toBeVisible();
+  await page.getByRole("button", { name: "Approve version" }).click();
+  await expect(page.getByText("Version approved and saved")).toBeVisible();
+
+  const approved = page.getByRole("link", { name: "v1.1.0" });
+  await expect(approved).toHaveAttribute(
+    "href",
+    "/api/component-loop/versions/version-1.1.0/preview",
+  );
+  const popupPromise = page.waitForEvent("popup");
+  await approved.click();
+  const popup = await popupPromise;
   await expect(
-    page.getByRole("link", { name: "Preview & render" }),
-  ).toHaveCount(2);
+    popup.getByRole("img", { name: "Exact generated chart" }),
+  ).toBeVisible();
 });
+
+function candidate(id: string, version: string) {
+  return {
+    id,
+    version,
+    status: "reviewable",
+    sourceHash: version.replaceAll(".", "").padEnd(64, "a"),
+    versionAlreadyApproved: false,
+    fixtures: [
+      {
+        id: "growth",
+        name: "Channel growth",
+        checkpoints: [{ frame: 0 }, { frame: 119 }],
+      },
+    ],
+    validationEvidence: {
+      checks: [
+        {
+          code: "preview_runtime",
+          status: "passed",
+          message: "All fixture frames passed.",
+        },
+      ],
+    },
+  };
+}
+
+function status(
+  candidates: ReturnType<typeof candidate>[],
+  versions: Array<{ id: string; version: string; approvedAt: number }>,
+) {
+  return {
+    turns: candidates.map((item) => ({
+      id: `turn-${item.version}`,
+      turnId: `turn-${item.version}`,
+      userRequest:
+        item.version === "1.0.0"
+          ? "Build a line chart."
+          : "Make the primary line purple and keep the drawn-on animation.",
+      state: "candidate_submitted",
+      repairAttempt: 0,
+      modelTurns: 1,
+      toolCalls: 4,
+      inputTokens: 20,
+      outputTokens: 10,
+      wallTimeMs: 75,
+    })),
+    activities: [],
+    builds: candidates.map((item) => ({
+      turnId: `turn-${item.version}`,
+      state: "succeeded",
+      candidateId: item.id,
+    })),
+    candidates,
+    versions,
+  };
+}

@@ -118,6 +118,9 @@ export const createWorkerServer = ({
         });
         return;
       }
+      console.error(
+        `Worker request failed safely: ${(error instanceof Error ? error.message : String(error)).replaceAll(process.cwd(), "[worker]").slice(0, 1_000)}`,
+      );
       sendJson(response, 500, {
         error: "worker_error",
         message: "The worker could not process this request.",
@@ -160,6 +163,42 @@ async function handleComponentLoop(
     );
     return;
   }
+  const candidateArtifact = url.pathname.match(
+    /^\/component-loop\/candidates\/([^/]+)\/(source|preview)$/,
+  );
+  if (request.method === "GET" && candidateArtifact) {
+    if (candidateArtifact[2] === "source") {
+      sendText(
+        response,
+        200,
+        await service.candidateSource(candidateArtifact[1]!),
+        "text/plain; charset=utf-8",
+      );
+    } else {
+      sendText(
+        response,
+        200,
+        await service.candidatePreview(
+          candidateArtifact[1]!,
+          previewOptions(url),
+        ),
+        "text/html; charset=utf-8",
+      );
+    }
+    return;
+  }
+  const versionPreview = url.pathname.match(
+    /^\/component-loop\/versions\/([^/]+)\/preview$/,
+  );
+  if (request.method === "GET" && versionPreview) {
+    sendText(
+      response,
+      200,
+      await service.versionPreview(versionPreview[1]!, previewOptions(url)),
+      "text/html; charset=utf-8",
+    );
+    return;
+  }
   const candidate = url.pathname.match(
     /^\/component-loop\/candidates\/([^/]+)\/(approve|reject|request-changes)$/,
   );
@@ -180,6 +219,34 @@ async function handleComponentLoop(
     return;
   }
   sendJson(response, 405, { error: "method_not_allowed" });
+}
+
+function previewOptions(url: URL): {
+  fixtureId?: string;
+  frame?: number;
+  theme?: unknown;
+} {
+  const fixtureId = url.searchParams.get("fixture") ?? undefined;
+  const rawFrame = url.searchParams.get("frame");
+  const frame = rawFrame === null ? undefined : Number(rawFrame);
+  const rawTheme = url.searchParams.get("theme");
+  let theme: unknown;
+  if (rawTheme) {
+    try {
+      theme = JSON.parse(Buffer.from(rawTheme, "base64url").toString("utf8"));
+    } catch {
+      throw new ComponentLoopRequestError(
+        "invalid_preview_theme",
+        "Preview theme is invalid.",
+        400,
+      );
+    }
+  }
+  return {
+    ...(fixtureId ? { fixtureId: fixtureId.slice(0, 200) } : {}),
+    ...(frame !== undefined && Number.isFinite(frame) ? { frame } : {}),
+    ...(theme !== undefined ? { theme } : {}),
+  };
 }
 
 async function readJson(request: IncomingMessage): Promise<unknown> {
@@ -218,4 +285,21 @@ function sendJson(
     "content-type": "application/json; charset=utf-8",
   });
   response.end(JSON.stringify(body));
+}
+
+function sendText(
+  response: ServerResponse,
+  status: number,
+  body: string,
+  contentType: string,
+): void {
+  response.writeHead(status, {
+    "cache-control": "private, no-store",
+    "content-security-policy": contentType.startsWith("text/html")
+      ? "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; media-src data: blob:"
+      : "sandbox; default-src 'none'",
+    "content-type": contentType,
+    "x-content-type-options": "nosniff",
+  });
+  response.end(body);
 }

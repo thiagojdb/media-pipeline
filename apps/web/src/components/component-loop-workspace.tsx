@@ -1,12 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  resolveVideoComponentDuration,
-  type ChannelTheme,
-} from "@relay/component-sdk";
-import { lineChart, lineChartRevision } from "@relay/reference-components";
-import { VideoComponentFrame } from "@relay/rendering";
+import { type ChannelTheme } from "@relay/component-sdk";
 import {
   AlertTriangle,
   Check,
@@ -37,8 +32,14 @@ type Candidate = {
   id: string;
   version: string;
   status: string;
+  sourceHash: string;
   versionAlreadyApproved: boolean;
   compatibilityWarning?: string;
+  fixtures?: Array<{
+    id: string;
+    name: string;
+    checkpoints?: Array<{ frame: number }>;
+  }>;
   validationEvidence: {
     checks?: Array<{ code: string; status: string; message: string }>;
   };
@@ -170,12 +171,19 @@ export function ComponentLoopWorkspace() {
     const prompt = draft.trim();
     if (!prompt) return;
     const latest = status?.versions.at(-1);
+    const latestCandidate = status?.candidates
+      .filter((candidate) =>
+        ["reviewable", "changes_requested"].includes(candidate.status),
+      )
+      .at(-1);
     if (!threadId) {
       await start(prompt);
-    } else if (latest) {
+    } else if (latestCandidate || latest) {
       setDraft("");
       await act("/api/component-loop/threads/" + threadId + "/revisions", {
-        versionId: latest.id,
+        ...(latestCandidate
+          ? { candidateId: latestCandidate.id }
+          : { versionId: latest!.id }),
         prompt,
         theme,
       });
@@ -186,7 +194,13 @@ export function ComponentLoopWorkspace() {
     Boolean(draft.trim()) &&
     !busy &&
     !working &&
-    (!threadId || Boolean(status?.versions.length));
+    (!threadId ||
+      Boolean(
+        status?.versions.length ||
+        status?.candidates.some((candidate) =>
+          ["reviewable", "changes_requested"].includes(candidate.status),
+        ),
+      ));
 
   return (
     <main className="min-h-screen bg-[#f7f7f8]">
@@ -391,12 +405,15 @@ function Conversation({
               activities={activities}
               busy={busy}
               candidate={candidate}
-              deterministicFake={turn.userRequest.includes("[FAKE_")}
               onApprove={onApprove}
               onRequestChanges={onRequestChanges}
               theme={theme}
               turn={turn}
               working={working}
+              superseded={
+                Boolean(candidate) &&
+                status.candidates.at(-1)?.id !== candidate?.id
+              }
             />
           </div>
         );
@@ -411,20 +428,20 @@ function AgentMessage({
   candidate,
   working,
   busy,
-  deterministicFake,
   theme,
   onApprove,
   onRequestChanges,
+  superseded,
 }: {
   turn: Turn;
   activities: Activity[];
   candidate: Candidate | undefined;
   working: boolean;
   busy: boolean;
-  deterministicFake: boolean;
   theme: ChannelTheme;
   onApprove: (id: string) => void;
   onRequestChanges: (id: string) => void;
+  superseded: boolean;
 }) {
   const failed = ["failed", "needs_intervention", "canceled"].includes(
     turn.state,
@@ -440,11 +457,13 @@ function AgentMessage({
           <span className="text-xs text-slate-400">
             {working
               ? "working now"
-              : candidate?.status === "approved"
-                ? "version approved"
-                : candidate
-                  ? "ready for review"
-                  : "finished"}
+              : failed
+                ? "needs attention"
+                : candidate?.status === "approved"
+                  ? "version approved"
+                  : candidate
+                    ? "ready for review"
+                    : "finished"}
           </span>
         </div>
         <div className="mt-2 text-sm leading-6 text-slate-700">
@@ -490,9 +509,9 @@ function AgentMessage({
           <CandidateCard
             busy={busy}
             candidate={candidate}
-            deterministicFake={deterministicFake}
             onApprove={onApprove}
             onRequestChanges={onRequestChanges}
+            superseded={superseded}
             theme={theme}
           />
         )}
@@ -510,18 +529,18 @@ function AgentMessage({
 
 function CandidateCard({
   candidate,
-  deterministicFake,
   theme,
   busy,
   onApprove,
   onRequestChanges,
+  superseded,
 }: {
   candidate: Candidate;
-  deterministicFake: boolean;
   theme: ChannelTheme;
   busy: boolean;
   onApprove: (id: string) => void;
   onRequestChanges: (id: string) => void;
+  superseded: boolean;
 }) {
   return (
     <div className="mt-5 overflow-hidden rounded-2xl border bg-white shadow-sm">
@@ -547,11 +566,7 @@ function CandidateCard({
         </span>
       </div>
 
-      <InlinePreview
-        candidate={candidate}
-        deterministicFake={deterministicFake}
-        theme={theme}
-      />
+      <InlinePreview candidate={candidate} theme={theme} />
 
       <div className="p-4">
         {candidate.compatibilityWarning && (
@@ -573,8 +588,10 @@ function CandidateCard({
             ))}
           </ul>
         </details>
+        <SourceInspector candidate={candidate} />
         {candidate.status === "reviewable" &&
-          !candidate.versionAlreadyApproved && (
+          !candidate.versionAlreadyApproved &&
+          !superseded && (
             <div className="mt-4 flex flex-wrap gap-2">
               <Button
                 disabled={busy}
@@ -593,6 +610,12 @@ function CandidateCard({
               </Button>
             </div>
           )}
+        {superseded && (
+          <p className="mt-4 text-xs text-slate-500">
+            Preserved for comparison. A validated successor is the active review
+            target.
+          </p>
+        )}
         {candidate.status === "reviewable" &&
           candidate.versionAlreadyApproved && (
             <p className="mt-4 text-xs text-amber-700">
@@ -611,44 +634,58 @@ function CandidateCard({
 
 function InlinePreview({
   candidate,
-  deterministicFake,
   theme,
 }: {
   candidate: Candidate;
-  deterministicFake: boolean;
   theme: ChannelTheme;
 }) {
-  const definition =
-    candidate.version === "1.0.0" ? lineChart : lineChartRevision;
-  const [fixtureId, setFixtureId] = useState(definition.fixtures[0]!.id);
-  const fixture =
-    definition.fixtures.find((item) => item.id === fixtureId) ??
-    definition.fixtures[0]!;
-  const duration = resolveVideoComponentDuration(definition, fixture.input);
-  const [frame, setFrame] = useState(Math.min(45, duration - 1));
-
-  if (!deterministicFake) {
-    return (
-      <div className="flex aspect-video items-center justify-center bg-slate-950 px-8 text-center text-xs leading-5 text-slate-400">
-        The validated source remains behind the worker boundary. Its sandboxed
-        interactive preview is preparing.
-      </div>
+  const fixtures = candidate.fixtures ?? [];
+  const [fixtureId, setFixtureId] = useState(fixtures[0]?.id ?? "");
+  const fixture = fixtures.find((item) => item.id === fixtureId) ?? fixtures[0];
+  const maximumFrame = Math.max(
+    179,
+    ...(fixture?.checkpoints?.map((item) => item.frame) ?? [0]),
+  );
+  const [frame, setFrame] = useState(Math.min(45, maximumFrame));
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    if (!playing) return;
+    const timer = window.setInterval(
+      () =>
+        setFrame((current) => {
+          if (current >= maximumFrame) {
+            setPlaying(false);
+            return 0;
+          }
+          return current + 1;
+        }),
+      1000 / 30,
     );
-  }
+    return () => window.clearInterval(timer);
+  }, [maximumFrame, playing]);
+  const query = new URLSearchParams({
+    fixture: fixture?.id ?? "",
+    frame: String(frame),
+    theme: browserBase64Url(JSON.stringify(theme)),
+  });
   return (
     <div className="bg-slate-950">
-      <div className="aspect-video overflow-hidden [&>svg]:h-full [&>svg]:w-full">
-        <VideoComponentFrame
-          assets={{}}
-          definition={definition}
-          dimensions={{ width: 960, height: 540 }}
-          durationInFrames={duration}
-          frame={frame}
-          input={fixture.input}
-          theme={theme}
-        />
-      </div>
+      <iframe
+        className="aspect-video w-full border-0"
+        key={`${candidate.id}:${fixture?.id}:${frame}:${JSON.stringify(theme)}`}
+        sandbox="allow-scripts"
+        src={`/api/component-loop/candidates/${candidate.id}/preview?${query}`}
+        title={`Exact preview of animated line chart ${candidate.version}`}
+      />
       <div className="flex items-center gap-3 border-t border-white/10 px-3 py-2 text-[11px] text-slate-300">
+        <button
+          aria-label={playing ? "Pause preview" : "Play preview"}
+          className="rounded border border-white/15 px-2 py-1"
+          onClick={() => setPlaying((value) => !value)}
+          type="button"
+        >
+          {playing ? "Pause" : "Play"}
+        </button>
         <select
           aria-label="Preview fixture"
           className="max-w-48 rounded border border-white/15 bg-white/10 px-2 py-1"
@@ -656,9 +693,9 @@ function InlinePreview({
             setFixtureId(event.target.value);
             setFrame(0);
           }}
-          value={fixture.id}
+          value={fixture?.id ?? ""}
         >
-          {definition.fixtures.map((item) => (
+          {fixtures.map((item) => (
             <option className="text-slate-950" key={item.id} value={item.id}>
               {item.name}
             </option>
@@ -667,7 +704,7 @@ function InlinePreview({
         <input
           aria-label="Preview frame"
           className="min-w-24 flex-1 accent-white"
-          max={duration - 1}
+          max={maximumFrame}
           min={0}
           onChange={(event) => setFrame(Number(event.target.value))}
           type="range"
@@ -675,6 +712,44 @@ function InlinePreview({
         />
         <span className="font-mono">frame {frame}</span>
       </div>
+    </div>
+  );
+}
+
+function SourceInspector({ candidate }: { candidate: Candidate }) {
+  const [source, setSource] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [open, setOpen] = useState(false);
+  const load = async () => {
+    if (source || error) return;
+    try {
+      const response = await fetch(
+        `/api/component-loop/candidates/${candidate.id}/source`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) throw new Error("Generated source is unavailable.");
+      setSource(await response.text());
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  };
+  return (
+    <div className="mt-3">
+      <button
+        className="text-xs font-medium text-slate-600"
+        onClick={() => {
+          setOpen((value) => !value);
+          if (!open) void load();
+        }}
+        type="button"
+      >
+        Inspect generated source · {candidate.sourceHash?.slice(0, 12)}
+      </button>
+      {open && (
+        <pre className="mt-3 max-h-80 overflow-auto rounded-xl bg-slate-950 p-4 text-[11px] leading-5 text-slate-200">
+          {error ?? source ?? "Loading exact validated source…"}
+        </pre>
+      )}
     </div>
   );
 }
@@ -769,9 +844,15 @@ function VersionHistory({ versions }: { versions: Version[] }) {
               className="flex items-center justify-between rounded-lg border px-3 py-2"
               key={version.id}
             >
-              <span className="font-mono text-xs">v{version.version}</span>
+              <a
+                className="font-mono text-xs underline-offset-4 hover:underline"
+                href={`/api/component-loop/versions/${version.id}/preview`}
+                target="_blank"
+              >
+                v{version.version}
+              </a>
               <span className="text-[10px] text-slate-400">
-                {index === 0 ? "latest" : "saved"}
+                {index === 0 ? "latest · open" : "saved · open"}
               </span>
             </li>
           ))}
@@ -800,7 +881,7 @@ function hasActiveWork(status: LoopStatus): boolean {
 }
 
 function creatorText(value: string): string {
-  return value.replace(/^\[FAKE_[A-Z_]+\]\s*/, "");
+  return value.replace(/^(?:\[FAKE_[A-Z_]+\]\s*)+/, "");
 }
 
 function activityName(value: string): string {
@@ -828,4 +909,14 @@ function errorMessage(value: unknown): string {
   return value instanceof Error
     ? value.message
     : "The component-loop request failed.";
+}
+
+function browserBase64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  bytes.forEach((byte) => (binary += String.fromCharCode(byte)));
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
 }

@@ -6,9 +6,10 @@ import {
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   const { path } = await context.params;
-  return forwardWorkerRequest(`/component-loop/${path.join("/")}`);
+  const query = new URL(request.url).search;
+  return forwardWorkerRequest(`/component-loop/${path.join("/")}${query}`);
 }
 
 export async function POST(request: Request, context: RouteContext) {
