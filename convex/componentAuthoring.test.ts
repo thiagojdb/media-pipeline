@@ -260,11 +260,11 @@ describe("Convex component authoring lifecycle", () => {
       baseSource: "export default 'invalid';",
       sessionRef: "pi:test-session",
       validationEvidenceJson,
-      maxModelTurns: 3,
-      maxToolCalls: 6,
-      maxTokens: 3_700,
-      maxCostUsd: 0.2,
-      maxWallTimeMs: 29_500,
+      maxModelTurns: 4,
+      maxToolCalls: 10,
+      maxTokens: 4_000,
+      maxCostUsd: 0.25,
+      maxWallTimeMs: 30_000,
     });
     expect(repair?.priorSummaries.at(-1)).toContain(
       "Independent validation failed",

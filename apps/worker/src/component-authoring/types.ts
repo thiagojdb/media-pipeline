@@ -157,8 +157,7 @@ export interface AuthoringContextPack {
 }
 
 export interface AgentRunResult extends AuthoringUsage {
-  readonly status:
-    "candidate_ready" | "failed" | "budget_exhausted" | "canceled";
+  readonly status: "candidate_ready" | "failed" | "canceled";
   readonly assistantSummary: string;
   readonly sessionRef?: string | undefined;
   readonly code: string;
@@ -189,7 +188,6 @@ export interface AuthoringWorkspace {
 export interface AuthoringTools {
   readonly declaredReady: boolean;
   readonly toolCalls: number;
-  readonly budgetExceeded: boolean;
   readContext(): Promise<string>;
   replaceCandidate(source: string): Promise<string>;
   checkCandidate(): Promise<string>;

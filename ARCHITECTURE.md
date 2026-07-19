@@ -14,7 +14,7 @@ The foundation should provide:
 - independently validated agent output;
 - channel-scoped reusable components with immutable approved versions;
 - deterministic tests that do not require model calls;
-- explicit job, failure, retry, and budget state.
+- explicit job, failure, retry, usage, and operational-limit state.
 
 ## Chosen stack
 
@@ -105,7 +105,7 @@ A worker crash must leave a job eligible for explicit recovery rather than false
 
 Relay should embed Pi through `@earendil-works/pi-coding-agent` rather than parsing terminal output. The SDK provides session lifecycle, event subscriptions, model runtime, resource loading, custom working directories, explicit tool selection, and persistent or in-memory session managers.
 
-Each component creation or revision receives a fresh, bounded authoring run associated with a Relay job. Relay reconstructs authoritative context from:
+Each component creation or revision is a durable phase of the same Relay agent session, associated with an explicit Relay job. Relay reconstructs authoritative implementation context from:
 
 - the public component SDK and test commands;
 - channel design settings and selected assets;
@@ -118,9 +118,11 @@ Pi session logs may be retained as diagnostics and conversation history, but the
 
 ### Conversational handoff boundary
 
-MED-137 places a durable dialogue phase before component authoring. The dialogue model receives only the bounded recent transcript and one Relay-owned `begin_component_implementation` tool. It has no component source, SDK pack, filesystem, shell, network, or authoring tools. Text deltas are persisted and streamed to the creator; model reasoning is never exposed, while coarse statuses such as thinking, responding, and handoff may be shown in a collapsed activity surface. Dialogue provider usage is recorded separately from authoring usage.
+MED-137 places a durable dialogue phase before component authoring. MED-138 makes that dialogue, research, implementation, revision, and review one durable Relay/Pi session rather than a planner-to-implementor handoff. The base session receives a compact system prompt, a small skill catalog, controlled reference-research tools, authoritative work-state inspection, and `begin_component_implementation`. It has no component source, SDK pack, shell, or authoring tools until the explicit transition. Text deltas are persisted and streamed to the creator; model reasoning is never exposed, while coarse statuses such as thinking, responding, skill loading, compaction, and tool activity may be shown in a collapsed activity surface.
 
-A greeting or ambiguous request stays in dialogue and can produce ordinary conversation or clarifying questions without creating an authoring turn. When the model has an actionable request, it first tells the creator that implementation is starting and then invokes the handoff tool with a self-contained brief. Only that explicit transition allows the worker to construct the expensive authoritative context and enqueue a bounded creation or revision turn. The same durable conversation continues through implementation activity, preview, requested changes, validation, and approval.
+A greeting or ambiguous request stays in dialogue and can produce ordinary conversation, controlled web research, or clarifying questions without creating an authoring turn. Skills are on-demand instruction packs, never permissions. When the model has an actionable request, it first tells the creator that implementation is starting and invokes the build transition with a self-contained brief. Only that transition allows the worker to construct the expensive authoritative context and expose Relay-owned source/check/declaration tools in the same provider session. Status questions inspect durable work state and cannot silently enqueue duplicate work.
+
+Pi automatic compaction remains enabled with a response reserve and recent-message retention. Relay persists compaction lifecycle metadata but never exposes the generated summary or hidden reasoning. The UI distinguishes active context (`used / model context window`) from lifetime processed input, output, cached input, and estimated cost. Model-turn, token, and cost counters are telemetry rather than creative-work terminal conditions. Explicit cancellation, provider errors, and an infrastructure-stall watchdog remain recoverable operational boundaries; process isolation and independent validation limits remain security boundaries.
 
 ### Tool boundary
 
@@ -138,9 +140,7 @@ Path validation, process isolation, network policy, resource limits, and secret 
 
 ### Bounded repair
 
-When Pi stops, the platform validates the candidate independently. Structured failures may be sent back to the same active session for repair. The job freezes maximum attempts, model/tool turns, token or cost budget, command count, and wall time.
-
-Budget exhaustion or repeated failure produces `needs_intervention`; it never starts an unlimited loop. A candidate cannot become reviewable without a successful independent validation record.
+When Pi stops, the platform validates the candidate independently. Structured failures may be sent back to the same active session for repair. Provider usage remains observable rather than limiting creative work. Explicit cancellation, provider failure, repeated invalid output, or an infrastructure stall can produce a recoverable interruption; a candidate cannot become reviewable without a successful independent validation record.
 
 ## Component model
 
@@ -234,17 +234,17 @@ The first implementation keeps successful candidates as immutable content-addres
 
 ### Component-authoring agent boundary
 
-MED-128 adds durable authoring threads and turns above MED-133 jobs. Each turn pins the exact base source/hash, optional parent candidate and base snapshot, user request, acceptance criteria, channel theme and non-secret asset metadata, relevant prior summaries, and explicit wall-time/model-turn/tool/token/cost budgets. Enqueue binds every immutable input and is idempotent per channel/thread/turn; leases use server time and attempt fencing. Paid-capable turns allow exactly one infrastructure attempt, so retrying requires an explicit successor turn rather than silently multiplying spend. Provider token/cost accounting is enforced at response boundaries with output capped to the remaining non-cached input-plus-output token allowance; cache reads and writes are recorded and displayed but remain governed by the separate cost, model-turn, and wall-time limits. Any single-response overshoot is persisted and blocks further model work. A candidate submission atomically creates or reuses one MED-133 validation job and means only `candidate_submitted`, never validated or approved.
+MED-128 adds durable authoring threads and turns above MED-133 jobs. Each turn pins the exact base source/hash, optional parent candidate and base snapshot, user request, acceptance criteria, channel theme and non-secret asset metadata, and relevant prior summaries. Enqueue binds every immutable input and is idempotent per channel/thread/turn; leases use server time and attempt fencing. Provider token/cost accounting is persisted as telemetry, with cached usage reported separately. Per-response output remains bounded to prevent malformed unbounded responses, but accumulated model-turn/token/cost counters do not terminate useful work. A candidate submission atomically creates or reuses one MED-133 validation job and means only `candidate_submitted`, never validated or approved.
 
 Relay constructs a deterministic, size-bounded, hashed context pack from the public SDK, reference component, fixtures, exact base, theme/assets metadata, prior summaries, and explicit dependency/tool policy. Context construction rejects source hash mismatch, symlinks, traversal, oversized files, malformed JSON, and credential-like fields. A disposable authoring workspace exposes the context read-only and only candidate source as writable.
 
-Pi receives no built-in filesystem or shell tools. The only tools are Relay-owned operations to read context, replace complete candidate source, check syntax/source policy without executing candidate code, and declare a checked candidate ready. Resource discovery is disabled: no global/project extensions, skills, prompt templates, themes, or context files. Settings are in memory, and a single server-injected API-key or OAuth credential is parsed into an app-owned in-memory credential store; ModelRuntime is never allowed to fall back to Pi's global auth file. Credentials never enter sessions, context, logs, or workspaces. The model is exact, provider continuations recheck cumulative budgets, and session files are constrained to a Relay-owned root. Convex summaries/base source remain authoritative when a session file cannot be resumed.
+Pi receives no built-in filesystem or shell tools. During implementation, the only source-authority tools are Relay-owned operations to read context, replace complete candidate source, check syntax/source policy without executing candidate code, and declare a checked candidate ready. Relay's own focused skills and controlled research tools are discovered on demand in the conversational phase; global/project extensions, prompt templates, themes, and context files remain disabled. Settings are in memory, and a single server-injected API-key or OAuth credential is parsed into an app-owned in-memory credential store; ModelRuntime is never allowed to fall back to Pi's global auth file. Credentials never enter sessions, context, logs, or workspaces. The model is exact, automatic compaction is enabled, and session files are constrained to a Relay-owned root. Convex messages, work state, and exact component records remain authoritative when a session file cannot be resumed.
 
-MED-123 makes validation evidence, rather than the readiness declaration, the next authority boundary. The worker independently repeats source policy, bundles TypeScript against only the declared SDK dependencies, loads the public component contract, validates fixtures, renders every checkpoint twice for deterministic behavior, and evaluates every fixture frame at the smallest supported dimensions. Candidate execution remains inside the MED-133 Bubblewrap/prlimit boundary. Each terminal build retains bounded structured evidence and a full-frame render fingerprint. A validation failure atomically queues a successor authoring turn with the exact failed source, the same opaque Pi session reference, structured evidence, and only the unused portion of the original turn budgets. Repair count and cumulative model-turn, tool, token, cost, and wall-time limits are frozen at the initial request; exhausted limits produce `needs_intervention`. A successful build creates only a content-addressed candidate reference and never replaces an approved version.
+MED-123 makes validation evidence, rather than the readiness declaration, the next authority boundary. The worker independently repeats source policy, bundles TypeScript against only the declared SDK dependencies, loads the public component contract, validates fixtures, renders every checkpoint twice for deterministic behavior, and evaluates every fixture frame at the smallest supported dimensions. Candidate execution remains inside the MED-133 Bubblewrap/prlimit boundary. Each terminal build retains bounded structured evidence and a full-frame render fingerprint. A validation failure atomically queues a successor authoring turn with the exact failed source, the same opaque Pi session reference, and structured evidence. Usage accumulates as telemetry instead of shrinking a repair allowance. A successful build creates only a content-addressed candidate reference and never replaces an approved version.
 
 MED-125 promotes a successful build only to a `reviewable` component candidate containing its declared identity/version, input-schema fingerprint, fixtures, dimensions, exact source lineage, and validation evidence. Approval is a separate explicit creator decision that creates one immutable component-version record; rejection and changes requested leave the latest approved version untouched. Schema changes from the exact selected base produce an acknowledgement-required compatibility warning. Revision turns reconstruct their base source and hash from that selected immutable version, while project component pins continue to reference an exact version until explicitly changed. Approved history retains the build/source reference required for later preview and rendering instead of copying or mutating source in place.
 
-Normal CI and development use the deterministic fake agent and never initialize a model runtime. Real Pi is dynamically loaded only behind separate authoring, real-mode, paid-smoke confirmation, exact-model, and small-budget gates. MED-123 owns independent repair, MED-125 owns review/approval, and MED-124 owns the creator chat-like end-to-end proof.
+Normal CI and development use the deterministic fake agent and never initialize a model runtime. Real Pi is dynamically loaded only in explicit real mode with an exact model and server-only credential. MED-123 owns independent repair, MED-125 owns review/approval, and MED-124 owns the creator chat-like end-to-end proof.
 
 ## Testing strategy
 
@@ -255,7 +255,7 @@ Normal tests and CI must not require a model provider or spend tokens.
 - Reference components provide deterministic fixtures and frame checkpoints.
 - Browser tests cover creator-visible preview and recovery behavior on real routes.
 - Render tests compare selected preview and output frames within declared tolerances.
-- A real-Pi dogfood run is explicit, budgeted, and run only when the milestone calls for it.
+- A real-Pi dogfood run is explicit, records usage and estimated cost, and runs only when the milestone calls for it.
 
 The initial repository gate should remain small: format, lint, typecheck, unit tests, and production build. Add expensive gates only when they protect an implemented boundary.
 

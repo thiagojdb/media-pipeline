@@ -93,6 +93,19 @@ type LoopStatus = {
   builds: Build[];
   candidates: Candidate[];
   versions: Version[];
+  context?: {
+    usedTokens?: number;
+    maxTokens?: number;
+    usedPercentage?: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalCacheReadTokens: number;
+    totalCacheWriteTokens: number;
+    estimatedCostUsd: number;
+    compactsAutomatically: boolean;
+    compactionCount: number;
+    lastCompactedAt?: number;
+  };
 };
 
 const inputClass =
@@ -314,9 +327,14 @@ export function ComponentLoopWorkspace() {
                 value={draft}
               />
               <div className="flex items-center justify-between gap-3 px-2 pb-1">
-                <span className="text-xs text-slate-400">
-                  Enter to send · Shift+Enter for a new line
-                </span>
+                <div className="flex items-center gap-3">
+                  {status?.context && (
+                    <ContextWindowMeter context={status.context} />
+                  )}
+                  <span className="text-xs text-slate-400">
+                    Enter to send · Shift+Enter for a new line
+                  </span>
+                </div>
                 <Button
                   aria-label="Send message"
                   className="rounded-xl"
@@ -341,25 +359,6 @@ export function ComponentLoopWorkspace() {
             onFont={setFont}
           />
           <VersionHistory versions={status?.versions ?? []} />
-          <details className="rounded-xl border bg-white p-4 text-sm shadow-sm">
-            <summary className="cursor-pointer list-none font-medium text-slate-600">
-              Developer recovery test
-            </summary>
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              Runs the deterministic budget-exhaustion path without model cost.
-            </p>
-            <Button
-              className="mt-3 w-full"
-              disabled={busy || working}
-              onClick={() =>
-                void start(draft.trim() || "Exercise recovery.", true)
-              }
-              size="sm"
-              variant="outline"
-            >
-              Exercise budget limit
-            </Button>
-          </details>
         </aside>
       </div>
     </main>
@@ -458,11 +457,7 @@ function ChatMessage({ message }: { message: ConversationMessage }) {
         </div>
       </div>
     );
-  const tokens =
-    (message.inputTokens ?? 0) +
-    (message.outputTokens ?? 0) +
-    (message.cacheReadTokens ?? 0) +
-    (message.cacheWriteTokens ?? 0);
+  const tokens = (message.inputTokens ?? 0) + (message.outputTokens ?? 0);
   return (
     <div className="flex gap-3">
       <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-slate-100">
@@ -494,12 +489,82 @@ function ChatMessage({ message }: { message: ConversationMessage }) {
         )}
         {tokens > 0 && (
           <p className="mt-2 text-[11px] text-slate-400">
-            Dialogue · {tokens} provider tokens
+            Dialogue · {formatTokens(message.inputTokens ?? 0)} in ·{" "}
+            {formatTokens(message.outputTokens ?? 0)} out
+            {(message.cacheReadTokens ?? 0) > 0 &&
+              ` · ${formatTokens(message.cacheReadTokens ?? 0)} cached`}
+            {(message.costUsd ?? 0) > 0 &&
+              ` · ~${formatUsd(message.costUsd ?? 0)}`}
           </p>
         )}
       </div>
     </div>
   );
+}
+
+function ContextWindowMeter({
+  context,
+}: {
+  context: NonNullable<LoopStatus["context"]>;
+}) {
+  const used = Math.max(0, Math.min(100, context.usedPercentage ?? 0));
+  const free = Math.max(0, 100 - used);
+  const radius = 8;
+  const circumference = 2 * Math.PI * radius;
+  const title = [
+    `${formatTokens(context.usedTokens ?? 0)} of ${formatTokens(context.maxTokens ?? 0)} active context tokens`,
+    `${formatTokens(context.totalInputTokens)} input · ${formatTokens(context.totalOutputTokens)} output · ${formatTokens(context.totalCacheReadTokens)} cached`,
+    `Estimated conversation cost ${formatUsd(context.estimatedCostUsd)}`,
+    context.compactsAutomatically
+      ? `Automatic compaction enabled${context.compactionCount ? ` · ${context.compactionCount} completed` : ""}`
+      : "Automatic compaction unavailable",
+  ].join("\n");
+  return (
+    <div
+      aria-label={`Context window ${formatPercentage(free)} available`}
+      className="flex items-center gap-1.5 text-[11px] text-slate-500 tabular-nums"
+      title={title}
+    >
+      <svg aria-hidden="true" className="size-4 -rotate-90" viewBox="0 0 20 20">
+        <circle
+          cx="10"
+          cy="10"
+          fill="none"
+          r={radius}
+          stroke="#e2e8f0"
+          strokeWidth="2.5"
+        />
+        <circle
+          cx="10"
+          cy="10"
+          fill="none"
+          r={radius}
+          stroke={used > 90 ? "#ef4444" : "#3b82f6"}
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference - (used / 100) * circumference}
+          strokeLinecap="round"
+          strokeWidth="2.5"
+        />
+      </svg>
+      <span>{formatPercentage(free)} context free</span>
+      <span className="text-slate-300">·</span>
+      <span>~{formatUsd(context.estimatedCostUsd)}</span>
+    </div>
+  );
+}
+
+function formatPercentage(value: number): string {
+  return `${value > 90 && value < 100 ? value.toFixed(1) : Math.round(value)}%`;
+}
+
+function formatTokens(value: number): string {
+  if (value < 1_000) return String(Math.round(value));
+  if (value < 10_000) return `${(value / 1_000).toFixed(1)}k`;
+  return `${Math.round(value / 1_000)}k`;
+}
+
+function formatUsd(value: number): string {
+  return `$${value < 0.01 ? value.toFixed(4) : value.toFixed(2)}`;
 }
 
 function AgentMessage({

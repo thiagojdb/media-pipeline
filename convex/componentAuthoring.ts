@@ -256,9 +256,9 @@ export const recordActivity = mutation({
     if (
       !Number.isInteger(args.sequence) ||
       args.sequence < 1 ||
-      args.sequence > turn.maxToolCalls
+      args.sequence > 10_000
     )
-      throw new Error("Tool sequence exceeds budget.");
+      throw new Error("Tool sequence is invalid.");
     const previous = await ctx.db
       .query("authoringToolActivities")
       .withIndex("by_turn_attempt_sequence", (q) =>
@@ -307,7 +307,7 @@ export const recordUsage = mutation({
     const turn = await ctx.db.get(args.turnId);
     if (!ownsLiveLease(turn, args.workerId, args.leaseAttempt, Date.now()))
       throw new Error("Authoring lease is not owned or expired.");
-    validateUsage(turn, args, false);
+    validateUsage(args);
     for (const [name, amount] of Object.entries({
       toolCalls: args.toolCalls,
       modelTurns: args.modelTurns,
@@ -400,7 +400,7 @@ export const submitCandidate = mutation({
     hash(args.candidateSourceHash, "candidateSourceHash");
     hash(args.contextHash, "contextHash");
     bounded(args.assistantSummary, "assistantSummary", MAX_SUMMARY);
-    validateUsage(turn, args);
+    validateUsage(args);
 
     const existingBuild = await ctx.db
       .query("componentBuildJobs")
@@ -510,7 +510,7 @@ export const finish = mutation({
       !ownsLiveLease(turn, args.workerId, args.leaseAttempt, Date.now())
     )
       throw new Error("Authoring lease is not owned or expired.");
-    validateUsage(turn, args, false);
+    validateUsage(args);
     const now = Date.now();
     await ctx.db.patch(args.turnId, {
       state: args.state,
@@ -731,20 +731,16 @@ function validateBudgets(value: {
   )
     throw new Error("maxCostUsd is invalid.");
 }
-function validateUsage(
-  turn: Doc<"authoringTurns">,
-  value: {
-    toolCalls: number;
-    modelTurns: number;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    costUsd: number;
-    wallTimeMs: number;
-  },
-  enforceBudgets = true,
-) {
+function validateUsage(value: {
+  toolCalls: number;
+  modelTurns: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  costUsd: number;
+  wallTimeMs: number;
+}) {
   for (const [name, amount] of Object.entries({
     toolCalls: value.toolCalls,
     modelTurns: value.modelTurns,
@@ -758,16 +754,6 @@ function validateUsage(
     if (!Number.isFinite(amount) || amount < 0)
       throw new Error(`${name} is invalid.`);
   }
-  if (!enforceBudgets) return;
-  if (value.toolCalls > turn.maxToolCalls)
-    throw new Error("Tool-call budget exceeded.");
-  if (value.modelTurns > turn.maxModelTurns)
-    throw new Error("Model-turn budget exceeded.");
-  if (value.inputTokens + value.outputTokens > turn.maxTokens)
-    throw new Error("Token budget exceeded.");
-  if (value.costUsd > turn.maxCostUsd) throw new Error("Cost budget exceeded.");
-  if (value.wallTimeMs > turn.maxWallTimeMs)
-    throw new Error("Wall-time budget exceeded.");
 }
 function rejectCredentialLikeText(value: string, name: string) {
   if (credentialLikeValue.test(value))

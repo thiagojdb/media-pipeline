@@ -10,17 +10,9 @@ import type {
   AuthoringWorkspace,
 } from "./types.js";
 
-export class AuthoringBudgetExceededError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "AuthoringBudgetExceededError";
-  }
-}
-
 export class RelayAuthoringTools implements AuthoringTools {
   #calls: number;
   #declaredReady = false;
-  #budgetExceeded = false;
   #checkedHash: string | undefined;
 
   constructor(
@@ -38,10 +30,6 @@ export class RelayAuthoringTools implements AuthoringTools {
   get toolCalls(): number {
     return this.#calls;
   }
-  get budgetExceeded(): boolean {
-    return this.#budgetExceeded;
-  }
-
   readContext(): Promise<string> {
     return this.#invoke("read_authoring_context", "{}", async () => {
       const value = await this.workspace.readContext();
@@ -143,20 +131,6 @@ export class RelayAuthoringTools implements AuthoringTools {
     operation: () => Promise<{ value: T; summary: string }>,
   ): Promise<T> {
     if (this.signal.aborted) throw new Error("Authoring turn canceled.");
-    if (this.#calls >= this.turn.maxToolCalls) {
-      this.#budgetExceeded = true;
-      await this.record({
-        sequence: Math.max(1, this.#calls),
-        name,
-        status: "blocked_budget",
-        inputSummary: "Tool call blocked before execution.",
-        outputSummary: "Authoring tool-call budget exhausted.",
-        durationMs: 0,
-      }).catch(() => undefined);
-      throw new AuthoringBudgetExceededError(
-        "Authoring tool-call budget exhausted.",
-      );
-    }
     this.#calls += 1;
     const started = Date.now();
     try {

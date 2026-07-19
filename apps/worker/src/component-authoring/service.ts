@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { buildAuthoringContext } from "./context.js";
-import { AuthoringBudgetExceededError, RelayAuthoringTools } from "./tools.js";
+import { RelayAuthoringTools } from "./tools.js";
 import type {
   AgentRunResult,
   AuthoringAgent,
@@ -56,8 +56,6 @@ export class ComponentAuthoringService {
         );
         return;
       }
-      if (remainingWallTime(turn) <= 0)
-        throw new AuthoringBudgetExceededError("Wall-time budget exhausted.");
       const context = await buildAuthoringContext(turn, this.repositoryRoot);
       workspace = await this.workspaces.create(context.json, turn.baseSource);
       tools = new RelayAuthoringTools(
@@ -95,19 +93,6 @@ export class ComponentAuthoringService {
         finalUsage,
       );
       lastResult = { ...lastResult, ...finalUsage };
-      const usageIssue = usageViolation(turn, lastResult);
-      if (usageIssue || tools.budgetExceeded) {
-        await this.finish(turn, {
-          ...toFailure(
-            lastResult,
-            "needs_intervention",
-            "authoring_budget_exhausted",
-            usageIssue ?? "Tool-call budget exhausted.",
-          ),
-          wallTimeMs: cumulativeWallTime(turn, started),
-        });
-        return;
-      }
       const latest = await this.store.get(turn.id);
       if (latest?.cancelRequested || lastResult.status === "canceled") {
         await this.finish(turn, {
@@ -125,7 +110,7 @@ export class ComponentAuthoringService {
         await this.finish(turn, {
           ...toFailure(
             lastResult,
-            lastResult.status === "budget_exhausted"
+            lastResult.code === "authoring_interrupted"
               ? "needs_intervention"
               : "failed",
             lastResult.code,
@@ -158,20 +143,16 @@ export class ComponentAuthoringService {
         latest.leaseExpiresAt &&
         latest.leaseExpiresAt > Date.now()
       ) {
-        const budgetExceeded =
-          error instanceof AuthoringBudgetExceededError ||
-          tools?.budgetExceeded ||
-          (controller.signal.aborted && !latest.cancelRequested);
+        const interrupted =
+          controller.signal.aborted && !latest.cancelRequested;
         const base: AgentRunResult = lastResult ?? {
-          status: budgetExceeded ? "budget_exhausted" : "failed",
-          code: budgetExceeded
-            ? "authoring_budget_exhausted"
-            : "authoring_failed",
-          message: budgetExceeded
-            ? "Authoring exhausted a configured budget."
+          status: "failed",
+          code: interrupted ? "authoring_interrupted" : "authoring_failed",
+          message: interrupted
+            ? "Authoring was interrupted and can be resumed."
             : "Authoring failed safely.",
-          assistantSummary: budgetExceeded
-            ? "Authoring stopped at a configured budget boundary."
+          assistantSummary: interrupted
+            ? "The provider stopped responding; the conversation and working version were preserved."
             : "Authoring failed before candidate submission.",
           ...priorUsage(
             turn,
@@ -188,18 +169,18 @@ export class ComponentAuthoringService {
             { ...base, ...usage },
             latest.cancelRequested
               ? "canceled"
-              : budgetExceeded
+              : interrupted
                 ? "needs_intervention"
                 : "failed",
             latest.cancelRequested
               ? "authoring_canceled"
-              : budgetExceeded
-                ? "authoring_budget_exhausted"
+              : interrupted
+                ? "authoring_interrupted"
                 : "authoring_failed",
             latest.cancelRequested
               ? "Authoring canceled safely."
-              : budgetExceeded
-                ? "Authoring stopped at a configured budget boundary."
+              : interrupted
+                ? "The provider stopped responding. Resume from the preserved conversation."
                 : "Authoring failed safely before validation handoff.",
           ),
           wallTimeMs: cumulativeWallTime(turn, started),
@@ -235,20 +216,6 @@ export class ComponentAuthoringService {
   }
 }
 
-function usageViolation(
-  turn: AuthoringTurn,
-  result: AgentRunResult,
-): string | null {
-  if (result.toolCalls > turn.maxToolCalls) return "Tool-call budget exceeded.";
-  if (result.modelTurns > turn.maxModelTurns)
-    return "Model-turn budget exceeded.";
-  if (result.inputTokens + result.outputTokens > turn.maxTokens)
-    return "Token budget exceeded.";
-  if (result.costUsd > turn.maxCostUsd) return "Cost budget exceeded.";
-  if (result.wallTimeMs > turn.maxWallTimeMs)
-    return "Wall-time budget exceeded.";
-  return null;
-}
 function failure(
   state: AuthoringFailure["state"],
   code: string,
@@ -326,7 +293,7 @@ function usageFrom(
   };
 }
 function remainingWallTime(turn: AuthoringTurn): number {
-  return Math.max(0, turn.maxWallTimeMs - turn.priorWallTimeMs);
+  return turn.maxWallTimeMs;
 }
 function cumulativeWallTime(turn: AuthoringTurn, started: number): number {
   return turn.priorWallTimeMs + (Date.now() - started);

@@ -95,6 +95,16 @@ export const complete = mutation({
     cacheReadTokens: v.number(),
     cacheWriteTokens: v.number(),
     costUsd: v.number(),
+    sessionRef: v.optional(v.string()),
+    contextTokens: v.optional(v.number()),
+    contextWindow: v.optional(v.number()),
+    contextPercent: v.optional(v.number()),
+    totalInputTokens: v.number(),
+    totalOutputTokens: v.number(),
+    totalCacheReadTokens: v.number(),
+    totalCacheWriteTokens: v.number(),
+    estimatedCostUsd: v.number(),
+    compacted: v.boolean(),
   },
   handler: async (ctx, args) => {
     authorize(args.workerToken);
@@ -102,9 +112,13 @@ export const complete = mutation({
     if (!message) throw new Error("Dialogue message was not found.");
     await ctx.db.patch(message._id, {
       state: "complete",
-      safeStatus: args.transitionBrief
-        ? "Handed off to component implementation."
-        : "Response complete.",
+      safeStatus: args.compacted
+        ? args.transitionBrief
+          ? "Context compacted automatically; component implementation started."
+          : "Context compacted automatically; response complete."
+        : args.transitionBrief
+          ? "Component implementation started in this Relay session."
+          : "Response complete.",
       ...(args.transitionBrief
         ? { transitionBrief: bounded(args.transitionBrief, 8_000) }
         : {}),
@@ -115,14 +129,35 @@ export const complete = mutation({
       costUsd: nonnegative(args.costUsd),
       updatedAt: Date.now(),
     });
-    if (args.transitionBrief) {
-      const thread = await threadFor(ctx, args.channelId, args.threadId);
-      if (thread)
-        await ctx.db.patch(thread._id, {
-          phase: "authoring",
-          updatedAt: Date.now(),
-        });
-    }
+    const thread = await threadFor(ctx, args.channelId, args.threadId);
+    if (thread)
+      await ctx.db.patch(thread._id, {
+        ...(args.transitionBrief ? { phase: "authoring" as const } : {}),
+        ...(args.sessionRef
+          ? { sessionRef: bounded(args.sessionRef, 500) }
+          : {}),
+        ...(args.contextTokens === undefined
+          ? {}
+          : { contextTokens: nonnegative(args.contextTokens) }),
+        ...(args.contextWindow === undefined
+          ? {}
+          : { contextWindow: nonnegative(args.contextWindow) }),
+        ...(args.contextPercent === undefined
+          ? {}
+          : { contextPercent: percentage(args.contextPercent) }),
+        totalInputTokens: nonnegative(args.totalInputTokens),
+        totalOutputTokens: nonnegative(args.totalOutputTokens),
+        totalCacheReadTokens: nonnegative(args.totalCacheReadTokens),
+        totalCacheWriteTokens: nonnegative(args.totalCacheWriteTokens),
+        estimatedCostUsd: nonnegative(args.estimatedCostUsd),
+        ...(args.compacted
+          ? {
+              compactionCount: (thread.compactionCount ?? 0) + 1,
+              lastCompactedAt: Date.now(),
+            }
+          : {}),
+        updatedAt: Date.now(),
+      });
   },
 });
 
@@ -238,5 +273,10 @@ function bounded(value: string, maximum: number) {
 function nonnegative(value: number) {
   if (!Number.isFinite(value) || value < 0)
     throw new Error("Conversation usage is invalid.");
+  return value;
+}
+function percentage(value: number) {
+  if (!Number.isFinite(value) || value < 0 || value > 100)
+    throw new Error("Conversation percentage is invalid.");
   return value;
 }

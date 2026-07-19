@@ -1,7 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
-const budgetArgs = {
+const authoringLimitArgs = {
   maxWallTimeMs: v.number(),
   maxModelTurns: v.number(),
   maxToolCalls: v.number(),
@@ -21,7 +21,8 @@ export const start = mutation({
     baseSourceHash: v.string(),
     channelThemeJson: v.string(),
     assetsMetadataJson: v.string(),
-    ...budgetArgs,
+    sessionRef: v.optional(v.string()),
+    ...authoringLimitArgs,
   },
   handler: async (ctx, args) => {
     authorize(args.workerToken);
@@ -55,7 +56,7 @@ export const start = mutation({
     );
     rejectCredentialObject(parseJson(channelThemeJson, "channelThemeJson"));
     rejectCredentialObject(parseJson(assetsMetadataJson, "assetsMetadataJson"));
-    validateBudgets(args);
+    validateAuthoringLimits(args);
 
     const existing = await ctx.db
       .query("authoringTurns")
@@ -119,13 +120,16 @@ export const start = mutation({
       maxToolCalls: args.maxToolCalls,
       maxTokens: args.maxTokens,
       maxCostUsd: args.maxCostUsd,
+      ...(args.sessionRef
+        ? { sessionRef: bounded(args.sessionRef, "sessionRef", 500) }
+        : {}),
     });
     await ctx.db.insert("authoringEvents", {
       turnId: authoringTurnId,
       createdAt: now,
       kind: "creator_request",
       state: "queued",
-      message: "Creator request queued for bounded component authoring.",
+      message: "Creator request queued for component authoring.",
     });
     return authoringTurnId;
   },
@@ -213,6 +217,7 @@ export const status = query({
         terminalCode: turn.terminalCode,
         terminalMessage: turn.terminalMessage,
         assistantText: turn.assistantText ?? "",
+        sessionRef: turn.sessionRef,
         buildJobId: turn.buildJobId,
         createdAt: turn.createdAt,
         updatedAt: turn.updatedAt,
@@ -281,7 +286,7 @@ function bounded(value: string, name: string, maximum: number): string {
   if (!value || value.length > maximum) throw new Error(`${name} is invalid.`);
   return value;
 }
-function validateBudgets(value: {
+function validateAuthoringLimits(value: {
   maxWallTimeMs: number;
   maxModelTurns: number;
   maxToolCalls: number;
@@ -305,7 +310,7 @@ function validateBudgets(value: {
     value.maxCostUsd < 0 ||
     value.maxCostUsd > 10
   )
-    throw new Error("Authoring budgets are invalid.");
+    throw new Error("Authoring operational limits are invalid.");
 }
 
 const credentialKey =

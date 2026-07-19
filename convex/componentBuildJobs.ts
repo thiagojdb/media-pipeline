@@ -217,7 +217,7 @@ export const transition = mutation({
         .unique();
       if (authoringTurn) {
         const repairAttempt = (job.repairAttempt ?? 0) + 1;
-        const remaining = remainingBudgets(authoringTurn);
+        const remaining = continuingOperationalLimits(authoringTurn);
         const canRepair =
           repairAttempt <= (job.maxRepairAttempts ?? 0) &&
           remaining.maxWallTimeMs >= 1_000 &&
@@ -592,20 +592,13 @@ function validatedComponentEvidence(value: string | undefined): {
     dimensions: component.dimensions,
   };
 }
-function remainingBudgets(turn: Doc<"authoringTurns">) {
+function continuingOperationalLimits(turn: Doc<"authoringTurns">) {
   return {
-    maxWallTimeMs: Math.max(0, turn.maxWallTimeMs - (turn.wallTimeMs ?? 0)),
-    maxModelTurns: Math.max(0, turn.maxModelTurns - (turn.modelTurns ?? 0)),
-    maxToolCalls: Math.max(0, turn.maxToolCalls - (turn.toolCalls ?? 0)),
-    maxTokens: Math.max(
-      0,
-      turn.maxTokens -
-        (turn.inputTokens ?? 0) -
-        (turn.outputTokens ?? 0) -
-        (turn.cacheReadTokens ?? 0) -
-        (turn.cacheWriteTokens ?? 0),
-    ),
-    maxCostUsd: Math.max(0, turn.maxCostUsd - (turn.costUsd ?? 0)),
+    maxWallTimeMs: turn.maxWallTimeMs,
+    maxModelTurns: turn.maxModelTurns,
+    maxToolCalls: turn.maxToolCalls,
+    maxTokens: turn.maxTokens,
+    maxCostUsd: turn.maxCostUsd,
   };
 }
 function repairSummary(

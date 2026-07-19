@@ -69,6 +69,9 @@ const authoringEnabled = process.env.AUTHORING_ENABLED === "true";
 const authoringMode = process.env.AUTHORING_MODE ?? "fake";
 const authoringUrl = process.env.AUTHORING_CONVEX_URL;
 const authoringToken = process.env.AUTHORING_WORKER_TOKEN;
+const relayPiSessionRoot = path.resolve(
+  process.env.AUTHORING_PI_SESSION_ROOT ?? ".relay/relay-agent-sessions",
+);
 if (authoringEnabled && (!authoringUrl || !authoringToken)) {
   throw new Error(
     "AUTHORING_ENABLED=true requires AUTHORING_CONVEX_URL and AUTHORING_WORKER_TOKEN.",
@@ -103,10 +106,7 @@ if (authoringEnabled && authoringUrl && authoringToken) {
           await import("./component-authoring/real-pi-agent.js")
         ).RealPiAuthoringAgent(
           process.env.AUTHORING_PI_MODEL ?? "",
-          path.resolve(
-            process.env.AUTHORING_PI_SESSION_ROOT ??
-              ".relay/component-authoring-sessions",
-          ),
+          relayPiSessionRoot,
           process.env.AUTHORING_PI_CREDENTIAL_JSON,
         )
       : new DeterministicFakeAuthoringAgent();
@@ -138,10 +138,7 @@ const componentLoop =
         authoringMode === "real"
           ? new RealPiDialogueAgent(
               process.env.AUTHORING_PI_MODEL ?? "",
-              path.resolve(
-                process.env.AUTHORING_PI_DIALOGUE_SESSION_ROOT ??
-                  ".relay/component-dialogue-sessions",
-              ),
+              relayPiSessionRoot,
               process.env.AUTHORING_PI_CREDENTIAL_JSON,
             )
           : new DeterministicFakeDialogueAgent(),

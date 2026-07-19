@@ -11,7 +11,6 @@ import type {
   ModelRuntime,
 } from "@earendil-works/pi-coding-agent";
 
-import { AuthoringBudgetExceededError } from "./tools.js";
 import type { AuthoringAgent, AgentRunResult, AuthoringTurn } from "./types.js";
 
 export const REAL_PI_TOOL_ALLOWLIST = [
@@ -48,13 +47,6 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
   }: Parameters<AuthoringAgent["run"]>[0]): Promise<AgentRunResult> {
     assertRealPiActivation(turn, this.modelSpec);
     throwIfAborted(signal);
-    if (
-      turn.priorModelTurns >= turn.maxModelTurns ||
-      totalTokens(turn) >= turn.maxTokens ||
-      turn.priorCostUsd >= turn.maxCostUsd ||
-      turn.priorWallTimeMs >= turn.maxWallTimeMs
-    )
-      return exhaustedBeforeProvider(turn);
     const started = Date.now();
     await mkdir(this.sessionRoot, { recursive: true, mode: 0o700 });
     const pi = await import("@earendil-works/pi-coding-agent");
@@ -76,8 +68,8 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
     if (!resolvedModel)
       throw new Error(`Configured Pi model ${this.modelSpec} is unavailable.`);
     const model = { ...resolvedModel };
-    const budget = new PiProviderBudget(turn, resolvedModel.maxTokens);
-    installPiProviderBudget(modelRuntime, budget);
+    const usageTracker = new PiUsageTracker(turn, resolvedModel.maxTokens);
+    installPiUsageTracking(modelRuntime, usageTracker);
 
     const settings = pi.SettingsManager.inMemory({
       defaultProvider: provider,
@@ -152,19 +144,19 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
       settingsManager: settings,
     });
 
-    let budgetExceeded = false;
+    let usagePersistenceFailed = false;
     let usageWrites = Promise.resolve();
     let textWrites = Promise.resolve();
     const persistUsage = () => {
       const usage = {
         toolCalls: tools.toolCalls,
-        ...budget.usage,
+        ...usageTracker.usage,
         wallTimeMs: turn.priorWallTimeMs + (Date.now() - started),
       };
       usageWrites = usageWrites
         .then(() => onUsage(usage))
         .catch(() => {
-          budgetExceeded = true;
+          usagePersistenceFailed = true;
           void session.abort();
         });
     };
@@ -177,12 +169,8 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
         }
       }
       if (event.type === "message_end" && event.message.role === "assistant") {
-        budget.recordResponse(event.message.usage);
+        usageTracker.recordResponse(event.message.usage);
         persistUsage();
-        if (budget.exhausted) {
-          budgetExceeded = true;
-          void session.abort();
-        }
       }
     });
     const abort = () => void session.abort();
@@ -200,15 +188,15 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
       return {
         status: signal.aborted
           ? "canceled"
-          : budgetExceeded || tools.budgetExceeded
-            ? "budget_exhausted"
+          : usagePersistenceFailed
+            ? "failed"
             : tools.declaredReady
               ? "candidate_ready"
               : "failed",
         code: signal.aborted
           ? "authoring_canceled"
-          : budgetExceeded || tools.budgetExceeded
-            ? "pi_budget_exhausted"
+          : usagePersistenceFailed
+            ? "usage_persistence_failed"
             : tools.declaredReady
               ? "candidate_ready"
               : "candidate_not_declared_ready",
@@ -218,7 +206,7 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
         assistantSummary: summary,
         sessionRef: `pi:${session.sessionId}`,
         toolCalls: tools.toolCalls,
-        ...budget.usage,
+        ...usageTracker.usage,
         wallTimeMs: turn.priorWallTimeMs + (Date.now() - started),
       };
     };
@@ -234,8 +222,7 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
     } catch (error) {
       await usageWrites;
       await textWrites;
-      if (!signal.aborted && (budgetExceeded || tools.budgetExceeded))
-        return currentResult();
+      if (!signal.aborted && usagePersistenceFailed) return currentResult();
       throw error;
     } finally {
       signal.removeEventListener("abort", abort);
@@ -349,7 +336,7 @@ export function piModelRuntimeOptions(
   };
 }
 
-interface PiBudgetUsage {
+interface PiTrackedUsage {
   readonly modelTurns: number;
   readonly inputTokens: number;
   readonly outputTokens: number;
@@ -358,7 +345,7 @@ interface PiBudgetUsage {
   readonly costUsd: number;
 }
 
-export class PiProviderBudget {
+export class PiUsageTracker {
   private modelTurns: number;
   private inputTokens: number;
   private outputTokens: number;
@@ -369,9 +356,6 @@ export class PiProviderBudget {
   constructor(
     private readonly turn: Pick<
       AuthoringTurn,
-      | "maxModelTurns"
-      | "maxTokens"
-      | "maxCostUsd"
       | "priorModelTurns"
       | "priorInputTokens"
       | "priorOutputTokens"
@@ -389,7 +373,7 @@ export class PiProviderBudget {
     this.costUsd = turn.priorCostUsd;
   }
 
-  get usage(): PiBudgetUsage {
+  get usage(): PiTrackedUsage {
     return {
       modelTurns: this.modelTurns,
       inputTokens: this.inputTokens,
@@ -400,27 +384,10 @@ export class PiProviderBudget {
     };
   }
 
-  get exhausted(): boolean {
-    return (
-      this.modelTurns >= this.turn.maxModelTurns ||
-      this.totalTokens >= this.turn.maxTokens ||
-      this.costUsd >= this.turn.maxCostUsd
-    );
-  }
-
   beforeProviderRequest(model: { maxTokens: number }): void {
-    const remainingTokens = this.turn.maxTokens - this.totalTokens;
-    if (this.exhausted || remainingTokens <= 0)
-      throw new AuthoringBudgetExceededError(
-        "Durable Pi provider budget exhausted before request.",
-      );
     model.maxTokens = Math.max(
       1,
-      Math.min(
-        this.modelTokenCeiling,
-        remainingTokens,
-        REAL_PI_RESPONSE_TOKEN_CEILING,
-      ),
+      Math.min(this.modelTokenCeiling, REAL_PI_RESPONSE_TOKEN_CEILING),
     );
   }
 
@@ -432,32 +399,21 @@ export class PiProviderBudget {
     this.cacheWriteTokens += usage.cacheWrite;
     this.costUsd += usage.cost.total;
   }
-
-  private get totalTokens(): number {
-    return this.inputTokens + this.outputTokens;
-  }
 }
 
-export function installPiProviderBudget(
+export function installPiUsageTracking(
   runtime: ModelRuntime,
-  budget: PiProviderBudget,
+  tracker: PiUsageTracker,
 ): void {
   const streamSimple = runtime.streamSimple.bind(runtime);
   runtime.streamSimple = ((model, context, options) => {
-    budget.beforeProviderRequest(model);
+    tracker.beforeProviderRequest(model);
     return streamSimple(model, context, options);
   }) as ModelRuntime["streamSimple"];
 }
 
 export function assertRealPiActivation(
-  turn: Pick<
-    Parameters<AuthoringAgent["run"]>[0]["turn"],
-    | "maxWallTimeMs"
-    | "maxModelTurns"
-    | "maxToolCalls"
-    | "maxTokens"
-    | "maxCostUsd"
-  >,
+  turn: Pick<Parameters<AuthoringAgent["run"]>[0]["turn"], "maxWallTimeMs">,
   modelSpec: string,
 ): void {
   if (process.env.AUTHORING_REAL_PI_ENABLED !== "true")
@@ -466,14 +422,10 @@ export function assertRealPiActivation(
     );
   if (!modelSpec || !modelSpec.includes("/"))
     throw new Error("An exact AUTHORING_PI_MODEL=provider/model is required.");
-  if (
-    turn.maxWallTimeMs > 120_000 ||
-    turn.maxModelTurns > 6 ||
-    turn.maxToolCalls > 16 ||
-    turn.maxTokens > 100_000 ||
-    turn.maxCostUsd > 1
-  )
-    throw new Error("Real Pi smoke budgets exceed the reviewed ceiling.");
+  if (turn.maxWallTimeMs > 300_000)
+    throw new Error(
+      "Real Pi operational timeout exceeds the reviewed ceiling.",
+    );
 }
 
 export async function sessionManagerFor(
@@ -511,31 +463,6 @@ function assistantText(messages: readonly unknown[]): string {
       if (content.type === "text" && content.text) text.push(content.text);
   }
   return text.join("\n");
-}
-function totalTokens(
-  turn: Parameters<AuthoringAgent["run"]>[0]["turn"],
-): number {
-  return turn.priorInputTokens + turn.priorOutputTokens;
-}
-function exhaustedBeforeProvider(
-  turn: Parameters<AuthoringAgent["run"]>[0]["turn"],
-): AgentRunResult {
-  return {
-    status: "budget_exhausted",
-    code: "pi_budget_exhausted",
-    message:
-      "The durable authoring budget was exhausted before a provider call.",
-    assistantSummary: "No provider call was started.",
-    sessionRef: turn.sessionRef,
-    toolCalls: turn.priorToolCalls,
-    modelTurns: turn.priorModelTurns,
-    inputTokens: turn.priorInputTokens,
-    outputTokens: turn.priorOutputTokens,
-    cacheReadTokens: turn.priorCacheReadTokens,
-    cacheWriteTokens: turn.priorCacheWriteTokens,
-    costUsd: turn.priorCostUsd,
-    wallTimeMs: turn.priorWallTimeMs,
-  };
 }
 function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted)

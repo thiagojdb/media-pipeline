@@ -25,9 +25,9 @@ import { ComponentAuthoringLoop } from "../../src/component-authoring/loop.js";
 import {
   assertRealPiActivation,
   InMemoryPiCredentialStore,
-  installPiProviderBudget,
+  installPiUsageTracking,
   parsePiCredentialJson,
-  PiProviderBudget,
+  PiUsageTracker,
   piModelRuntimeOptions,
   REAL_PI_EXCLUDED_TOOLS,
   REAL_PI_RESPONSE_TOKEN_CEILING,
@@ -109,26 +109,14 @@ describe("constrained component authoring", () => {
   it.each([
     ["[FAKE_FAILURE]", "failed"],
     ["[FAKE_CANCEL]", "canceled"],
-    ["[FAKE_TOKEN_LIMIT]", "needs_intervention"],
-    ["[FAKE_TURN_LIMIT]", "needs_intervention"],
-    ["[FAKE_COST_LIMIT]", "needs_intervention"],
-    ["[FAKE_TOOL_LIMIT]", "needs_intervention"],
     ["[FAKE_TIMEOUT]", "needs_intervention"],
-  ] as const)("handles bounded fixture %s as %s", async (marker, expected) => {
+  ] as const)("handles terminal fixture %s as %s", async (marker, expected) => {
     const configured = turn(`fixture-${expected}-${marker}`, marker, {
       maxWallTimeMs: marker === "[FAKE_TIMEOUT]" ? 20 : 5_000,
-      maxToolCalls: marker === "[FAKE_TOOL_LIMIT]" ? 2 : 8,
     });
     const { store, loop, root } = await harness(configured);
     await loop.tick();
     expect(store.turns.get(configured.id)?.state).toBe(expected);
-    if (marker === "[FAKE_TOOL_LIMIT]") {
-      expect(store.turns.get(configured.id)?.priorToolCalls).toBe(2);
-      expect(store.activities.at(-1)).toMatchObject({
-        status: "blocked_budget",
-        outputSummary: "Authoring tool-call budget exhausted.",
-      });
-    }
     expect(store.buildJobs.size).toBe(0);
     expect(await readdir(root)).toEqual([]);
   });
@@ -162,8 +150,8 @@ describe("constrained component authoring", () => {
         });
         if (!signal.aborted) providerCallStarted = true;
         return {
-          status: "budget_exhausted",
-          code: "wall_time_exhausted",
+          status: "failed",
+          code: "authoring_interrupted",
           message: "Stopped before provider call.",
           assistantSummary: "No provider call started.",
           toolCalls: claimed.priorToolCalls,
@@ -384,17 +372,18 @@ describe("constrained component authoring", () => {
     });
   });
 
-  it("guards createAgentSession's real streamSimple path across continuations", async () => {
+  it("records usage without freezing useful provider continuations", async () => {
     const configured = turn("provider-budget", "request", {
       maxModelTurns: 3,
       maxTokens: 1_000,
       maxCostUsd: 0.2,
       priorInputTokens: 100,
     });
-    const budget = new PiProviderBudget(configured, 800);
-    const harness = await budgetedPiSession(budget, [
+    const budget = new PiUsageTracker(configured, 800);
+    const harness = await trackedPiSession(budget, [
       messageUsage(300, 100, 0.05),
       messageUsage(400, 100, 0.05),
+      messageUsage(200, 50, 0.03),
     ]);
     const unsubscribe = harness.session.subscribe((event) => {
       if (event.type === "message_end" && event.message.role === "assistant")
@@ -409,7 +398,7 @@ describe("constrained component authoring", () => {
         expandPromptTemplates: false,
       });
       expect(harness.providerCalls()).toBe(2);
-      expect(harness.observedCaps).toEqual([800, 500]);
+      expect(harness.observedCaps).toEqual([800, 800]);
       expect(budget.usage).toMatchObject({
         modelTurns: 2,
         inputTokens: 800,
@@ -417,23 +406,23 @@ describe("constrained component authoring", () => {
         costUsd: 0.1,
       });
 
-      await harness.session.prompt("blocked continuation", {
+      await harness.session.prompt("useful continuation", {
         expandPromptTemplates: false,
       });
-      expect(harness.providerCalls()).toBe(2);
+      expect(harness.providerCalls()).toBe(3);
     } finally {
       unsubscribe();
       harness.session.dispose();
     }
   });
 
-  it("records cached tokens without charging them to the uncached token cap", () => {
+  it("records cached tokens separately from input and output tokens", () => {
     const configured = turn("provider-cache", "request", {
       maxTokens: 1_000,
       priorInputTokens: 100,
       priorCacheReadTokens: 10_000,
     });
-    const budget = new PiProviderBudget(configured, 800);
+    const budget = new PiUsageTracker(configured, 800);
 
     expect(() =>
       budget.beforeProviderRequest({ maxTokens: 800 }),
@@ -447,7 +436,6 @@ describe("constrained component authoring", () => {
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.05 },
     });
 
-    expect(budget.exhausted).toBe(false);
     expect(budget.usage).toMatchObject({
       inputTokens: 400,
       outputTokens: 100,
@@ -461,55 +449,13 @@ describe("constrained component authoring", () => {
     const configured = turn("provider-output-cap", "request", {
       maxTokens: 100_000,
     });
-    const budget = new PiProviderBudget(configured, 128_000);
+    const budget = new PiUsageTracker(configured, 128_000);
     const model = { maxTokens: 128_000 };
 
     budget.beforeProviderRequest(model);
 
     expect(model.maxTokens).toBe(REAL_PI_RESPONSE_TOKEN_CEILING);
   });
-
-  it.each([
-    {
-      name: "turn",
-      overrides: { maxModelTurns: 1 },
-      usage: messageUsage(10, 10, 0.01),
-    },
-    {
-      name: "token",
-      overrides: { maxTokens: 100 },
-      usage: messageUsage(50, 50, 0.01),
-    },
-    {
-      name: "cost",
-      overrides: { maxCostUsd: 0.05 },
-      usage: messageUsage(10, 10, 0.05),
-    },
-  ])(
-    "prevents another createAgentSession provider request after $name exhaustion",
-    async ({ name, overrides, usage }) => {
-      const configured = turn(`provider-${name}`, "request", overrides);
-      const budget = new PiProviderBudget(configured, 800);
-      const harness = await budgetedPiSession(budget, [usage]);
-      const unsubscribe = harness.session.subscribe((event) => {
-        if (event.type === "message_end" && event.message.role === "assistant")
-          budget.recordResponse(event.message.usage);
-      });
-
-      try {
-        await harness.session.prompt("first request", {
-          expandPromptTemplates: false,
-        });
-        await harness.session.prompt("blocked continuation", {
-          expandPromptTemplates: false,
-        });
-        expect(harness.providerCalls()).toBe(1);
-      } finally {
-        unsubscribe();
-        harness.session.dispose();
-      }
-    },
-  );
 
   it("uses only explicitly injected in-memory Pi credentials", async () => {
     const credential = parsePiCredentialJson(
@@ -588,19 +534,15 @@ describe("constrained component authoring", () => {
       assertRealPiActivation(
         {
           maxWallTimeMs: 30_000,
-          maxModelTurns: 2,
-          maxToolCalls: 6,
-          maxTokens: 2_000,
-          maxCostUsd: 0.2,
         },
         "anthropic/claude-test",
       ),
     ).toThrow("refusing to initialize ModelRuntime");
   });
 
-  it("enforces the reviewed real-Pi activation ceilings", () => {
+  it("enforces the reviewed real-Pi operational timeout ceiling", () => {
     process.env.AUTHORING_REAL_PI_ENABLED = "true";
-    const budgets = {
+    const operationalLimits = {
       maxWallTimeMs: 120_000,
       maxModelTurns: 6,
       maxToolCalls: 16,
@@ -608,11 +550,11 @@ describe("constrained component authoring", () => {
       maxCostUsd: 1,
     };
     expect(() =>
-      assertRealPiActivation(budgets, "openai-codex/gpt-5.4-mini"),
+      assertRealPiActivation(operationalLimits, "openai-codex/gpt-5.4-mini"),
     ).not.toThrow();
     expect(() =>
       assertRealPiActivation(
-        { ...budgets, maxTokens: 100_001 },
+        { ...operationalLimits, maxWallTimeMs: 300_001 },
         "openai-codex/gpt-5.4-mini",
       ),
     ).toThrow("reviewed ceiling");
@@ -680,17 +622,17 @@ function turn(
     ...overrides,
   };
 }
-async function budgetedPiSession(
-  budget: PiProviderBudget,
+async function trackedPiSession(
+  tracker: PiUsageTracker,
   responses: readonly Usage[],
 ) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "relay-pi-budget-test-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "relay-pi-usage-test-"));
   roots.push(root);
   const model: Model<"openai-responses"> = {
-    id: "budget-test-model",
-    name: "Budget test model",
+    id: "usage-test-model",
+    name: "Usage test model",
     api: "openai-responses",
-    provider: "budget-test-provider",
+    provider: "usage-test-provider",
     baseUrl: "http://invalid.local",
     reasoning: false,
     input: ["text"],
@@ -707,7 +649,7 @@ async function budgetedPiSession(
     },
     streamSimple: (requestModel: Model<"openai-responses">) => {
       const usage = responses[providerCalls];
-      if (!usage) throw new Error("Unexpected unbudgeted provider request.");
+      if (!usage) throw new Error("Unexpected provider request.");
       providerCalls += 1;
       observedCaps.push(requestModel.maxTokens);
       const stream = createAssistantMessageEventStream();
@@ -727,7 +669,7 @@ async function budgetedPiSession(
       return stream;
     },
   } as unknown as ModelRuntime;
-  installPiProviderBudget(runtime, budget);
+  installPiUsageTracking(runtime, tracker);
 
   const settings = SettingsManager.inMemory({
     defaultProvider: model.provider,
@@ -742,7 +684,7 @@ async function budgetedPiSession(
     noPromptTemplates: true,
     noThemes: true,
     noContextFiles: true,
-    systemPrompt: "Budget-bound test session.",
+    systemPrompt: "Usage-tracked test session.",
   });
   await loader.reload();
   const { session } = await createAgentSession({

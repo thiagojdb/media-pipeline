@@ -49,6 +49,16 @@ describe("creator component loop boundary", () => {
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
       costUsd: 0.001,
+      sessionRef: "pi:test-session",
+      contextTokens: 14,
+      contextWindow: 272_000,
+      contextPercent: (14 / 272_000) * 100,
+      totalInputTokens: 8,
+      totalOutputTokens: 6,
+      totalCacheReadTokens: 0,
+      totalCacheWriteTokens: 0,
+      estimatedCostUsd: 0.001,
+      compacted: true,
     });
     const conversation = await t.query(api.componentConversation.get, {
       workerToken,
@@ -65,6 +75,15 @@ describe("creator component loop boundary", () => {
       role: "assistant",
       state: "complete",
       content: "Hi — I’m Relay.",
+      safeStatus: "Context compacted automatically; response complete.",
+    });
+    expect(conversation?.thread).toMatchObject({
+      sessionRef: "pi:test-session",
+      contextTokens: 14,
+      contextWindow: 272_000,
+      totalInputTokens: 8,
+      estimatedCostUsd: 0.001,
+      compactionCount: 1,
     });
     expect(status.turns).toEqual([]);
     expect(status.builds).toEqual([]);

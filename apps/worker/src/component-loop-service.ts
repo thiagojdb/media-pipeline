@@ -129,12 +129,44 @@ export class ComponentLoopService {
       ),
     ])) as [
       Record<string, unknown>,
-      { thread: { phase: string }; messages: unknown[] } | null,
+      {
+        thread: {
+          phase: string;
+          sessionRef?: string;
+          contextTokens?: number;
+          contextWindow?: number;
+          contextPercent?: number;
+          totalInputTokens?: number;
+          totalOutputTokens?: number;
+          totalCacheReadTokens?: number;
+          totalCacheWriteTokens?: number;
+          estimatedCostUsd?: number;
+          compactionCount?: number;
+          lastCompactedAt?: number;
+        };
+        messages: unknown[];
+      } | null,
     ];
     return {
       ...status,
       phase: conversation?.thread.phase ?? "dialogue",
       messages: conversation?.messages ?? [],
+      context: conversation
+        ? {
+            usedTokens: conversation.thread.contextTokens,
+            maxTokens: conversation.thread.contextWindow,
+            usedPercentage: conversation.thread.contextPercent,
+            totalInputTokens: conversation.thread.totalInputTokens ?? 0,
+            totalOutputTokens: conversation.thread.totalOutputTokens ?? 0,
+            totalCacheReadTokens: conversation.thread.totalCacheReadTokens ?? 0,
+            totalCacheWriteTokens:
+              conversation.thread.totalCacheWriteTokens ?? 0,
+            estimatedCostUsd: conversation.thread.estimatedCostUsd ?? 0,
+            compactsAutomatically: true,
+            compactionCount: conversation.thread.compactionCount ?? 0,
+            lastCompactedAt: conversation.thread.lastCompactedAt,
+          }
+        : undefined,
       authoringMode: this.authoringMode,
       model: this.authoringMode === "real" ? this.modelSpec : undefined,
     };
@@ -175,14 +207,43 @@ export class ComponentLoopService {
   ) {
     if (!this.dialogueAgent)
       throw new Error("Component dialogue is not configured.");
-    const conversation = (await this.#client.query(
-      api.componentConversation!.get as never,
-      { workerToken: this.token, channelId, threadId } as never,
-    )) as { messages: Array<{ role: "user" | "assistant"; content: string }> };
+    const [conversation, currentWork] = (await Promise.all([
+      this.#client.query(
+        api.componentConversation!.get as never,
+        {
+          workerToken: this.token,
+          channelId,
+          threadId,
+        } as never,
+      ),
+      this.#client.query(
+        api.componentLoop!.status as never,
+        {
+          workerToken: this.token,
+          channelId,
+          threadId,
+        } as never,
+      ),
+    ])) as [
+      {
+        thread: { sessionRef?: string };
+        messages: Array<{ role: "user" | "assistant"; content: string }>;
+      },
+      {
+        turns: Array<{ state: string; terminalMessage?: string }>;
+        builds: Array<{ state: string; failureMessage?: string }>;
+        candidates: Array<{ status: string; version: string }>;
+        versions: Array<{ version: string }>;
+      },
+    ];
     const result = await this.dialogueAgent.run({
+      ...(conversation.thread.sessionRef
+        ? { sessionRef: conversation.thread.sessionRef }
+        : {}),
       history: conversation.messages
         .filter((message) => message.content)
         .map(({ role, content }) => ({ role, content })),
+      workState: summarizeCurrentWork(currentWork),
       onTextDelta: async (delta) => {
         await this.#client.mutation(
           api.componentConversation!.appendDelta as never,
@@ -222,10 +283,25 @@ export class ComponentLoopService {
         cacheReadTokens: result.cacheReadTokens,
         cacheWriteTokens: result.cacheWriteTokens,
         costUsd: result.costUsd,
+        sessionRef: result.sessionRef,
+        contextTokens: result.contextTokens,
+        contextWindow: result.contextWindow,
+        contextPercent: result.contextPercent,
+        totalInputTokens: result.totalInputTokens,
+        totalOutputTokens: result.totalOutputTokens,
+        totalCacheReadTokens: result.totalCacheReadTokens,
+        totalCacheWriteTokens: result.totalCacheWriteTokens,
+        estimatedCostUsd: result.estimatedCostUsd,
+        compacted: result.compacted,
       } as never,
     );
     if (result.transitionBrief)
-      await this.#beginImplementation(threadId, result.transitionBrief, theme);
+      await this.#beginImplementation(
+        threadId,
+        result.transitionBrief,
+        theme,
+        result.sessionRef,
+      );
   }
 
   async #completeDialogueWithoutModel(
@@ -257,6 +333,12 @@ export class ComponentLoopService {
         cacheReadTokens: 0,
         cacheWriteTokens: 0,
         costUsd: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCacheWriteTokens: 0,
+        estimatedCostUsd: 0,
+        compacted: false,
       } as never,
     );
   }
@@ -265,6 +347,7 @@ export class ComponentLoopService {
     threadId: string,
     brief: string,
     theme: z.infer<typeof themeSchema>,
+    sessionRef?: string,
   ) {
     const status = (await this.#client.query(
       api.componentLoop!.status as never,
@@ -293,13 +376,14 @@ export class ComponentLoopService {
       });
       return;
     }
-    await this.#beginInitial(threadId, brief, theme);
+    await this.#beginInitial(threadId, brief, theme, sessionRef);
   }
 
   async #beginInitial(
     threadId: string,
     brief: string,
     theme: z.infer<typeof themeSchema>,
+    sessionRef?: string,
   ) {
     const turnId = `turn-${randomUUID()}`;
     const source = starterComponentSource;
@@ -325,7 +409,8 @@ export class ComponentLoopService {
         baseSourceHash: sha(source),
         channelThemeJson: JSON.stringify(theme),
         assetsMetadataJson: "{}",
-        ...this.#budgets(),
+        sessionRef,
+        ...this.#operationalLimits(),
       } as never,
     );
   }
@@ -398,7 +483,7 @@ export class ComponentLoopService {
         ],
         channelThemeJson: JSON.stringify(value.theme),
         assetsMetadataJson: "{}",
-        ...this.#budgets(),
+        ...this.#operationalLimits(),
       } as never,
     );
     return { turnId };
@@ -442,13 +527,13 @@ export class ComponentLoopService {
     return buildCandidatePreviewHtml(artifact, options);
   }
 
-  #budgets() {
+  #operationalLimits() {
     return {
-      maxWallTimeMs: 120_000,
-      maxModelTurns: 6,
-      maxToolCalls: this.authoringMode === "real" ? 16 : 20,
+      maxWallTimeMs: 300_000,
+      maxModelTurns: 12,
+      maxToolCalls: 30,
       maxTokens: this.authoringMode === "real" ? 100_000 : 12_000,
-      maxCostUsd: 1,
+      maxCostUsd: 10,
     };
   }
 
@@ -522,4 +607,28 @@ function bounded(value: string, name: string, maximum: number): string {
 
 function sha(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function summarizeCurrentWork(status: {
+  turns: Array<{ state: string; terminalMessage?: string }>;
+  builds: Array<{ state: string; failureMessage?: string }>;
+  candidates: Array<{ status: string; version: string }>;
+  versions: Array<{ version: string }>;
+}): string {
+  const turn = status.turns.at(-1);
+  const build = status.builds.at(-1);
+  const candidate = status.candidates.at(-1);
+  const version = status.versions.at(-1);
+  return JSON.stringify({
+    implementation: turn
+      ? { state: turn.state, message: turn.terminalMessage }
+      : { state: "not_started" },
+    validation: build
+      ? { state: build.state, message: build.failureMessage }
+      : { state: "not_started" },
+    candidate: candidate
+      ? { state: candidate.status, version: candidate.version }
+      : null,
+    approvedVersion: version?.version ?? null,
+  });
 }

@@ -41,9 +41,9 @@ export class DeterministicFakeAuthoringAgent implements AuthoringAgent {
         );
       });
       return {
-        status: "budget_exhausted",
-        code: "wall_time_exhausted",
-        message: "Fake authoring wall-time budget exhausted.",
+        status: "failed",
+        code: "authoring_interrupted",
+        message: "Fake authoring was interrupted by its operational timeout.",
         assistantSummary: "Timed out deterministically.",
         sessionRef: `fake:${turn.threadId}`,
         ...usage(),

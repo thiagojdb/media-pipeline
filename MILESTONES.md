@@ -51,7 +51,7 @@ Establish a small TypeScript repository and a component contract that subsequent
 ## M1 — Dependable Component Loop
 
 **Linear milestone:** Dependable Component Loop  
-**Issues:** MED-123 through MED-129, MED-131, MED-133, MED-135 through MED-137, with Foundation dependencies
+**Issues:** MED-123 through MED-129, MED-131, MED-133, MED-135 through MED-138, with Foundation dependencies
 
 ### Product outcome
 
@@ -78,10 +78,11 @@ The implementation should generally progress through these proof layers:
    - MED-125: review, approval, rejection, revisions, and exact pins
 
 5. **Whole-loop proof**
-   - MED-124: real-page golden flow and one explicit budgeted Pi run
+   - MED-124: real-page golden flow and one explicit metered Pi run
    - MED-135: conversational creator workspace and visible agent progress
    - MED-136: exact generated source, sandboxed preview, chat revisions, and immutable approval
    - MED-137: streamed multi-turn dialogue and an explicit model-controlled implementation handoff
+   - MED-138: one skill-driven Relay session, controlled research, auto-compaction, and context/cost telemetry
 
 This order separates SDK/rendering defects from agent defects. Pi should not be asked to target an unproven component environment.
 
@@ -108,9 +109,9 @@ This order separates SDK/rendering defects from agent defects. Pi should not be 
 - [ ] Preview and low-resolution render agree at selected checkpoints.
 - [ ] Existing inputs and versions remain reproducible after a successor is approved.
 - [ ] Agent attempts, tool activity, usage/cost, wall time, and terminal state are recorded.
-- [ ] Attempt, command, token/cost, and wall-time exhaustion become `needs_intervention` rather than an infinite loop.
+- [ ] Provider stalls and operational retry exhaustion become recoverable `needs_intervention` states rather than infinite loops; token and cost totals remain telemetry only.
 - [ ] Ordinary CI uses a fake agent and spends no model tokens.
-- [ ] One explicit real-Pi dogfood run passes under a declared budget.
+- [ ] One explicit real-Pi dogfood run passes with context, usage, and estimated cost recorded.
 - [ ] Residual limitations are documented before M2 starts.
 
 ### Explicit non-goals

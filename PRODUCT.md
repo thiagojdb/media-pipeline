@@ -77,7 +77,7 @@ The central product loop is:
 
 1. A creator discusses the component with Relay in a normal multi-turn conversation.
 2. Relay streams its response and asks concise clarifying questions without loading component source or implementation tools.
-3. Once the request is actionable, Relay announces the transition and explicitly hands a self-contained brief to a bounded Pi coding session.
+3. Once the request is actionable, Relay announces the transition and expands the same durable Pi session with the component skills, authoritative context, and constrained implementation tools.
 4. Pi receives the public SDK, allowed tools and dependencies, channel design context, relevant assets and examples, the current source for revisions, and explicit acceptance requirements.
 5. Pi writes code and may run checks through the tools Relay grants it while its safe status and response text remain visible in the same conversation.
 6. When Pi reports completion, Relay independently validates the candidate.
@@ -89,7 +89,7 @@ The central product loop is:
 
 The agent saying “done” is never the acceptance condition.
 
-A greeting, exploratory question, or incomplete idea must remain a lightweight conversation. It must not allocate an authoring workspace, disclose the implementation context, or spend an authoring budget.
+A greeting, exploratory question, or incomplete idea must remain a lightweight conversation. It must not allocate an authoring workspace or disclose the implementation context. Relay reports active context capacity and estimated provider usage transparently, automatically compacts long sessions, and does not stop useful creative work at arbitrary turn, token, or cost quotas.
 
 ### Mechanical acceptance
 
@@ -141,7 +141,7 @@ The editing agent revises a structured composition. It does not edit an opaque M
 4. **Preview and output agree.** A component’s frame semantics must be the same during inspection and rendering.
 5. **Sources stay connected.** Later research and editing work must retain the source reference that motivated it.
 6. **Narration structures the edit.** Semantic beats and narration timing guide visual composition.
-7. **AI use is explicit and bounded.** Real model runs record attempts, usage, cost, and terminal state; CI does not spend model tokens.
+7. **AI use is explicit and observable.** Real model runs report context, attempts, usage, estimated cost, and terminal state; automatic compaction sustains long work and CI does not spend model tokens.
 8. **Failures are visible and recoverable.** Jobs never appear successful because an agent claimed success or remain silently stuck.
 9. **Collaboration is designed in early.** Channel membership is modeled now even though invitations and granular permissions arrive later.
 10. **One dependable path beats broad simulation.** Features expand only after the current vertical slice works in the real application.

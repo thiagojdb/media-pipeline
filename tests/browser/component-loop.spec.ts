@@ -97,6 +97,10 @@ test("previews exact source, revises in chat, approves, and reopens the version"
   await expect(
     page.getByTitle("Exact preview of generated-chart 1.0.0"),
   ).toBeVisible();
+  await expect(page.getByLabel("Context window 82% available")).toContainText(
+    "82% context free",
+  );
+  await expect(page.getByText("~$0.12")).toBeVisible();
   await page.getByRole("button", { name: /Inspect generated source/ }).click();
   await expect(page.getByText(/defineVideoComponent/)).toBeVisible();
 
@@ -245,6 +249,18 @@ function status(
     })),
     candidates,
     versions,
+    context: {
+      usedTokens: 50_000,
+      maxTokens: 272_000,
+      usedPercentage: (50_000 / 272_000) * 100,
+      totalInputTokens: 61_000,
+      totalOutputTokens: 8_000,
+      totalCacheReadTokens: 42_000,
+      totalCacheWriteTokens: 0,
+      estimatedCostUsd: 0.12,
+      compactsAutomatically: true,
+      compactionCount: 1,
+    },
   };
 }
 
