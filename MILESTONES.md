@@ -51,7 +51,7 @@ Establish a small TypeScript repository and a component contract that subsequent
 ## M1 — Dependable Component Loop
 
 **Linear milestone:** Dependable Component Loop  
-**Issues:** MED-123 through MED-129, MED-131, MED-133, MED-135 through MED-138, with Foundation dependencies
+**Issues:** MED-123 through MED-129, MED-131, MED-133, MED-135 through MED-140, with Foundation dependencies
 
 ### Product outcome
 
@@ -83,6 +83,8 @@ The implementation should generally progress through these proof layers:
    - MED-136: exact generated source, sandboxed preview, chat revisions, and immutable approval
    - MED-137: streamed multi-turn dialogue and an explicit model-controlled implementation handoff
    - MED-138: one skill-driven Relay session, controlled research, auto-compaction, and context/cost telemetry
+   - MED-139: stable in-chat preview playback and frame seeking
+   - MED-140: durable conversation restoration through reloads and shareable thread URLs
 
 This order separates SDK/rendering defects from agent defects. Pi should not be asked to target an unproven component environment.
 

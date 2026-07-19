@@ -87,6 +87,8 @@ The central product loop is:
 10. The creator approves, rejects, or asks for another revision in the same conversation.
 11. Approval creates an immutable version available to channel projects.
 
+The conversation has a shareable thread URL and reopens after a browser reload with its messages, activity, candidates, approved versions, and channel theme intact. “New chat” starts a fresh browser conversation without deleting the durable prior thread.
+
 The agent saying “done” is never the acceptance condition.
 
 A greeting, exploratory question, or incomplete idea must remain a lightweight conversation. It must not allocate an authoring workspace or disclose the implementation context. Relay reports active context capacity and estimated provider usage transparently, automatically compacts long sessions, and does not stop useful creative work at arbitrary turn, token, or cost quotas.

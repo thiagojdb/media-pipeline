@@ -132,6 +132,7 @@ export class ComponentLoopService {
       {
         thread: {
           phase: string;
+          themeJson: string;
           sessionRef?: string;
           contextTokens?: number;
           contextWindow?: number;
@@ -147,26 +148,30 @@ export class ComponentLoopService {
         messages: unknown[];
       } | null,
     ];
+    if (!conversation)
+      throw new ComponentLoopRequestError(
+        "thread_not_found",
+        "This Relay conversation is unavailable. Start a new chat or open a valid conversation link.",
+        404,
+      );
     return {
       ...status,
-      phase: conversation?.thread.phase ?? "dialogue",
-      messages: conversation?.messages ?? [],
-      context: conversation
-        ? {
-            usedTokens: conversation.thread.contextTokens,
-            maxTokens: conversation.thread.contextWindow,
-            usedPercentage: conversation.thread.contextPercent,
-            totalInputTokens: conversation.thread.totalInputTokens ?? 0,
-            totalOutputTokens: conversation.thread.totalOutputTokens ?? 0,
-            totalCacheReadTokens: conversation.thread.totalCacheReadTokens ?? 0,
-            totalCacheWriteTokens:
-              conversation.thread.totalCacheWriteTokens ?? 0,
-            estimatedCostUsd: conversation.thread.estimatedCostUsd ?? 0,
-            compactsAutomatically: true,
-            compactionCount: conversation.thread.compactionCount ?? 0,
-            lastCompactedAt: conversation.thread.lastCompactedAt,
-          }
-        : undefined,
+      phase: conversation.thread.phase,
+      messages: conversation.messages,
+      theme: JSON.parse(conversation.thread.themeJson) as unknown,
+      context: {
+        usedTokens: conversation.thread.contextTokens,
+        maxTokens: conversation.thread.contextWindow,
+        usedPercentage: conversation.thread.contextPercent,
+        totalInputTokens: conversation.thread.totalInputTokens ?? 0,
+        totalOutputTokens: conversation.thread.totalOutputTokens ?? 0,
+        totalCacheReadTokens: conversation.thread.totalCacheReadTokens ?? 0,
+        totalCacheWriteTokens: conversation.thread.totalCacheWriteTokens ?? 0,
+        estimatedCostUsd: conversation.thread.estimatedCostUsd ?? 0,
+        compactsAutomatically: true,
+        compactionCount: conversation.thread.compactionCount ?? 0,
+        lastCompactedAt: conversation.thread.lastCompactedAt,
+      },
       authoringMode: this.authoringMode,
       model: this.authoringMode === "real" ? this.modelSpec : undefined,
     };

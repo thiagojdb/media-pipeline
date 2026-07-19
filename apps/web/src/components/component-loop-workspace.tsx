@@ -86,6 +86,7 @@ type Version = {
 type LoopStatus = {
   authoringMode: "fake" | "real";
   model?: string;
+  theme?: ChannelTheme;
   phase: "dialogue" | "authoring" | "review";
   messages: ConversationMessage[];
   turns: Turn[];
@@ -110,6 +111,7 @@ type LoopStatus = {
 
 const inputClass =
   "w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100";
+const threadStorageKey = "relay.component-loop.thread-id";
 
 export function ComponentLoopWorkspace() {
   const [draft, setDraft] = useState("");
@@ -120,6 +122,31 @@ export function ComponentLoopWorkspace() {
   const [status, setStatus] = useState<LoopStatus>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [restoring, setRestoring] = useState(true);
+  const restoredThemeThread = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      const url = new URL(window.location.href);
+      const requested = url.searchParams.get("thread");
+      const stored = window.localStorage.getItem(threadStorageKey);
+      const restored = validThreadId(requested) ? requested : stored;
+      if (validThreadId(restored)) {
+        rememberThread(restored);
+        setThreadId(restored);
+      } else {
+        window.localStorage.removeItem(threadStorageKey);
+        url.searchParams.delete("thread");
+        window.history.replaceState({}, "", url);
+      }
+      setRestoring(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const theme = useMemo<ChannelTheme>(
     () => ({
@@ -146,6 +173,12 @@ export function ComponentLoopWorkspace() {
           "/api/component-loop/threads/" + threadId,
         );
         if (stopped) return;
+        if (next.theme && restoredThemeThread.current !== threadId) {
+          restoredThemeThread.current = threadId;
+          setAccent(next.theme.colors.accent ?? "#ef4444");
+          setBackground(next.theme.colors.background ?? "#07111f");
+          setFont(next.theme.fonts.heading ?? "Arial, sans-serif");
+        }
         setStatus(next);
         if (hasActiveWork(next)) timer = window.setTimeout(poll, 500);
       } catch (cause) {
@@ -172,6 +205,7 @@ export function ComponentLoopWorkspace() {
           body: JSON.stringify({ prompt, theme, failureProbe }),
         },
       );
+      rememberThread(result.threadId);
       setThreadId(result.threadId);
       setStatus(undefined);
       setDraft("");
@@ -222,6 +256,14 @@ export function ComponentLoopWorkspace() {
   };
 
   const canSend = Boolean(draft.trim()) && !busy && !working;
+  const newChat = () => {
+    forgetThread();
+    restoredThemeThread.current = undefined;
+    setThreadId(undefined);
+    setStatus(undefined);
+    setDraft("");
+    setError(undefined);
+  };
 
   return (
     <main className="min-h-screen bg-[#f7f7f8]">
@@ -239,6 +281,11 @@ export function ComponentLoopWorkspace() {
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
+            {threadId && (
+              <Button onClick={newChat} size="sm" variant="outline">
+                New chat
+              </Button>
+            )}
             <span
               className={
                 "size-2 rounded-full " +
@@ -266,7 +313,9 @@ export function ComponentLoopWorkspace() {
       <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:px-8">
         <section className="flex min-h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-2xl border bg-white shadow-sm">
           <div className="flex-1 px-5 py-7 sm:px-8">
-            {!threadId ? (
+            {restoring ? (
+              <AgentLoading label="Restoring your Relay conversation…" />
+            ) : !threadId ? (
               <EmptyConversation />
             ) : status ? (
               <Conversation
@@ -1080,6 +1129,24 @@ function errorMessage(value: unknown): string {
   return value instanceof Error
     ? value.message
     : "The component-loop request failed.";
+}
+
+function validThreadId(value: string | null): value is string {
+  return Boolean(value && /^[A-Za-z0-9_-]{1,200}$/.test(value));
+}
+
+function rememberThread(threadId: string): void {
+  window.localStorage.setItem(threadStorageKey, threadId);
+  const url = new URL(window.location.href);
+  url.searchParams.set("thread", threadId);
+  window.history.replaceState({}, "", url);
+}
+
+function forgetThread(): void {
+  window.localStorage.removeItem(threadStorageKey);
+  const url = new URL(window.location.href);
+  url.searchParams.delete("thread");
+  window.history.replaceState({}, "", url);
 }
 
 function browserBase64Url(value: string): string {

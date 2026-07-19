@@ -116,6 +116,8 @@ Each component creation or revision is a durable phase of the same Relay agent s
 
 Pi session logs may be retained as diagnostics and conversation history, but they are not the authority for component state. Source snapshots, validation results, and approved component versions are Relay records.
 
+Convex remains authoritative for the creator-visible thread, including messages, activity, candidates, approved versions, and the thread theme. The browser persists only the opaque thread identifier in the URL and local storage so reloads and direct links can reconstruct that state. Clearing the browser pointer starts a new chat; it does not delete the durable thread.
+
 ### Conversational handoff boundary
 
 MED-137 places a durable dialogue phase before component authoring. MED-138 makes that dialogue, research, implementation, revision, and review one durable Relay/Pi session rather than a planner-to-implementor handoff. The base session receives a compact system prompt, a small skill catalog, controlled reference-research tools, authoritative work-state inspection, and `begin_component_implementation`. It has no component source, SDK pack, shell, or authoring tools until the explicit transition. Text deltas are persisted and streamed to the creator; model reasoning is never exposed, while coarse statuses such as thinking, responding, skill loading, compaction, and tool activity may be shown in a collapsed activity surface.

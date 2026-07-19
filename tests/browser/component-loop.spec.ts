@@ -131,6 +131,118 @@ test("previews exact source, revises in chat, approves, and reopens the version"
   ).toBeVisible();
 });
 
+test("restores a durable conversation after reload and starts a new chat safely", async ({
+  page,
+}) => {
+  const candidates = [candidate("candidate-persisted", "1.0.0")];
+  const messages = conversationMessages(
+    "Build a conversation I can reopen.",
+    "The durable candidate is ready for review.",
+  );
+  const persistedTheme = {
+    colors: {
+      accent: "#7c3aed",
+      background: "#020617",
+      foreground: "#f8fafc",
+      muted: "#94a3b8",
+      grid: "#1e293b",
+    },
+    fonts: { heading: "Inter, sans-serif", body: "Inter, sans-serif" },
+    spacing: { outer: 72 },
+  };
+  let starts = 0;
+
+  await page.context().route("**/api/component-loop/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/requests")) {
+      starts += 1;
+      await route.fulfill({
+        status: 202,
+        json: { channelId: "channel-test", threadId: "thread-persisted" },
+      });
+      return;
+    }
+    if (path.endsWith("/preview")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: '<div role="img" aria-label="Persisted generated component">persisted preview</div>',
+      });
+      return;
+    }
+    if (path.endsWith("/threads/thread-missing")) {
+      await route.fulfill({
+        status: 404,
+        json: {
+          message:
+            "This Relay conversation is unavailable. Start a new chat or open a valid conversation link.",
+        },
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      json: status(candidates, [], messages, persistedTheme),
+    });
+  });
+
+  await page.goto("/component-loop");
+  await page
+    .getByRole("textbox", { name: "Message Relay" })
+    .fill("Build a conversation I can reopen.");
+  await page.getByRole("button", { name: "Send message" }).click();
+
+  await expect(page).toHaveURL(/\?thread=thread-persisted$/);
+  await expect(
+    page.getByTitle("Exact preview of generated-chart 1.0.0"),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        localStorage.getItem("relay.component-loop.thread-id"),
+      ),
+    )
+    .toBe("thread-persisted");
+
+  await page.reload();
+
+  await expect(
+    page.getByText("Build a conversation I can reopen."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("The durable candidate is ready for review."),
+  ).toBeVisible();
+  await expect(
+    page.getByTitle("Exact preview of generated-chart 1.0.0"),
+  ).toBeVisible();
+  await expect(page.getByLabel("Accent color")).toHaveValue("#7c3aed");
+  await expect(page.getByLabel("Background color")).toHaveValue("#020617");
+  await expect(page.getByLabel("Heading font")).toHaveValue(
+    "Inter, sans-serif",
+  );
+  expect(starts).toBe(1);
+
+  await page.getByRole("button", { name: "New chat" }).click();
+
+  await expect(page).toHaveURL(/\/component-loop$/);
+  await expect(page.getByText("What should Relay build?")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        localStorage.getItem("relay.component-loop.thread-id"),
+      ),
+    )
+    .toBeNull();
+  expect(starts).toBe(1);
+
+  await page.goto("/component-loop?thread=thread-missing");
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Relay needs your attention" }),
+  ).toContainText("This Relay conversation is unavailable");
+  await page.getByRole("button", { name: "New chat" }).click();
+  await expect(page.getByText("What should Relay build?")).toBeVisible();
+});
+
 test("keeps the inline preview mounted during playback and repeated seeks", async ({
   page,
 }) => {
@@ -290,10 +402,22 @@ function status(
   candidates: ReturnType<typeof candidate>[],
   versions: Array<{ id: string; version: string; approvedAt: number }>,
   messages: ReturnType<typeof conversationMessages>,
+  theme = {
+    colors: {
+      accent: "#ef4444",
+      background: "#07111f",
+      foreground: "#f4f7fb",
+      muted: "#91a3ba",
+      grid: "#24364d",
+    },
+    fonts: { heading: "Arial, sans-serif", body: "Arial, sans-serif" },
+    spacing: { outer: 72 },
+  },
 ) {
   return {
     authoringMode: "real",
     model: "openai-codex/gpt-5.4-mini",
+    theme,
     phase: candidates.length ? "review" : "dialogue",
     messages,
     turns: candidates.map((item) => ({
