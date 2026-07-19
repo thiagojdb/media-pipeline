@@ -235,13 +235,7 @@ function usageViolation(
   if (result.toolCalls > turn.maxToolCalls) return "Tool-call budget exceeded.";
   if (result.modelTurns > turn.maxModelTurns)
     return "Model-turn budget exceeded.";
-  if (
-    result.inputTokens +
-      result.outputTokens +
-      result.cacheReadTokens +
-      result.cacheWriteTokens >
-    turn.maxTokens
-  )
+  if (result.inputTokens + result.outputTokens > turn.maxTokens)
     return "Token budget exceeded.";
   if (result.costUsd > turn.maxCostUsd) return "Cost budget exceeded.";
   if (result.wallTimeMs > turn.maxWallTimeMs)

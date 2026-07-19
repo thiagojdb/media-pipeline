@@ -741,13 +741,7 @@ function validateUsage(
     throw new Error("Tool-call budget exceeded.");
   if (value.modelTurns > turn.maxModelTurns)
     throw new Error("Model-turn budget exceeded.");
-  if (
-    value.inputTokens +
-      value.outputTokens +
-      value.cacheReadTokens +
-      value.cacheWriteTokens >
-    turn.maxTokens
-  )
+  if (value.inputTokens + value.outputTokens > turn.maxTokens)
     throw new Error("Token budget exceeded.");
   if (value.costUsd > turn.maxCostUsd) throw new Error("Cost budget exceeded.");
   if (value.wallTimeMs > turn.maxWallTimeMs)

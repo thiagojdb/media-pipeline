@@ -426,6 +426,36 @@ describe("constrained component authoring", () => {
     }
   });
 
+  it("records cached tokens without charging them to the uncached token cap", () => {
+    const configured = turn("provider-cache", "request", {
+      maxTokens: 1_000,
+      priorInputTokens: 100,
+      priorCacheReadTokens: 10_000,
+    });
+    const budget = new PiProviderBudget(configured, 800);
+
+    expect(() =>
+      budget.beforeProviderRequest({ maxTokens: 800 }),
+    ).not.toThrow();
+    budget.recordResponse({
+      input: 300,
+      output: 100,
+      cacheRead: 20_000,
+      cacheWrite: 5_000,
+      totalTokens: 25_400,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.05 },
+    });
+
+    expect(budget.exhausted).toBe(false);
+    expect(budget.usage).toMatchObject({
+      inputTokens: 400,
+      outputTokens: 100,
+      cacheReadTokens: 30_000,
+      cacheWriteTokens: 5_000,
+      costUsd: 0.05,
+    });
+  });
+
   it.each([
     {
       name: "turn",
@@ -561,7 +591,7 @@ describe("constrained component authoring", () => {
       maxWallTimeMs: 120_000,
       maxModelTurns: 6,
       maxToolCalls: 16,
-      maxTokens: 60_000,
+      maxTokens: 100_000,
       maxCostUsd: 1,
     };
     expect(() =>
@@ -569,7 +599,7 @@ describe("constrained component authoring", () => {
     ).not.toThrow();
     expect(() =>
       assertRealPiActivation(
-        { ...budgets, maxTokens: 60_001 },
+        { ...budgets, maxTokens: 100_001 },
         "openai-codex/gpt-5.4-mini",
       ),
     ).toThrow("reviewed ceiling");

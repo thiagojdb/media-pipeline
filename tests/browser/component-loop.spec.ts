@@ -4,8 +4,12 @@ test("previews exact source, revises in chat, approves, and reopens the version"
   page,
 }) => {
   const candidates = [candidate("candidate-1.0.0", "1.0.0")];
-  const versions: Array<{ id: string; version: string; approvedAt: number }> =
-    [];
+  const versions: Array<{
+    id: string;
+    componentId: string;
+    version: string;
+    approvedAt: number;
+  }> = [];
 
   await page.context().route("**/api/component-loop/**", async (route) => {
     const url = new URL(route.request().url());
@@ -41,6 +45,7 @@ test("previews exact source, revises in chat, approves, and reopens the version"
       item.status = "approved";
       versions.push({
         id: `version-${item.version}`,
+        componentId: item.componentId,
         version: item.version,
         approvedAt: Date.now(),
       });
@@ -62,10 +67,13 @@ test("previews exact source, revises in chat, approves, and reopens the version"
   });
 
   await page.goto("/component-loop");
+  await page
+    .getByRole("textbox", { name: "Message Relay" })
+    .fill("Create an animated data card for a weekly audience metric.");
   await page.getByRole("button", { name: "Send message" }).click();
 
   await expect(
-    page.getByTitle("Exact preview of animated line chart 1.0.0"),
+    page.getByTitle("Exact preview of generated-chart 1.0.0"),
   ).toBeVisible();
   await page.getByRole("button", { name: /Inspect generated source/ }).click();
   await expect(page.getByText(/defineVideoComponent/)).toBeVisible();
@@ -76,13 +84,15 @@ test("previews exact source, revises in chat, approves, and reopens the version"
   await page.getByRole("button", { name: "Send message" }).click();
 
   await expect(
-    page.getByTitle("Exact preview of animated line chart 1.1.0"),
+    page.getByTitle("Exact preview of generated-chart 1.1.0"),
   ).toBeVisible();
   await expect(page.getByText(/Preserved for comparison/)).toBeVisible();
   await page.getByRole("button", { name: "Approve version" }).click();
   await expect(page.getByText("Version approved and saved")).toBeVisible();
 
-  const approved = page.getByRole("link", { name: "v1.1.0" });
+  const approved = page.getByRole("link", {
+    name: "generated-chart@v1.1.0",
+  });
   await expect(approved).toHaveAttribute(
     "href",
     "/api/component-loop/versions/version-1.1.0/preview",
@@ -98,6 +108,7 @@ test("previews exact source, revises in chat, approves, and reopens the version"
 function candidate(id: string, version: string) {
   return {
     id,
+    componentId: "generated-chart",
     version,
     status: "reviewable",
     sourceHash: version.replaceAll(".", "").padEnd(64, "a"),
@@ -126,6 +137,8 @@ function status(
   versions: Array<{ id: string; version: string; approvedAt: number }>,
 ) {
   return {
+    authoringMode: "real",
+    model: "openai-codex/gpt-5.4-mini",
     turns: candidates.map((item) => ({
       id: `turn-${item.version}`,
       turnId: `turn-${item.version}`,
@@ -139,6 +152,8 @@ function status(
       toolCalls: 4,
       inputTokens: 20,
       outputTokens: 10,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
       wallTimeMs: 75,
     })),
     activities: [],

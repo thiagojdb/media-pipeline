@@ -215,7 +215,7 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
     try {
       throwIfAborted(signal);
       await session.prompt(
-        "Read the Relay authoring context, implement the requested candidate using only Relay tools, check it, and call declare_candidate_ready. Your completion message has no validation or approval authority.",
+        `This is a new Relay creator turn. The creator request is:\n\n${turn.userRequest}\n\nRead the current Relay authoring context even if this session handled an earlier turn. Implement this request against the exact supplied base using only Relay tools. You must call read_authoring_context, replace_candidate_source, check_candidate, and declare_candidate_ready during this turn. A text response or an earlier declaration does not complete this turn, and your completion message has no validation or approval authority.`,
         { expandPromptTemplates: false },
       );
       await usageWrites;
@@ -417,12 +417,7 @@ export class PiProviderBudget {
   }
 
   private get totalTokens(): number {
-    return (
-      this.inputTokens +
-      this.outputTokens +
-      this.cacheReadTokens +
-      this.cacheWriteTokens
-    );
+    return this.inputTokens + this.outputTokens;
   }
 }
 
@@ -458,7 +453,7 @@ export function assertRealPiActivation(
     turn.maxWallTimeMs > 120_000 ||
     turn.maxModelTurns > 6 ||
     turn.maxToolCalls > 16 ||
-    turn.maxTokens > 60_000 ||
+    turn.maxTokens > 100_000 ||
     turn.maxCostUsd > 1
   )
     throw new Error("Real Pi smoke budgets exceed the reviewed ceiling.");
@@ -503,12 +498,7 @@ function assistantText(messages: readonly unknown[]): string {
 function totalTokens(
   turn: Parameters<AuthoringAgent["run"]>[0]["turn"],
 ): number {
-  return (
-    turn.priorInputTokens +
-    turn.priorOutputTokens +
-    turn.priorCacheReadTokens +
-    turn.priorCacheWriteTokens
-  );
+  return turn.priorInputTokens + turn.priorOutputTokens;
 }
 function exhaustedBeforeProvider(
   turn: Parameters<AuthoringAgent["run"]>[0]["turn"],

@@ -166,33 +166,31 @@ export const status = query({
         ),
       )
     ).flat();
-    const threadCandidateIds = new Set(
-      builds.flatMap((build) =>
-        build.candidateId ? [String(build.candidateId)] : [],
-      ),
-    );
     const candidates = (
-      await ctx.db
-        .query("componentCandidates")
-        .withIndex("by_channel_component_created", (q) =>
-          q
-            .eq("channelId", args.channelId)
-            .eq("componentId", "animated-line-chart"),
-        )
-        .order("asc")
-        .take(100)
-    ).filter((candidate) => threadCandidateIds.has(String(candidate._id)));
-    const versions = await ctx.db
-      .query("componentVersions")
-      .withIndex("by_channel_component_approved", (q) =>
-        q
-          .eq("channelId", args.channelId)
-          .eq("componentId", "animated-line-chart"),
+      await Promise.all(
+        builds.map((build) =>
+          build.candidateId ? ctx.db.get(build.candidateId) : null,
+        ),
       )
-      .order("asc")
-      .take(100);
+    ).filter((candidate) => candidate !== null);
+    const componentIds = [
+      ...new Set(candidates.map((candidate) => candidate.componentId)),
+    ];
+    const versions = (
+      await Promise.all(
+        componentIds.map((componentId) =>
+          ctx.db
+            .query("componentVersions")
+            .withIndex("by_channel_component_approved", (q) =>
+              q.eq("channelId", args.channelId).eq("componentId", componentId),
+            )
+            .order("asc")
+            .take(100),
+        ),
+      )
+    ).flat();
     const approvedVersions = new Set(
-      versions.map((version) => version.version),
+      versions.map((version) => `${version.componentId}@${version.version}`),
     );
     return {
       channelId: args.channelId,
@@ -208,6 +206,8 @@ export const status = query({
         modelTurns: turn.modelTurns ?? 0,
         inputTokens: turn.inputTokens ?? 0,
         outputTokens: turn.outputTokens ?? 0,
+        cacheReadTokens: turn.cacheReadTokens ?? 0,
+        cacheWriteTokens: turn.cacheWriteTokens ?? 0,
         costUsd: turn.costUsd ?? 0,
         wallTimeMs: turn.wallTimeMs ?? 0,
         terminalCode: turn.terminalCode,
@@ -246,7 +246,9 @@ export const status = query({
         status: candidate.status,
         sourceHash: candidate.sourceHash,
         candidateRef: candidate.candidateRef,
-        versionAlreadyApproved: approvedVersions.has(candidate.declaredVersion),
+        versionAlreadyApproved: approvedVersions.has(
+          `${candidate.componentId}@${candidate.declaredVersion}`,
+        ),
         baseVersionId: candidate.baseVersionId,
         compatibilityWarning: candidate.compatibilityWarning,
         decisionNote: candidate.decisionNote,

@@ -30,6 +30,7 @@ type Build = {
 };
 type Candidate = {
   id: string;
+  componentId: string;
   version: string;
   status: string;
   sourceHash: string;
@@ -54,11 +55,20 @@ type Turn = {
   toolCalls: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
   wallTimeMs: number;
   terminalMessage?: string;
 };
-type Version = { id: string; version: string; approvedAt: number };
+type Version = {
+  id: string;
+  componentId: string;
+  version: string;
+  approvedAt: number;
+};
 type LoopStatus = {
+  authoringMode: "fake" | "real";
+  model?: string;
   turns: Turn[];
   activities: Activity[];
   builds: Build[];
@@ -70,9 +80,7 @@ const inputClass =
   "w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100";
 
 export function ComponentLoopWorkspace() {
-  const [draft, setDraft] = useState(
-    "Create an animated line chart for monthly channel growth with clear fixture states.",
-  );
+  const [draft, setDraft] = useState("");
   const [accent, setAccent] = useState("#ef4444");
   const [background, setBackground] = useState("#07111f");
   const [font, setFont] = useState("Arial, sans-serif");
@@ -229,6 +237,13 @@ export function ComponentLoopWorkspace() {
               : threadId
                 ? "Ready for review"
                 : "Ready"}
+            {status && (
+              <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[10px]">
+                {status.authoringMode === "real"
+                  ? status.model?.split("/").at(-1)
+                  : "deterministic fake"}
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -518,7 +533,13 @@ function AgentMessage({
         <div className="mt-3 flex flex-wrap gap-4 text-[11px] text-slate-400">
           <span>{turn.modelTurns} model turn</span>
           <span>{turn.toolCalls} tools</span>
-          <span>{turn.inputTokens + turn.outputTokens} tokens</span>
+          <span>
+            {turn.inputTokens +
+              turn.outputTokens +
+              turn.cacheReadTokens +
+              turn.cacheWriteTokens}{" "}
+            provider tokens
+          </span>
           <span>{turn.wallTimeMs} ms</span>
           {turn.repairAttempt > 0 && <span>repair {turn.repairAttempt}</span>}
         </div>
@@ -547,7 +568,7 @@ function CandidateCard({
       <div className="flex items-center justify-between border-b px-4 py-3">
         <div>
           <p className="text-sm font-semibold">
-            Animated line chart{" "}
+            {componentName(candidate.componentId)}{" "}
             <span className="font-mono text-xs text-slate-400">
               v{candidate.version}
             </span>
@@ -675,7 +696,7 @@ function InlinePreview({
         key={`${candidate.id}:${fixture?.id}:${frame}:${JSON.stringify(theme)}`}
         sandbox="allow-scripts"
         src={`/api/component-loop/candidates/${candidate.id}/preview?${query}`}
-        title={`Exact preview of animated line chart ${candidate.version}`}
+        title={`Exact preview of ${candidate.componentId} ${candidate.version}`}
       />
       <div className="flex items-center gap-3 border-t border-white/10 px-3 py-2 text-[11px] text-slate-300">
         <button
@@ -849,7 +870,7 @@ function VersionHistory({ versions }: { versions: Version[] }) {
                 href={`/api/component-loop/versions/${version.id}/preview`}
                 target="_blank"
               >
-                v{version.version}
+                {version.componentId}@v{version.version}
               </a>
               <span className="text-[10px] text-slate-400">
                 {index === 0 ? "latest · open" : "saved · open"}
@@ -892,6 +913,14 @@ function activityName(value: string): string {
     declare_candidate_ready: "Submitted the candidate for validation",
   };
   return names[value] ?? value.replaceAll("_", " ");
+}
+
+function componentName(value: string): string {
+  return value
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 async function request<T = unknown>(

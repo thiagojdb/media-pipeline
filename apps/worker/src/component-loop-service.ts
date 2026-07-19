@@ -1,7 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
 import { ConvexHttpClient } from "convex/browser";
 import { anyApi } from "convex/server";
 import { z } from "zod";
@@ -35,8 +32,8 @@ export class ComponentLoopService {
   constructor(
     url: string,
     private readonly token: string,
-    private readonly repoRoot: string,
     private readonly authoringMode: "fake" | "real",
+    private readonly modelSpec?: string,
   ) {
     this.#client = new ConvexHttpClient(url);
   }
@@ -53,39 +50,7 @@ export class ComponentLoopService {
       .parse(input);
     const threadId = `loop-${randomUUID()}`;
     const turnId = `turn-${randomUUID()}`;
-    const latestVersion = value.failureProbe
-      ? undefined
-      : await this.#latestApprovedVersion();
-    if (latestVersion) {
-      const userRequest =
-        this.authoringMode === "fake"
-          ? `[FAKE_LINE_CHART_REVISION] ${value.prompt}`
-          : value.prompt;
-      await this.#client.mutation(
-        api.componentReview!.enqueueRevision as never,
-        {
-          workerToken: this.token,
-          versionId: latestVersion.id,
-          threadId,
-          turnId,
-          userRequest,
-          acceptanceCriteria: [
-            "Revise the latest approved animated line chart for this request.",
-            "Declare a new semantic version and preserve existing inputs.",
-            "Use the supplied channel theme and pass independent validation.",
-          ],
-          channelThemeJson: JSON.stringify(value.theme),
-          assetsMetadataJson: "{}",
-          ...this.#budgets(),
-        } as never,
-      );
-      return { channelId, threadId };
-    }
-    const sourcePath = path.join(
-      this.repoRoot,
-      "packages/reference-components/src/line-chart.tsx",
-    );
-    const source = `${(await readFile(sourcePath, "utf8")).trimEnd()}\nexport default lineChart;\n`;
+    const source = starterComponentSource;
     const userRequest =
       this.authoringMode === "fake"
         ? `${value.failureProbe ? "[FAKE_TOKEN_LIMIT] " : "[FAKE_LINE_CHART_INITIAL] "}${value.prompt}`
@@ -99,7 +64,9 @@ export class ComponentLoopService {
         turnId,
         userRequest,
         acceptanceCriteria: [
-          "Implement an animated line chart as a valid Relay video component.",
+          "Implement the creator's requested reusable video component, rather than preserving unrelated starter behavior.",
+          "Declare a descriptive kebab-case component id at semantic version 1.0.0.",
+          "Provide representative validated fixtures and meaningful checkpoint frames.",
           "Use the supplied channel theme and pass independent validation.",
         ],
         baseSource: source,
@@ -112,15 +79,20 @@ export class ComponentLoopService {
     return { channelId, threadId };
   }
 
-  status(threadId: string): Promise<unknown> {
-    return this.#client.query(
+  async status(threadId: string): Promise<unknown> {
+    const status = (await this.#client.query(
       api.componentLoop!.status as never,
       {
         workerToken: this.token,
         channelId,
         threadId: bounded(threadId, "threadId", 200),
       } as never,
-    );
+    )) as Record<string, unknown>;
+    return {
+      ...status,
+      authoringMode: this.authoringMode,
+      model: this.authoringMode === "real" ? this.modelSpec : undefined,
+    };
   }
 
   async approve(candidateId: string): Promise<{ versionId: string }> {
@@ -185,8 +157,9 @@ export class ComponentLoopService {
         turnId,
         userRequest,
         acceptanceCriteria: [
-          "Use the channel accent for the primary line.",
-          "Keep existing inputs compatible and preserve optional draw animation.",
+          "Implement the creator's requested change in the exact selected component source.",
+          "Declare a new semantic version and preserve existing inputs unless the request explicitly requires a breaking change.",
+          "Keep representative fixtures and pass independent validation.",
         ],
         channelThemeJson: JSON.stringify(value.theme),
         assetsMetadataJson: "{}",
@@ -238,23 +211,10 @@ export class ComponentLoopService {
     return {
       maxWallTimeMs: 120_000,
       maxModelTurns: 6,
-      maxToolCalls: 20,
-      maxTokens: this.authoringMode === "real" ? 60_000 : 12_000,
+      maxToolCalls: this.authoringMode === "real" ? 16 : 20,
+      maxTokens: this.authoringMode === "real" ? 100_000 : 12_000,
       maxCostUsd: 1,
     };
-  }
-
-  async #latestApprovedVersion(): Promise<{ id: string } | undefined> {
-    const versions = (await this.#client.query(
-      api.componentReview!.listVersions as never,
-      {
-        workerToken: this.token,
-        channelId,
-        componentId: "animated-line-chart",
-      } as never,
-    )) as Array<{ _id: string }>;
-    const latest = versions.at(-1);
-    return latest ? { id: String(latest._id) } : undefined;
   }
 
   async #candidateArtifact(candidateId: string): Promise<{
@@ -284,6 +244,36 @@ export class ComponentLoopService {
     return artifact;
   }
 }
+
+const starterComponentSource = `import {defineVideoComponent, type VideoComponentProps} from "@relay/component-sdk";
+import {z} from "zod";
+
+const inputSchema = z.object({message: z.string().min(1).max(160)});
+type Input = z.output<typeof inputSchema>;
+
+function Starter({input, width, height, theme}: VideoComponentProps<Input>) {
+  return <svg role="img" aria-label={input.message} viewBox={\`0 0 \${width} \${height}\`} width={width} height={height}>
+    <rect width={width} height={height} fill={theme.colors.background ?? "#07111f"} />
+    <text x={width / 2} y={height / 2} textAnchor="middle" fill={theme.colors.foreground ?? "#f8fafc"} fontSize={64}>
+      {input.message}
+    </text>
+  </svg>;
+}
+
+export default defineVideoComponent({
+  id: "starter-component",
+  version: "1.0.0",
+  schema: inputSchema,
+  fps: 30,
+  dimensions: {width: 1920, height: 1080},
+  supportedDimensions: [{width: 1920, height: 1080}, {width: 960, height: 540}],
+  duration: 120,
+  assets: [],
+  fixtures: [{id: "default", name: "Default", input: {message: "Replace this starter"}, checkpoints: [{label: "start", frame: 0}, {label: "end", frame: 119}]}],
+  compatibility: {mode: "initial"},
+  component: Starter,
+});
+`;
 
 function bounded(value: string, name: string, maximum: number): string {
   if (!value || value.length > maximum)

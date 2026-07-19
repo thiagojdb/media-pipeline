@@ -129,8 +129,8 @@ const componentLoop =
     ? new ComponentLoopService(
         authoringUrl,
         componentLoopToken,
-        path.resolve(fileURLToPath(new URL("../../..", import.meta.url))),
         authoringMode as "fake" | "real",
+        process.env.AUTHORING_PI_MODEL,
       )
     : undefined;
 
