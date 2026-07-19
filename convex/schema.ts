@@ -12,6 +12,83 @@ const buildState = v.union(
 );
 
 export default defineSchema({
+  components: defineTable({
+    channelId: v.string(),
+    componentId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    latestApprovedVersionId: v.optional(v.id("componentVersions")),
+  }).index("by_channel_component", ["channelId", "componentId"]),
+  componentCandidates: defineTable({
+    channelId: v.string(),
+    componentId: v.string(),
+    declaredVersion: v.string(),
+    buildJobId: v.id("componentBuildJobs"),
+    sourceHash: v.string(),
+    candidateRef: v.string(),
+    validationEvidenceJson: v.string(),
+    inputSchemaJson: v.string(),
+    inputSchemaFingerprint: v.string(),
+    compatibilityJson: v.string(),
+    fixturesJson: v.string(),
+    dimensionsJson: v.string(),
+    baseVersionId: v.optional(v.id("componentVersions")),
+    status: v.union(
+      v.literal("reviewable"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("changes_requested"),
+    ),
+    compatibilityWarning: v.optional(v.string()),
+    decisionNote: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_build_job", ["buildJobId"])
+    .index("by_channel_component_created", [
+      "channelId",
+      "componentId",
+      "createdAt",
+    ]),
+  componentVersions: defineTable({
+    channelId: v.string(),
+    componentId: v.string(),
+    version: v.string(),
+    candidateId: v.id("componentCandidates"),
+    buildJobId: v.id("componentBuildJobs"),
+    sourceHash: v.string(),
+    candidateRef: v.string(),
+    validationEvidenceJson: v.string(),
+    inputSchemaJson: v.string(),
+    inputSchemaFingerprint: v.string(),
+    fixturesJson: v.string(),
+    dimensionsJson: v.string(),
+    previousVersionId: v.optional(v.id("componentVersions")),
+    approvedAt: v.number(),
+  })
+    .index("by_candidate", ["candidateId"])
+    .index("by_channel_component_version", [
+      "channelId",
+      "componentId",
+      "version",
+    ])
+    .index("by_channel_component_approved", [
+      "channelId",
+      "componentId",
+      "approvedAt",
+    ]),
+  projectComponentPins: defineTable({
+    channelId: v.string(),
+    projectId: v.string(),
+    componentId: v.string(),
+    versionId: v.id("componentVersions"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_channel_project_component", [
+    "channelId",
+    "projectId",
+    "componentId",
+  ]),
   componentBuildJobs: defineTable({
     channelId: v.string(),
     threadId: v.string(),
@@ -38,6 +115,7 @@ export default defineSchema({
     boundedStderr: v.optional(v.string()),
     validationEvidenceJson: v.optional(v.string()),
     repairTurnId: v.optional(v.id("authoringTurns")),
+    candidateId: v.optional(v.id("componentCandidates")),
   })
     .index("by_state_created", ["state", "createdAt"])
     .index("by_state_lease", ["state", "leaseExpiresAt"])

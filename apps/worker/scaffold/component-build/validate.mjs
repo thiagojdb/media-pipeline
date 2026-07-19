@@ -8,6 +8,7 @@ let fixtureCount = 0;
 let checkpointCount = 0;
 let renderedFrameCount = 0;
 let renderFingerprint;
+let component;
 
 try {
   if (!definition || typeof definition !== "object")
@@ -24,6 +25,22 @@ try {
       `${definition.id}@${definition.version} loaded through the public SDK contract.`,
     ),
   );
+  const inputSchemaJson = stableJson(definition.inputControls);
+  component = {
+    id: definition.id,
+    version: definition.version,
+    inputSchemaJson,
+    inputSchemaFingerprint: createHash("sha256")
+      .update(inputSchemaJson)
+      .digest("hex"),
+    compatibility: definition.compatibility,
+    dimensions: definition.supportedDimensions,
+    fixtures: definition.fixtures.map((fixture) => ({
+      id: fixture.id,
+      name: fixture.name,
+      checkpoints: fixture.checkpoints,
+    })),
+  };
 
   fixtureCount = definition.fixtures.length;
   checkpointCount = definition.fixtures.reduce(
@@ -128,6 +145,7 @@ function emit(exitCode) {
     checkpointCount,
     renderedFrameCount,
     ...(renderFingerprint ? { renderFingerprint } : {}),
+    ...(component ? { component } : {}),
   };
   console.log(`RELAY_VALIDATION_EVIDENCE=${JSON.stringify(evidence)}`);
   process.exit(exitCode);
@@ -136,4 +154,15 @@ function safeMessage(error) {
   return (error instanceof Error ? error.message : String(error))
     .replaceAll("/workspace", "[candidate]")
     .slice(0, 1000);
+}
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }

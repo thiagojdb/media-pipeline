@@ -358,6 +358,21 @@ describe("Convex component authoring lifecycle", () => {
       checkpointCount: 2,
       renderedFrameCount: 120,
       renderFingerprint: "a".repeat(64),
+      component: {
+        id: "evidence-proof",
+        version: "1.0.0",
+        inputSchemaJson: '{"type":"object"}',
+        inputSchemaFingerprint: sha('{"type":"object"}'),
+        compatibility: { mode: "initial" },
+        dimensions: [{ width: 1280, height: 720 }],
+        fixtures: [
+          {
+            id: "default",
+            name: "Default",
+            checkpoints: [{ label: "start", frame: 0 }],
+          },
+        ],
+      },
     });
     await t.mutation(api.componentBuildJobs.transition, {
       workerToken: buildWorkerToken,

@@ -285,6 +285,69 @@ export const transition = mutation({
     const terminal = isTerminal(nextState);
     const stdout = boundedLog(args.stdout);
     const stderr = boundedLog(args.stderr);
+    let candidateId: Doc<"componentCandidates">["_id"] | undefined;
+    if (nextState === "succeeded") {
+      const componentEvidence = validatedComponentEvidence(
+        validationEvidenceJson,
+      );
+      let component = await ctx.db
+        .query("components")
+        .withIndex("by_channel_component", (q) =>
+          q
+            .eq("channelId", job.channelId)
+            .eq("componentId", componentEvidence.id),
+        )
+        .unique();
+      if (!component) {
+        const componentId = await ctx.db.insert("components", {
+          channelId: job.channelId,
+          componentId: componentEvidence.id,
+          createdAt: now,
+          updatedAt: now,
+        });
+        component = await ctx.db.get(componentId);
+      }
+      const existingCandidate = await ctx.db
+        .query("componentCandidates")
+        .withIndex("by_build_job", (q) => q.eq("buildJobId", job._id))
+        .unique();
+      if (existingCandidate) {
+        candidateId = existingCandidate._id;
+      } else {
+        const baseVersionId = job.baseSnapshotId
+          ? ctx.db.normalizeId("componentVersions", job.baseSnapshotId)
+          : null;
+        const baseVersion = baseVersionId
+          ? await ctx.db.get(baseVersionId)
+          : null;
+        const compatibilityWarning =
+          baseVersion &&
+          baseVersion.inputSchemaFingerprint !==
+            componentEvidence.inputSchemaFingerprint
+            ? "The input schema changed from the selected base version; review existing inputs before approval."
+            : undefined;
+        candidateId = await ctx.db.insert("componentCandidates", {
+          channelId: job.channelId,
+          componentId: componentEvidence.id,
+          declaredVersion: componentEvidence.version,
+          buildJobId: job._id,
+          sourceHash: job.sourceHash,
+          candidateRef: args.candidateRef!,
+          validationEvidenceJson: validationEvidenceJson!,
+          inputSchemaJson: componentEvidence.inputSchemaJson,
+          inputSchemaFingerprint: componentEvidence.inputSchemaFingerprint,
+          compatibilityJson: JSON.stringify(componentEvidence.compatibility),
+          fixturesJson: JSON.stringify(componentEvidence.fixtures),
+          dimensionsJson: JSON.stringify(componentEvidence.dimensions),
+          baseVersionId: baseVersion?._id,
+          status: "reviewable",
+          compatibilityWarning,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      if (component) await ctx.db.patch(component._id, { updatedAt: now });
+    }
     await ctx.db.patch(args.jobId, {
       state: nextState,
       updatedAt: now,
@@ -298,6 +361,7 @@ export const transition = mutation({
       boundedStderr: terminal ? stderr : undefined,
       validationEvidenceJson: terminal ? validationEvidenceJson : undefined,
       repairTurnId,
+      candidateId,
       leaseOwner: terminal ? undefined : job.leaseOwner,
       leaseExpiresAt: terminal ? undefined : job.leaseExpiresAt,
     });
@@ -450,6 +514,7 @@ function safeJob(job: Doc<"componentBuildJobs">) {
     candidateRef: job.candidateRef,
     validationEvidenceJson: job.validationEvidenceJson,
     repairTurnId: job.repairTurnId,
+    candidateId: job.candidateId,
   };
 }
 
@@ -488,6 +553,44 @@ function sanitizeEvidence(value: string | undefined): string | undefined {
     /(?:\bBearer\s+\S+|\bsk-[a-z0-9_-]{8,}|(?:^|[\s?&])(?:api_?key|signature|token)=[^&\s]+)/gi,
     "[redacted]",
   );
+}
+function validatedComponentEvidence(value: string | undefined): {
+  id: string;
+  version: string;
+  inputSchemaJson: string;
+  inputSchemaFingerprint: string;
+  compatibility: unknown;
+  fixtures: unknown;
+  dimensions: unknown;
+} {
+  if (!value) throw new Error("Successful validation requires evidence.");
+  const parsed = JSON.parse(value) as {
+    component?: Record<string, unknown>;
+  };
+  const component = parsed.component;
+  if (
+    !component ||
+    typeof component.id !== "string" ||
+    !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(component.id) ||
+    typeof component.version !== "string" ||
+    typeof component.inputSchemaJson !== "string" ||
+    typeof component.inputSchemaFingerprint !== "string" ||
+    !/^[a-f0-9]{64}$/.test(component.inputSchemaFingerprint) ||
+    !component.compatibility ||
+    typeof component.compatibility !== "object" ||
+    !Array.isArray(component.fixtures) ||
+    !Array.isArray(component.dimensions)
+  )
+    throw new Error("Successful validation evidence lacks component metadata.");
+  return {
+    id: component.id,
+    version: component.version,
+    inputSchemaJson: component.inputSchemaJson,
+    inputSchemaFingerprint: component.inputSchemaFingerprint,
+    compatibility: component.compatibility,
+    fixtures: component.fixtures,
+    dimensions: component.dimensions,
+  };
 }
 function remainingBudgets(turn: Doc<"authoringTurns">) {
   return {

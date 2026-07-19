@@ -123,6 +123,8 @@ Pi SDK integration is pinned to reviewed version `0.80.10`. Pi receives a determ
 
 After authoring, the component-build worker independently compiles and exercises the candidate inside the isolated workspace. It retains structured evidence for source policy, TypeScript bundling, the component contract, fixture inputs, deterministic checkpoints, and the complete low-resolution fixture frame sequence. Failed validation can enqueue a bounded same-session repair with the exact failed source and only the remaining original budget; exhausted repair or resource limits become `needs_intervention`.
 
+Passing validation creates a reviewable candidate, not an approved component. Explicit approval creates an immutable version with exact source/build lineage; rejection or requested changes do not alter approved history. Revisions start from a selected approved version, schema changes surface an acknowledgement-required compatibility warning, and project pins remain on their chosen version until deliberately changed.
+
 MED-128 does not add creator chat UI, authentication UI, independent repair, approval, or version promotion. Those remain MED-123, MED-125, and MED-124 work.
 
 ## MED-129 trust boundary

@@ -228,6 +228,7 @@ function fromConvex(value: Record<string, unknown>): ComponentBuildJob {
     maxRepairAttempts: Number(value.maxRepairAttempts ?? 0),
     validationEvidence: parseEvidence(value.validationEvidenceJson),
     repairTurnId: optionalString(value.repairTurnId),
+    candidateId: optionalString(value.candidateId),
   };
 }
 function parseEvidence(value: unknown) {

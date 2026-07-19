@@ -29,6 +29,7 @@ export interface ComponentBuildJob {
   readonly boundedStderr?: string | undefined;
   readonly validationEvidence?: ValidationEvidence | undefined;
   readonly repairTurnId?: string | undefined;
+  readonly candidateId?: string | undefined;
 }
 
 export type ValidationCheckCode =
@@ -53,6 +54,27 @@ export interface ValidationEvidence {
   readonly checkpointCount: number;
   readonly renderedFrameCount: number;
   readonly renderFingerprint?: string | undefined;
+  readonly component?:
+    | {
+        readonly id: string;
+        readonly version: string;
+        readonly inputSchemaJson: string;
+        readonly inputSchemaFingerprint: string;
+        readonly compatibility: unknown;
+        readonly dimensions: readonly {
+          readonly width: number;
+          readonly height: number;
+        }[];
+        readonly fixtures: readonly {
+          readonly id: string;
+          readonly name: string;
+          readonly checkpoints: readonly {
+            readonly label: string;
+            readonly frame: number;
+          }[];
+        }[];
+      }
+    | undefined;
 }
 
 export interface BuildTransition {

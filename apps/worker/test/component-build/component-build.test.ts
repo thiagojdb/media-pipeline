@@ -226,6 +226,13 @@ describe("bounded component build lifecycle", () => {
         expect(result.validationEvidence.renderFingerprint).toMatch(
           /^[a-f0-9]{64}$/,
         );
+        expect(result.validationEvidence.component).toMatchObject({
+          id: "validation-proof",
+          version: "1.0.0",
+          inputSchemaFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+          fixtures: [expect.objectContaining({ id: "proof", name: "Proof" })],
+          dimensions: [{ width: 320, height: 180 }],
+        });
         expect(result.validationEvidence.checks).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
