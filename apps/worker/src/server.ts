@@ -10,6 +10,10 @@ import {
   DraftRenderRequestError,
   DraftRenderService,
 } from "./draft-render-service.js";
+import {
+  ComponentLoopRequestError,
+  ComponentLoopService,
+} from "./component-loop-service.js";
 
 const MAX_REQUEST_BYTES = 1_000_000;
 
@@ -18,6 +22,7 @@ export const createWorkerServer = ({
   componentBuildsEnabled = false,
   componentBuildStatus,
   authoringStatus,
+  componentLoop,
 }: {
   readonly draftRenders?: DraftRenderService;
   readonly componentBuildsEnabled?: boolean;
@@ -25,6 +30,7 @@ export const createWorkerServer = ({
     "disabled" | "running" | "degraded" | "stopped";
   readonly authoringStatus?: () =>
     "disabled" | "running" | "degraded" | "stopped";
+  readonly componentLoop?: ComponentLoopService;
 } = {}): Server =>
   createServer(async (request, response) => {
     try {
@@ -37,7 +43,13 @@ export const createWorkerServer = ({
             componentBuildStatus?.() ??
             (componentBuildsEnabled ? "running" : "disabled"),
           authoring: authoringStatus?.() ?? "disabled",
+          componentLoop: componentLoop ? "ready" : "disabled",
         });
+        return;
+      }
+
+      if (url.pathname.startsWith("/component-loop")) {
+        await handleComponentLoop(request, response, url, componentLoop);
         return;
       }
 
@@ -92,12 +104,83 @@ export const createWorkerServer = ({
         });
         return;
       }
+      if (error instanceof ComponentLoopRequestError) {
+        sendJson(response, error.status, {
+          error: error.code,
+          message: error.message,
+        });
+        return;
+      }
+      if (error instanceof Error && error.name === "ZodError") {
+        sendJson(response, 400, {
+          error: "invalid_request",
+          message: "The component-loop request is invalid.",
+        });
+        return;
+      }
       sendJson(response, 500, {
         error: "worker_error",
         message: "The worker could not process this request.",
       });
     }
   });
+
+async function handleComponentLoop(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  service: ComponentLoopService | undefined,
+): Promise<void> {
+  if (!service) {
+    sendJson(response, 503, {
+      error: "component_loop_unavailable",
+      message: "The component loop is not configured on this worker.",
+    });
+    return;
+  }
+  if (
+    request.method === "POST" &&
+    url.pathname === "/component-loop/requests"
+  ) {
+    sendJson(response, 202, await service.start(await readJson(request)));
+    return;
+  }
+  const thread = url.pathname.match(
+    /^\/component-loop\/threads\/([^/]+)(?:\/(revisions))?$/,
+  );
+  if (request.method === "GET" && thread && !thread[2]) {
+    sendJson(response, 200, await service.status(thread[1]!));
+    return;
+  }
+  if (request.method === "POST" && thread?.[2] === "revisions") {
+    sendJson(
+      response,
+      202,
+      await service.revise(thread[1]!, await readJson(request)),
+    );
+    return;
+  }
+  const candidate = url.pathname.match(
+    /^\/component-loop\/candidates\/([^/]+)\/(approve|reject|request-changes)$/,
+  );
+  if (request.method === "POST" && candidate) {
+    if (candidate[2] === "approve") {
+      sendJson(response, 200, await service.approve(candidate[1]!));
+    } else {
+      sendJson(
+        response,
+        200,
+        await service.decide(
+          candidate[1]!,
+          candidate[2] === "reject" ? "reject" : "requestChanges",
+          await readJson(request),
+        ),
+      );
+    }
+    return;
+  }
+  sendJson(response, 405, { error: "method_not_allowed" });
+}
 
 async function readJson(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];

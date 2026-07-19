@@ -80,8 +80,16 @@ export class DeterministicFakeAuthoringAgent implements AuthoringAgent {
       .update(turn.userRequest)
       .digest("hex")
       .slice(0, 12);
+    const candidate = turn.userRequest.includes("[FAKE_LINE_CHART_REVISION]")
+      ? base
+          .replace('version: "1.0.0"', 'version: "1.1.0"')
+          .replace(
+            'compatibility: { mode: "initial" }',
+            'compatibility: { mode: "backward-compatible", previousVersion: "1.0.0" }',
+          )
+      : base;
     await tools.replaceCandidate(
-      `${base.trimEnd()}\n// Relay deterministic authoring turn ${requestHash}\n`,
+      `${candidate.trimEnd()}\n// Relay deterministic authoring turn ${requestHash}\n`,
     );
     await tools.checkCandidate();
     await tools.declareReady(

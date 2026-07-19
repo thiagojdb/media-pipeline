@@ -33,6 +33,12 @@ export default function Home() {
 
       <div className="mt-10 flex flex-wrap gap-3">
         <Button asChild>
+          <a href="/component-loop">
+            Open component loop
+            <ArrowUpRight aria-hidden="true" />
+          </a>
+        </Button>
+        <Button asChild variant="outline">
           <a href="/components/animated-line-chart/versions/1.0.0/preview">
             Preview the line chart
             <ArrowUpRight aria-hidden="true" />

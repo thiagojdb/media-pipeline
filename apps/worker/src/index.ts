@@ -19,6 +19,7 @@ import { ComponentAuthoringLoop } from "./component-authoring/loop.js";
 import { ComponentAuthoringService } from "./component-authoring/service.js";
 import { ConvexAuthoringTurnStore } from "./component-authoring/store.js";
 import { AuthoringWorkspaceManager } from "./component-authoring/workspace.js";
+import { ComponentLoopService } from "./component-loop-service.js";
 
 const port = Number.parseInt(process.env.WORKER_PORT ?? "3212", 10);
 const useFakeRenderer = process.env.RELAY_RENDER_MODE === "fake";
@@ -116,11 +117,29 @@ if (authoringEnabled && authoringUrl && authoringToken) {
   authoringLoop.start();
 }
 
+const componentLoopEnabled = process.env.COMPONENT_LOOP_ENABLED === "true";
+const componentLoopToken = process.env.COMPONENT_LOOP_WORKER_TOKEN;
+if (componentLoopEnabled && (!authoringUrl || !componentLoopToken)) {
+  throw new Error(
+    "COMPONENT_LOOP_ENABLED=true requires AUTHORING_CONVEX_URL and COMPONENT_LOOP_WORKER_TOKEN.",
+  );
+}
+const componentLoop =
+  componentLoopEnabled && authoringUrl && componentLoopToken
+    ? new ComponentLoopService(
+        authoringUrl,
+        componentLoopToken,
+        path.resolve(fileURLToPath(new URL("../../..", import.meta.url))),
+        authoringMode as "fake" | "real",
+      )
+    : undefined;
+
 const server = createWorkerServer({
   draftRenders,
   componentBuildsEnabled,
   componentBuildStatus: () => componentBuildLoop?.status ?? "disabled",
   authoringStatus: () => authoringLoop?.status ?? "disabled",
+  ...(componentLoop ? { componentLoop } : {}),
 });
 
 server.listen(port, "127.0.0.1", () => {

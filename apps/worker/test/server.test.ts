@@ -45,6 +45,7 @@ describe("worker HTTP boundary", () => {
       status: "ready",
       componentBuilds: "disabled",
       authoring: "disabled",
+      componentLoop: "disabled",
     });
   });
 

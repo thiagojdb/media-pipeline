@@ -9,6 +9,7 @@
   "scripts": {
     "predev": "npm run build:packages",
     "dev": "concurrently --kill-others-on-fail --names web,convex,worker --prefix-colors blue,magenta,green \"npm run dev --workspace @relay/web\" \"convex dev\" \"npm run dev --workspace @relay/worker\"",
+    "dev:loop": "npm run build:packages && concurrently --kill-others-on-fail --names web,convex,loop --prefix-colors blue,magenta,green \"npm run dev --workspace @relay/web\" \"convex dev\" \"node scripts/start-local-component-loop-worker.mjs\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

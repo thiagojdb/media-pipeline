@@ -11,12 +11,15 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 const buildWorkerToken = "component-review-build-token";
+const loopWorkerToken = "component-review-loop-token";
 
 beforeEach(() => {
   process.env.COMPONENT_BUILD_WORKER_TOKEN = buildWorkerToken;
+  process.env.COMPONENT_LOOP_WORKER_TOKEN = loopWorkerToken;
 });
 afterEach(() => {
   delete process.env.COMPONENT_BUILD_WORKER_TOKEN;
+  delete process.env.COMPONENT_LOOP_WORKER_TOKEN;
 });
 
 describe("component review and immutable version lifecycle", () => {
@@ -30,7 +33,8 @@ describe("component review and immutable version lifecycle", () => {
         '{"type":"object","properties":{"color":{"type":"string"}}}',
     });
 
-    const reviewable = await t.query(internal.componentReview.getCandidate, {
+    const reviewable = await t.query(api.componentReview.getCandidate, {
+      workerToken: loopWorkerToken,
       candidateId,
     });
     expect(reviewable).toMatchObject({
@@ -43,17 +47,20 @@ describe("component review and immutable version lifecycle", () => {
       t.run(async (ctx) => ctx.db.query("componentVersions").collect()),
     ).resolves.toHaveLength(0);
 
-    const versionId = await t.mutation(internal.componentReview.approve, {
+    const versionId = await t.mutation(api.componentReview.approve, {
+      workerToken: loopWorkerToken,
       candidateId,
       note: "Creative review passed.",
     });
     await expect(
-      t.mutation(internal.componentReview.approve, {
+      t.mutation(api.componentReview.approve, {
+        workerToken: loopWorkerToken,
         candidateId,
         note: "Idempotent retry.",
       }),
     ).resolves.toBe(versionId);
-    const version = await t.query(internal.componentReview.getVersion, {
+    const version = await t.query(api.componentReview.getVersion, {
+      workerToken: loopWorkerToken,
       versionId,
     });
     expect(version).toMatchObject({
@@ -72,10 +79,12 @@ describe("component review and immutable version lifecycle", () => {
       inputSchemaJson:
         '{"type":"object","properties":{"color":{"type":"string"}}}',
     });
-    const firstVersion = await t.mutation(internal.componentReview.approve, {
+    const firstVersion = await t.mutation(api.componentReview.approve, {
+      workerToken: loopWorkerToken,
       candidateId: firstCandidate,
     });
-    const pinId = await t.mutation(internal.componentReview.pinVersion, {
+    const pinId = await t.mutation(api.componentReview.pinVersion, {
+      workerToken: loopWorkerToken,
       channelId: "channel-review",
       projectId: "project-video",
       versionId: firstVersion,
@@ -89,21 +98,25 @@ describe("component review and immutable version lifecycle", () => {
         '{"type":"object","properties":{"color":{"type":"number"},"animate":{"type":"boolean"}}}',
       baseVersionId: firstVersion,
     });
-    const revision = await t.query(internal.componentReview.getCandidate, {
+    const revision = await t.query(api.componentReview.getCandidate, {
+      workerToken: loopWorkerToken,
       candidateId: revisionCandidate,
     });
     expect(revision?.compatibilityWarning).toContain("input schema changed");
     await expect(
-      t.mutation(internal.componentReview.approve, {
+      t.mutation(api.componentReview.approve, {
+        workerToken: loopWorkerToken,
         candidateId: revisionCandidate,
       }),
     ).rejects.toThrow("Acknowledge");
-    await t.mutation(internal.componentReview.reject, {
+    await t.mutation(api.componentReview.reject, {
+      workerToken: loopWorkerToken,
       candidateId: revisionCandidate,
       note: "Color must remain a string.",
     });
 
-    const versions = await t.query(internal.componentReview.listVersions, {
+    const versions = await t.query(api.componentReview.listVersions, {
+      workerToken: loopWorkerToken,
       channelId: "channel-review",
       componentId: "animated-line-chart",
     });
@@ -131,13 +144,14 @@ describe("component review and immutable version lifecycle", () => {
         '{"type":"object","properties":{"color":{"type":"string"}}}',
       baseVersionId: firstVersion,
     });
-    const successorVersion = await t.mutation(
-      internal.componentReview.approve,
-      { candidateId: compatibleCandidate },
-    );
+    const successorVersion = await t.mutation(api.componentReview.approve, {
+      workerToken: loopWorkerToken,
+      candidateId: compatibleCandidate,
+    });
     const versionsAfterApproval = await t.query(
-      internal.componentReview.listVersions,
+      api.componentReview.listVersions,
       {
+        workerToken: loopWorkerToken,
         channelId: "channel-review",
         componentId: "animated-line-chart",
       },
@@ -146,10 +160,10 @@ describe("component review and immutable version lifecycle", () => {
       "1.0.0",
       "1.1.0",
     ]);
-    const firstStillAvailable = await t.query(
-      internal.componentReview.getVersion,
-      { versionId: firstVersion },
-    );
+    const firstStillAvailable = await t.query(api.componentReview.getVersion, {
+      workerToken: loopWorkerToken,
+      versionId: firstVersion,
+    });
     expect(firstStillAvailable?.sourceSnapshot).toBe(
       "export default 'version-one';",
     );
@@ -179,10 +193,12 @@ describe("component review and immutable version lifecycle", () => {
       version: "1.0.0",
       inputSchemaJson: '{"type":"object"}',
     });
-    const versionId = await t.mutation(internal.componentReview.approve, {
+    const versionId = await t.mutation(api.componentReview.approve, {
+      workerToken: loopWorkerToken,
       candidateId,
     });
-    const turnId = await t.mutation(internal.componentReview.enqueueRevision, {
+    const turnId = await t.mutation(api.componentReview.enqueueRevision, {
+      workerToken: loopWorkerToken,
       versionId,
       threadId: "revision-thread",
       turnId: "make-red",
@@ -217,12 +233,16 @@ describe("component review and immutable version lifecycle", () => {
       version: "1.0.0",
       inputSchemaJson: '{"type":"object"}',
     });
-    await t.mutation(internal.componentReview.requestChanges, {
+    await t.mutation(api.componentReview.requestChanges, {
+      workerToken: loopWorkerToken,
       candidateId,
       note: "Use the channel accent color.",
     });
     await expect(
-      t.query(internal.componentReview.getCandidate, { candidateId }),
+      t.query(api.componentReview.getCandidate, {
+        workerToken: loopWorkerToken,
+        candidateId,
+      }),
     ).resolves.toMatchObject({
       status: "changes_requested",
       decisionNote: "Use the channel accent color.",

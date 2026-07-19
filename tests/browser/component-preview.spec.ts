@@ -235,6 +235,7 @@ test("starts a worker draft render, observes success, and downloads the pinned M
   await expect(status).toContainText("animated-line-chart@1.0.0");
   await expect(status).toContainText("channel-growth");
   await expect(status).toContainText("succeeded", { timeout: 5_000 });
+  await expect(status).toContainText("Render time:");
   await expect(page.getByRole("progressbar")).toHaveAttribute(
     "aria-valuenow",
     "100",

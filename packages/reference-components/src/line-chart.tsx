@@ -262,6 +262,24 @@ export const lineChart = defineVideoComponent({
   component: AnimatedLineChart,
 });
 
+/** Trusted compiled successor used to preview and render an approved revision. */
+export const lineChartRevision = defineVideoComponent({
+  id: lineChart.id,
+  version: "1.1.0",
+  schema: lineChartInputSchema,
+  fps: lineChart.fps,
+  dimensions: lineChart.dimensions,
+  supportedDimensions: lineChart.supportedDimensions,
+  duration: lineChart.duration,
+  assets: lineChart.assets,
+  fixtures: lineChart.fixtures,
+  compatibility: {
+    mode: "backward-compatible",
+    previousVersion: "1.0.0",
+  },
+  component: AnimatedLineChart,
+});
+
 function AnimatedLineChart({
   input,
   frame,

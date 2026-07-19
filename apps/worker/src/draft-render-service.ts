@@ -7,7 +7,7 @@ import {
   resolveVideoComponentDuration,
   validateVideoComponentInput,
 } from "@relay/component-sdk";
-import { lineChart } from "@relay/reference-components";
+import { lineChart, lineChartRevision } from "@relay/reference-components";
 
 import {
   draftRenderRequestSchema,
@@ -242,24 +242,27 @@ export function validateAndPinRequest(
     );
   }
   const request = parsed.data;
-  if (
-    request.componentId !== lineChart.id ||
-    request.version !== lineChart.version
-  ) {
+  const definition = [lineChart, lineChartRevision].find(
+    (item) =>
+      item.id === request.componentId && item.version === request.version,
+  );
+  if (!definition) {
     throw new DraftRenderRequestError(
       "component_version_unavailable",
       `Trusted component ${request.componentId}@${request.version} is not available to the worker.`,
       404,
     );
   }
-  if (!lineChart.fixtures.some((fixture) => fixture.id === request.fixtureId)) {
+  if (
+    !definition.fixtures.some((fixture) => fixture.id === request.fixtureId)
+  ) {
     throw new DraftRenderRequestError(
       "fixture_unavailable",
-      `Fixture ${request.fixtureId} does not belong to ${lineChart.id}@${lineChart.version}.`,
+      `Fixture ${request.fixtureId} does not belong to ${definition.id}@${definition.version}.`,
       400,
     );
   }
-  const input = validateVideoComponentInput(lineChart.schema, request.input);
+  const input = validateVideoComponentInput(definition.schema, request.input);
   if (!input.success) {
     const issue = input.issues[0];
     throw new DraftRenderRequestError(
@@ -269,13 +272,13 @@ export function validateAndPinRequest(
     );
   }
   const durationInFrames = resolveVideoComponentDuration(
-    lineChart,
+    definition,
     input.value,
   );
-  if (request.fps !== lineChart.fps) {
+  if (request.fps !== definition.fps) {
     throw new DraftRenderRequestError(
       "fps_mismatch",
-      `Requested ${request.fps} fps does not match pinned component fps ${lineChart.fps}.`,
+      `Requested ${request.fps} fps does not match pinned component fps ${definition.fps}.`,
       400,
     );
   }
@@ -286,7 +289,7 @@ export function validateAndPinRequest(
       400,
     );
   }
-  const dimensionsSupported = lineChart.supportedDimensions.some(
+  const dimensionsSupported = definition.supportedDimensions.some(
     ({ width, height }) =>
       width === request.dimensions.width &&
       height === request.dimensions.height,

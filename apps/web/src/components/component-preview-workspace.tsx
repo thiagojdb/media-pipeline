@@ -112,6 +112,9 @@ type DraftRenderSnapshot = {
     };
   };
   readonly reproducibilityKey: string;
+  readonly createdAt: string;
+  readonly startedAt?: string;
+  readonly finishedAt?: string;
   readonly output?: {
     readonly href: string;
     readonly mediaType: "video/mp4";
@@ -821,6 +824,11 @@ function ResolvedPreviewWorkspace({
                   {draftRender.component.id}@{draftRender.component.version} ·{" "}
                   {draftRender.component.fixtureId}
                 </p>
+                {draftRender.startedAt ? (
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    Render time: {renderElapsedMilliseconds(draftRender)} ms
+                  </p>
+                ) : null}
                 {draftRender.state === "succeeded" && draftRender.output ? (
                   <a
                     className="mt-3 flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-medium text-white"
@@ -926,6 +934,14 @@ function ResolvedPreviewWorkspace({
       </div>
     </main>
   );
+}
+
+function renderElapsedMilliseconds(render: DraftRenderSnapshot): number {
+  const started = Date.parse(render.startedAt ?? render.createdAt);
+  const finished = render.finishedAt
+    ? Date.parse(render.finishedAt)
+    : Date.now();
+  return Math.max(0, finished - started);
 }
 
 function ScaledPreviewStage({

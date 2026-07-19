@@ -20,6 +20,24 @@ npm install
 npm run dev
 ```
 
+To run the deterministic creator component loop (including authoring and build
+workers), use:
+
+```bash
+npm run dev:loop
+```
+
+Then open `http://127.0.0.1:3000/component-loop`. This local mode uses fixed
+development-only worker tokens and the deterministic fake authoring agent; it
+does not call a paid model. Generated candidates still pass through the real
+durable Convex queues, independent build validation, and explicit review.
+
+Current component-loop limits are deliberate: the creator route targets the
+animated line chart, and only trusted compiled versions 1.0.0 and 1.1.0 can be
+previewed or rendered. Local `dev:loop` uses deterministic fake authoring. A
+real Pi dogfood requires the explicit provider/model and server-only credential
+configuration documented below; no global or implicit authentication is used.
+
 `npm run dev` is the single start path. It runs the Next.js application, Convex development service, and Node worker together. On the first run, the Convex CLI configures a local development deployment and writes `.env.local`; later runs reuse that configuration. Choose a hosted project only when you explicitly want cloud development.
 
 Local endpoints are:

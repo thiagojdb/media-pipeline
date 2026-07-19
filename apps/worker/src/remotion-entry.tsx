@@ -1,5 +1,9 @@
 import React from "react";
-import { lineChart, type LineChartInput } from "@relay/reference-components";
+import {
+  lineChart,
+  lineChartRevision,
+  type LineChartInput,
+} from "@relay/reference-components";
 import { RemotionVideoComponentFrame } from "@relay/rendering";
 import { Composition, registerRoot } from "remotion";
 import type { z } from "zod";
@@ -26,10 +30,10 @@ const defaultProps: DraftCompositionProps = {
 };
 
 function DraftComponent(props: DraftCompositionProps) {
-  if (
-    props.componentId !== lineChart.id ||
-    props.version !== lineChart.version
-  ) {
+  const definition = [lineChart, lineChartRevision].find(
+    (item) => item.id === props.componentId && item.version === props.version,
+  );
+  if (!definition) {
     throw new Error(
       `Pinned component ${props.componentId}@${props.version} is unavailable in this render bundle.`,
     );
@@ -37,7 +41,7 @@ function DraftComponent(props: DraftCompositionProps) {
   return (
     <RemotionVideoComponentFrame
       assets={{}}
-      definition={lineChart}
+      definition={definition}
       dimensions={props.dimensions}
       durationInFrames={props.durationInFrames}
       input={props.input as LineChartInput}

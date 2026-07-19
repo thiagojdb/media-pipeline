@@ -1,6 +1,6 @@
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 const budgets = {
@@ -11,18 +11,24 @@ const budgets = {
   maxCostUsd: v.number(),
 };
 
-export const getCandidate = internalQuery({
-  args: { candidateId: v.id("componentCandidates") },
-  handler: async (ctx, { candidateId }) => {
+export const getCandidate = query({
+  args: { workerToken: v.string(), candidateId: v.id("componentCandidates") },
+  handler: async (ctx, { workerToken, candidateId }) => {
+    authorize(workerToken);
     const candidate = await ctx.db.get(candidateId);
     if (!candidate) return null;
     return candidateDetails(candidate);
   },
 });
 
-export const listCandidates = internalQuery({
-  args: { channelId: v.string(), componentId: v.string() },
+export const listCandidates = query({
+  args: {
+    workerToken: v.string(),
+    channelId: v.string(),
+    componentId: v.string(),
+  },
   handler: async (ctx, args) => {
+    authorize(args.workerToken);
     const candidates = await ctx.db
       .query("componentCandidates")
       .withIndex("by_channel_component_created", (q) =>
@@ -34,13 +40,15 @@ export const listCandidates = internalQuery({
   },
 });
 
-export const approve = internalMutation({
+export const approve = mutation({
   args: {
+    workerToken: v.string(),
     candidateId: v.id("componentCandidates"),
     note: v.optional(v.string()),
     acknowledgeCompatibilityWarning: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    authorize(args.workerToken);
     const candidate = await requireCandidate(ctx, args.candidateId);
     const existing = await ctx.db
       .query("componentVersions")
@@ -105,31 +113,52 @@ export const approve = internalMutation({
   },
 });
 
-export const reject = internalMutation({
-  args: { candidateId: v.id("componentCandidates"), note: v.string() },
-  handler: (ctx, args) => decide(ctx, args, "rejected"),
+export const reject = mutation({
+  args: {
+    workerToken: v.string(),
+    candidateId: v.id("componentCandidates"),
+    note: v.string(),
+  },
+  handler: (ctx, args) => {
+    authorize(args.workerToken);
+    return decide(ctx, args, "rejected");
+  },
 });
 
-export const requestChanges = internalMutation({
-  args: { candidateId: v.id("componentCandidates"), note: v.string() },
-  handler: (ctx, args) => decide(ctx, args, "changes_requested"),
+export const requestChanges = mutation({
+  args: {
+    workerToken: v.string(),
+    candidateId: v.id("componentCandidates"),
+    note: v.string(),
+  },
+  handler: (ctx, args) => {
+    authorize(args.workerToken);
+    return decide(ctx, args, "changes_requested");
+  },
 });
 
-export const listVersions = internalQuery({
-  args: { channelId: v.string(), componentId: v.string() },
-  handler: async (ctx, args) =>
-    ctx.db
+export const listVersions = query({
+  args: {
+    workerToken: v.string(),
+    channelId: v.string(),
+    componentId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    authorize(args.workerToken);
+    return ctx.db
       .query("componentVersions")
       .withIndex("by_channel_component_approved", (q) =>
         q.eq("channelId", args.channelId).eq("componentId", args.componentId),
       )
       .order("asc")
-      .take(100),
+      .take(100);
+  },
 });
 
-export const getVersion = internalQuery({
-  args: { versionId: v.id("componentVersions") },
-  handler: async (ctx, { versionId }) => {
+export const getVersion = query({
+  args: { workerToken: v.string(), versionId: v.id("componentVersions") },
+  handler: async (ctx, { workerToken, versionId }) => {
+    authorize(workerToken);
     const version = await ctx.db.get(versionId);
     if (!version) return null;
     const build = await ctx.db.get(version.buildJobId);
@@ -139,13 +168,15 @@ export const getVersion = internalQuery({
   },
 });
 
-export const pinVersion = internalMutation({
+export const pinVersion = mutation({
   args: {
+    workerToken: v.string(),
     channelId: v.string(),
     projectId: v.string(),
     versionId: v.id("componentVersions"),
   },
   handler: async (ctx, args) => {
+    authorize(args.workerToken);
     const version = await ctx.db.get(args.versionId);
     if (!version || version.channelId !== args.channelId)
       throw new Error("Approved component version was not found.");
@@ -178,8 +209,9 @@ export const pinVersion = internalMutation({
   },
 });
 
-export const enqueueRevision = internalMutation({
+export const enqueueRevision = mutation({
   args: {
+    workerToken: v.string(),
     versionId: v.id("componentVersions"),
     threadId: v.string(),
     turnId: v.string(),
@@ -190,6 +222,7 @@ export const enqueueRevision = internalMutation({
     ...budgets,
   },
   handler: async (ctx, args) => {
+    authorize(args.workerToken);
     const version = await ctx.db.get(args.versionId);
     if (!version) throw new Error("Selected component version was not found.");
     const build = await ctx.db.get(version.buildJobId);
@@ -422,4 +455,9 @@ function parseJson(value: string, name: string): unknown {
   } catch {
     throw new Error(`${name} must be valid JSON.`);
   }
+}
+function authorize(token: string): void {
+  const expected = process.env.COMPONENT_LOOP_WORKER_TOKEN;
+  if (!expected || token !== expected)
+    throw new Error("Component-loop worker authorization failed.");
 }

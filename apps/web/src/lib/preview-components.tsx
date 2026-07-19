@@ -2,7 +2,7 @@ import {
   defineVideoComponent,
   type DefinedVideoComponent,
 } from "@relay/component-sdk";
-import { lineChart } from "@relay/reference-components";
+import { lineChart, lineChartRevision } from "@relay/reference-components";
 import { z } from "zod";
 
 const runtimeFailureProof = defineVideoComponent({
@@ -50,7 +50,11 @@ const runtimeFailureProof = defineVideoComponent({
  * Closed allowlist of trusted definitions compiled into the application.
  * MED-129 never loads source or falls back across unknown ids or versions.
  */
-const trustedBundledComponents = [lineChart, runtimeFailureProof] as const;
+const trustedBundledComponents = [
+  lineChart,
+  lineChartRevision,
+  runtimeFailureProof,
+] as const;
 
 export function hasPreviewComponent(id: string, version: string): boolean {
   return trustedBundledComponents.some(
