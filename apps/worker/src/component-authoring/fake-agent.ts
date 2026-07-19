@@ -81,12 +81,7 @@ export class DeterministicFakeAuthoringAgent implements AuthoringAgent {
       .digest("hex")
       .slice(0, 12);
     const candidate = turn.userRequest.includes("[FAKE_LINE_CHART_REVISION]")
-      ? base
-          .replace('version: "1.0.0"', 'version: "1.1.0"')
-          .replace(
-            'compatibility: { mode: "initial" }',
-            'compatibility: { mode: "backward-compatible", previousVersion: "1.0.0" }',
-          )
+      ? prepareFakeRevisionCandidate(base)
       : base;
     await tools.replaceCandidate(
       `${candidate.trimEnd()}\n// Relay deterministic authoring turn ${requestHash}\n`,
@@ -105,4 +100,22 @@ export class DeterministicFakeAuthoringAgent implements AuthoringAgent {
       ...usage(),
     };
   }
+}
+
+export function prepareFakeRevisionCandidate(base: string): string {
+  const version = base.match(/version:\s*"(\d+)\.(\d+)\.(\d+)"/);
+  if (!version)
+    throw new Error("Fake revision base must declare a semantic version.");
+  const current = `${version[1]}.${version[2]}.${version[3]}`;
+  const successor = `${version[1]}.${Number(version[2]) + 1}.0`;
+  const compatibility =
+    /compatibility:\s*\{ mode: "(?:initial|backward-compatible)"(?:, previousVersion: "[^"]+")? \}/;
+  if (!compatibility.test(base))
+    throw new Error("Fake revision base must declare compatibility metadata.");
+  return base
+    .replace(version[0], `version: "${successor}"`)
+    .replace(
+      compatibility,
+      `compatibility: { mode: "backward-compatible", previousVersion: "${current}" }`,
+    );
 }

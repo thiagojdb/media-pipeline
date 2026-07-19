@@ -15,6 +15,7 @@ type Candidate = {
   id: string;
   version: string;
   status: string;
+  versionAlreadyApproved: boolean;
   compatibilityWarning?: string;
   validationEvidence: {
     checks?: Array<{ code: string; status: string; message: string }>;
@@ -281,14 +282,23 @@ export function ComponentLoopWorkspace() {
                       {candidate.compatibilityWarning}
                     </p>
                   )}
+                  {candidate.status === "reviewable" &&
+                    candidate.versionAlreadyApproved && (
+                      <p className="mt-3 text-sm text-amber-700">
+                        This version is already approved. Start a revision from
+                        the latest approved version to create a successor.
+                      </p>
+                    )}
                   {candidate.status === "reviewable" && (
                     <div className="mt-4 flex gap-2">
-                      <Button
-                        disabled={busy}
-                        onClick={() => void approve(candidate.id)}
-                      >
-                        Approve
-                      </Button>
+                      {!candidate.versionAlreadyApproved && (
+                        <Button
+                          disabled={busy}
+                          onClick={() => void approve(candidate.id)}
+                        >
+                          Approve
+                        </Button>
+                      )}
                       <Button
                         disabled={busy}
                         variant="outline"
@@ -320,15 +330,21 @@ export function ComponentLoopWorkspace() {
                 <article className="rounded-lg border p-4" key={version.id}>
                   <strong>animated-line-chart@{version.version}</strong>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Button asChild variant="outline">
-                      <a
-                        href={`/components/animated-line-chart/versions/${version.version}/preview`}
-                        target="_blank"
-                      >
-                        Preview & render <ArrowUpRight />
-                      </a>
-                    </Button>
-                    {version.version === "1.0.0" && (
+                    {isBundledPreviewVersion(version.version) ? (
+                      <Button asChild variant="outline">
+                        <a
+                          href={`/components/animated-line-chart/versions/${version.version}/preview`}
+                          target="_blank"
+                        >
+                          Preview & render <ArrowUpRight />
+                        </a>
+                      </Button>
+                    ) : (
+                      <span className="text-muted-foreground self-center text-xs">
+                        Preview is not bundled for this local successor.
+                      </span>
+                    )}
+                    {version.id === status.versions.at(-1)?.id && (
                       <Button
                         disabled={busy}
                         onClick={() => void revise(version.id)}
@@ -341,7 +357,7 @@ export function ComponentLoopWorkspace() {
                 </article>
               ))}
             </div>
-            {status.versions.some(({ version }) => version === "1.0.0") && (
+            {status.versions.length > 0 && (
               <label className="mt-6 block text-sm font-semibold">
                 Revision request
                 <textarea
@@ -373,4 +389,8 @@ function message(value: unknown): string {
   return value instanceof Error
     ? value.message
     : "The component-loop request failed.";
+}
+
+function isBundledPreviewVersion(version: string): boolean {
+  return version === "1.0.0" || version === "1.1.0";
 }

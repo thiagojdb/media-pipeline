@@ -191,6 +191,9 @@ export const status = query({
       )
       .order("asc")
       .take(100);
+    const approvedVersions = new Set(
+      versions.map((version) => version.version),
+    );
     return {
       channelId: args.channelId,
       threadId: args.threadId,
@@ -241,6 +244,7 @@ export const status = query({
         componentId: candidate.componentId,
         version: candidate.declaredVersion,
         status: candidate.status,
+        versionAlreadyApproved: approvedVersions.has(candidate.declaredVersion),
         baseVersionId: candidate.baseVersionId,
         compatibilityWarning: candidate.compatibilityWarning,
         decisionNote: candidate.decisionNote,

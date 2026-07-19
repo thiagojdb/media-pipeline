@@ -51,6 +51,34 @@ export class ComponentLoopService {
       .parse(input);
     const threadId = `loop-${randomUUID()}`;
     const turnId = `turn-${randomUUID()}`;
+    const latestVersion = value.failureProbe
+      ? undefined
+      : await this.#latestApprovedVersion();
+    if (latestVersion) {
+      const userRequest =
+        this.authoringMode === "fake"
+          ? `[FAKE_LINE_CHART_REVISION] ${value.prompt}`
+          : value.prompt;
+      await this.#client.mutation(
+        api.componentReview!.enqueueRevision as never,
+        {
+          workerToken: this.token,
+          versionId: latestVersion.id,
+          threadId,
+          turnId,
+          userRequest,
+          acceptanceCriteria: [
+            "Revise the latest approved animated line chart for this request.",
+            "Declare a new semantic version and preserve existing inputs.",
+            "Use the supplied channel theme and pass independent validation.",
+          ],
+          channelThemeJson: JSON.stringify(value.theme),
+          assetsMetadataJson: "{}",
+          ...this.#budgets(),
+        } as never,
+      );
+      return { channelId, threadId };
+    }
     const sourcePath = path.join(
       this.repoRoot,
       "packages/reference-components/src/line-chart.tsx",
@@ -166,6 +194,19 @@ export class ComponentLoopService {
       maxTokens: this.authoringMode === "real" ? 60_000 : 12_000,
       maxCostUsd: 1,
     };
+  }
+
+  async #latestApprovedVersion(): Promise<{ id: string } | undefined> {
+    const versions = (await this.#client.query(
+      api.componentReview!.listVersions as never,
+      {
+        workerToken: this.token,
+        channelId,
+        componentId: "animated-line-chart",
+      } as never,
+    )) as Array<{ _id: string }>;
+    const latest = versions.at(-1);
+    return latest ? { id: String(latest._id) } : undefined;
   }
 }
 

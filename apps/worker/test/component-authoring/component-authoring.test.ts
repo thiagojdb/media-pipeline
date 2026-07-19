@@ -17,7 +17,10 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 
 import { buildAuthoringContext } from "../../src/component-authoring/context.js";
-import { DeterministicFakeAuthoringAgent } from "../../src/component-authoring/fake-agent.js";
+import {
+  DeterministicFakeAuthoringAgent,
+  prepareFakeRevisionCandidate,
+} from "../../src/component-authoring/fake-agent.js";
 import { ComponentAuthoringLoop } from "../../src/component-authoring/loop.js";
 import {
   assertRealPiActivation,
@@ -50,6 +53,16 @@ afterEach(async () => {
 });
 
 describe("constrained component authoring", () => {
+  it("increments repeated fake revisions from the exact approved version", () => {
+    expect(
+      prepareFakeRevisionCandidate(
+        'version: "1.1.0",\ncompatibility: { mode: "backward-compatible", previousVersion: "1.0.0" },',
+      ),
+    ).toBe(
+      'version: "1.2.0",\ncompatibility: { mode: "backward-compatible", previousVersion: "1.1.0" },',
+    );
+  });
+
   it("runs the free fake-agent flow through Relay tools and atomically queues validation", async () => {
     const { store, loop, root } = await harness(
       turn("create", "Create a chart"),
