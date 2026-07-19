@@ -458,7 +458,7 @@ export function assertRealPiActivation(
     turn.maxWallTimeMs > 120_000 ||
     turn.maxModelTurns > 6 ||
     turn.maxToolCalls > 16 ||
-    turn.maxTokens > 20_000 ||
+    turn.maxTokens > 60_000 ||
     turn.maxCostUsd > 1
   )
     throw new Error("Real Pi smoke budgets exceed the reviewed ceiling.");

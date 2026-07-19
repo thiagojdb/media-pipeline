@@ -113,7 +113,7 @@ AUTHORING_PI_MODEL=provider/exact-model \
 npm run pi:smoke
 ```
 
-The paid smoke enforces wall-time and tool limits before work, caps each provider response to the remaining token allowance, persists cumulative usage after provider responses, and prevents another model turn once token, turn, or cost ceilings are reached. Provider-reported token/cost usage arrives at response boundaries, so one in-flight response may exceed a total estimate; that overshoot is retained and no automatic paid retry is allowed. Normal `npm run verify`, `npm run dev`, browser tests, and `npm run authoring:smoke` never initialize Pi `ModelRuntime` or call a provider.
+The paid smoke enforces wall-time and tool limits before work, caps each provider response to the remaining token allowance, persists cumulative usage after provider responses, and prevents another model turn once token, turn, or cost ceilings are reached. The reviewed real-agent ceiling is 6 model turns, 60,000 total provider tokens (including cache reads/writes), 16 tools, 120 seconds, and $1. Provider-reported token/cost usage arrives at response boundaries, so one in-flight response may exceed a total estimate; that overshoot is retained and no automatic paid retry is allowed. Normal `npm run verify`, `npm run dev`, browser tests, and `npm run authoring:smoke` never initialize Pi `ModelRuntime` or call a provider.
 
 ### Isolated component-build smoke test
 

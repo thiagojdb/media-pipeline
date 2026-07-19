@@ -541,6 +541,26 @@ describe("constrained component authoring", () => {
       ),
     ).toThrow("refusing to initialize ModelRuntime");
   });
+
+  it("enforces the reviewed real-Pi activation ceilings", () => {
+    process.env.AUTHORING_REAL_PI_ENABLED = "true";
+    const budgets = {
+      maxWallTimeMs: 120_000,
+      maxModelTurns: 6,
+      maxToolCalls: 16,
+      maxTokens: 60_000,
+      maxCostUsd: 1,
+    };
+    expect(() =>
+      assertRealPiActivation(budgets, "openai-codex/gpt-5.4-mini"),
+    ).not.toThrow();
+    expect(() =>
+      assertRealPiActivation(
+        { ...budgets, maxTokens: 60_001 },
+        "openai-codex/gpt-5.4-mini",
+      ),
+    ).toThrow("reviewed ceiling");
+  });
 });
 
 async function harness(initial: AuthoringTurn) {

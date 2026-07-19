@@ -20,7 +20,7 @@ if (process.env.AUTHORING_PI_SMOKE_CONFIRM !== "spend-model-tokens")
   );
 const model = process.env.AUTHORING_PI_MODEL ?? "";
 const maxWallTimeMs = numberEnv("AUTHORING_PI_SMOKE_MAX_WALL_MS", 60_000);
-const maxTokens = numberEnv("AUTHORING_PI_SMOKE_MAX_TOKENS", 4_000);
+const maxTokens = numberEnv("AUTHORING_PI_SMOKE_MAX_TOKENS", 60_000);
 const maxCostUsd = numberEnv("AUTHORING_PI_SMOKE_MAX_COST_USD", 0.25);
 const baseSource = "export const candidate = true;";
 const turn: AuthoringTurn = {
@@ -44,7 +44,7 @@ const turn: AuthoringTurn = {
   maxRepairAttempts: 2,
   cancelRequested: false,
   maxWallTimeMs,
-  maxModelTurns: 4,
+  maxModelTurns: 6,
   maxToolCalls: 10,
   maxTokens,
   maxCostUsd,
@@ -78,7 +78,24 @@ try {
   await new ComponentAuthoringLoop(store, service, workerId).tick();
   const completed = store.turns.get(turn.id);
   if (completed?.state !== "candidate_submitted")
-    throw new Error(`Paid Pi smoke ended in ${completed?.state ?? "missing"}.`);
+    throw new Error(
+      `Paid Pi smoke ended in ${completed?.state ?? "missing"}: ${JSON.stringify(
+        {
+          toolCalls: completed?.priorToolCalls,
+          modelTurns: completed?.priorModelTurns,
+          inputTokens: completed?.priorInputTokens,
+          outputTokens: completed?.priorOutputTokens,
+          cacheReadTokens: completed?.priorCacheReadTokens,
+          cacheWriteTokens: completed?.priorCacheWriteTokens,
+          costUsd: completed?.priorCostUsd,
+          wallTimeMs: completed?.priorWallTimeMs,
+          activities: store.activities.map(({ name, status }) => ({
+            name,
+            status,
+          })),
+        },
+      )}`,
+    );
   console.log(
     JSON.stringify({
       result: "passed",

@@ -8,14 +8,6 @@ import { z } from "zod";
 
 const api = anyApi as Record<string, Record<string, unknown>>;
 const channelId = "relay-local-channel";
-const budgets = {
-  maxWallTimeMs: 120_000,
-  maxModelTurns: 6,
-  maxToolCalls: 20,
-  maxTokens: 12_000,
-  maxCostUsd: 1,
-};
-
 const themeSchema = z.object({
   colors: z.object({
     accent: z.string().regex(/^#[0-9a-fA-F]{6}$/),
@@ -84,7 +76,7 @@ export class ComponentLoopService {
         baseSourceHash: sha(source),
         channelThemeJson: JSON.stringify(value.theme),
         assetsMetadataJson: "{}",
-        ...budgets,
+        ...this.#budgets(),
       } as never,
     );
     return { channelId, threadId };
@@ -160,10 +152,20 @@ export class ComponentLoopService {
         ],
         channelThemeJson: JSON.stringify(value.theme),
         assetsMetadataJson: "{}",
-        ...budgets,
+        ...this.#budgets(),
       } as never,
     );
     return { turnId };
+  }
+
+  #budgets() {
+    return {
+      maxWallTimeMs: 120_000,
+      maxModelTurns: 6,
+      maxToolCalls: 20,
+      maxTokens: this.authoringMode === "real" ? 60_000 : 12_000,
+      maxCostUsd: 1,
+    };
   }
 }
 
