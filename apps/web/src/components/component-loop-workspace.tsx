@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type ChannelTheme } from "@relay/component-sdk";
 import {
   AlertTriangle,
@@ -800,6 +800,7 @@ function InlinePreview({
   );
   const [frame, setFrame] = useState(Math.min(45, maximumFrame));
   const [playing, setPlaying] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
     if (!playing) return;
     const timer = window.setInterval(
@@ -815,16 +816,29 @@ function InlinePreview({
     );
     return () => window.clearInterval(timer);
   }, [maximumFrame, playing]);
+  useEffect(() => {
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: "relay-preview-frame-v1", frame },
+      "*",
+    );
+  }, [frame]);
   const query = new URLSearchParams({
     fixture: fixture?.id ?? "",
-    frame: String(frame),
+    frame: "0",
     theme: browserBase64Url(JSON.stringify(theme)),
   });
   return (
     <div className="bg-slate-950">
       <iframe
         className="aspect-video w-full border-0"
-        key={`${candidate.id}:${fixture?.id}:${frame}:${JSON.stringify(theme)}`}
+        key={`${candidate.id}:${fixture?.id}:${JSON.stringify(theme)}`}
+        onLoad={() =>
+          iframeRef.current?.contentWindow?.postMessage(
+            { type: "relay-preview-frame-v1", frame },
+            "*",
+          )
+        }
+        ref={iframeRef}
         sandbox="allow-scripts"
         src={`/api/component-loop/candidates/${candidate.id}/preview?${query}`}
         title={`Exact preview of ${candidate.componentId} ${candidate.version}`}

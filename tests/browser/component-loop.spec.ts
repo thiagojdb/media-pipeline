@@ -131,6 +131,81 @@ test("previews exact source, revises in chat, approves, and reopens the version"
   ).toBeVisible();
 });
 
+test("keeps the inline preview mounted during playback and repeated seeks", async ({
+  page,
+}) => {
+  const candidates = [candidate("candidate-playback", "1.0.0")];
+  const messages = conversationMessages(
+    "Build a playback test component.",
+    "Implementation finished and validation passed.",
+  );
+  let previewRequests = 0;
+
+  await page.context().route("**/api/component-loop/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/requests")) {
+      await route.fulfill({
+        status: 202,
+        json: { channelId: "channel-test", threadId: "thread-playback" },
+      });
+      return;
+    }
+    if (path.endsWith("/preview")) {
+      previewRequests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: `<!doctype html><html><body style="margin:0;background:#07111f"><div id="rendered-frame" data-frame="0">frame 0</div><script>
+          addEventListener("message", event => {
+            if (event.source !== parent || event.data?.type !== "relay-preview-frame-v1") return;
+            const rendered = document.getElementById("rendered-frame");
+            rendered.dataset.frame = String(event.data.frame);
+            rendered.textContent = "frame " + event.data.frame;
+          });
+        </script></body></html>`,
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      json: status(candidates, [], messages),
+    });
+  });
+
+  await page.goto("/component-loop");
+  await page
+    .getByRole("textbox", { name: "Message Relay" })
+    .fill("Build a playback test component.");
+  await page.getByRole("button", { name: "Send message" }).click();
+
+  const iframe = page.getByTitle("Exact preview of generated-chart 1.0.0");
+  const renderedFrame = iframe.contentFrame().locator("#rendered-frame");
+  await expect(renderedFrame).toHaveAttribute("data-frame", "45");
+  await iframe.evaluate((node) => {
+    (
+      window as typeof window & { relayPreviewNode?: Element }
+    ).relayPreviewNode = node;
+  });
+
+  await page.getByRole("button", { name: "Play preview" }).click();
+  await expect(renderedFrame).not.toHaveAttribute("data-frame", "45");
+  await page.getByRole("button", { name: "Pause preview" }).click();
+
+  const slider = page.getByLabel("Preview frame");
+  for (const frame of [20, 90, 130]) await slider.fill(String(frame));
+  await expect(renderedFrame).toHaveAttribute("data-frame", "130");
+  await expect(renderedFrame).toBeVisible();
+  await expect(iframe).toBeVisible();
+  expect(previewRequests).toBe(1);
+  await expect(
+    iframe.evaluate(
+      (node) =>
+        (window as typeof window & { relayPreviewNode?: Element })
+          .relayPreviewNode === node,
+    ),
+  ).resolves.toBe(true);
+});
+
 test("streams lightweight dialogue without creating a component", async ({
   page,
 }) => {

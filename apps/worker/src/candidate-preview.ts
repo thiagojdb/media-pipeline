@@ -38,7 +38,6 @@ const dimensions = [...definition.supportedDimensions].sort((a,b) => a.width*a.h
 if (!dimensions) throw new Error("Candidate has no supported dimensions.");
 const props = {
   input: fixture.input,
-  frame: Math.min(${frame}, Math.max(0, durationInFrames - 1)),
   fps: definition.fps,
   durationInFrames,
   width: dimensions.width,
@@ -46,7 +45,18 @@ const props = {
   theme: ${theme},
   assets: {},
 };
-createRoot(document.getElementById("root")).render(React.createElement(definition.component, props));
+const root = createRoot(document.getElementById("root"));
+const renderFrame = (value) => {
+  const frame = Math.min(Math.max(0, Math.floor(value)), Math.max(0, durationInFrames - 1));
+  root.render(React.createElement(definition.component, {...props, frame}));
+};
+renderFrame(${frame});
+window.addEventListener("message", (event) => {
+  if (event.source !== window.parent) return;
+  if (event.data?.type !== "relay-preview-frame-v1") return;
+  if (typeof event.data.frame !== "number" || !Number.isFinite(event.data.frame)) return;
+  renderFrame(event.data.frame);
+});
 `;
     const output = await build({
       stdin: {
