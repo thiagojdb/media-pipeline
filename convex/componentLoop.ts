@@ -212,6 +212,7 @@ export const status = query({
         wallTimeMs: turn.wallTimeMs ?? 0,
         terminalCode: turn.terminalCode,
         terminalMessage: turn.terminalMessage,
+        assistantText: turn.assistantText ?? "",
         buildJobId: turn.buildJobId,
         createdAt: turn.createdAt,
         updatedAt: turn.updatedAt,

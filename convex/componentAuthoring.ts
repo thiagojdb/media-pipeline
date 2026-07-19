@@ -335,6 +335,28 @@ export const recordUsage = mutation({
   },
 });
 
+export const appendAssistantText = mutation({
+  args: {
+    workerToken: v.string(),
+    turnId: v.id("authoringTurns"),
+    workerId: v.string(),
+    leaseAttempt: v.number(),
+    delta: v.string(),
+  },
+  handler: async (ctx, args) => {
+    authorize(args.workerToken);
+    const turn = await ctx.db.get(args.turnId);
+    if (!ownsLiveLease(turn, args.workerId, args.leaseAttempt, Date.now()))
+      throw new Error("Authoring lease is not owned or expired.");
+    if (args.delta.length > 4_000)
+      throw new Error("Assistant delta is too large.");
+    const assistantText = `${turn.assistantText ?? ""}${args.delta}`;
+    if (assistantText.length > 32_000)
+      throw new Error("Assistant text is too large.");
+    await ctx.db.patch(args.turnId, { assistantText, updatedAt: Date.now() });
+  },
+});
+
 export const submitCandidate = mutation({
   args: {
     workerToken: v.string(),

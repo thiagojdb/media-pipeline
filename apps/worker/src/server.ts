@@ -149,7 +149,7 @@ async function handleComponentLoop(
     return;
   }
   const thread = url.pathname.match(
-    /^\/component-loop\/threads\/([^/]+)(?:\/(revisions))?$/,
+    /^\/component-loop\/threads\/([^/]+)(?:\/(revisions|messages))?$/,
   );
   if (request.method === "GET" && thread && !thread[2]) {
     sendJson(response, 200, await service.status(thread[1]!));
@@ -160,6 +160,14 @@ async function handleComponentLoop(
       response,
       202,
       await service.revise(thread[1]!, await readJson(request)),
+    );
+    return;
+  }
+  if (request.method === "POST" && thread?.[2] === "messages") {
+    sendJson(
+      response,
+      202,
+      await service.send(thread[1]!, await readJson(request)),
     );
     return;
   }

@@ -116,6 +116,12 @@ Each component creation or revision receives a fresh, bounded authoring run asso
 
 Pi session logs may be retained as diagnostics and conversation history, but they are not the authority for component state. Source snapshots, validation results, and approved component versions are Relay records.
 
+### Conversational handoff boundary
+
+MED-137 places a durable dialogue phase before component authoring. The dialogue model receives only the bounded recent transcript and one Relay-owned `begin_component_implementation` tool. It has no component source, SDK pack, filesystem, shell, network, or authoring tools. Text deltas are persisted and streamed to the creator; model reasoning is never exposed, while coarse statuses such as thinking, responding, and handoff may be shown in a collapsed activity surface. Dialogue provider usage is recorded separately from authoring usage.
+
+A greeting or ambiguous request stays in dialogue and can produce ordinary conversation or clarifying questions without creating an authoring turn. When the model has an actionable request, it first tells the creator that implementation is starting and then invokes the handoff tool with a self-contained brief. Only that explicit transition allows the worker to construct the expensive authoritative context and enqueue a bounded creation or revision turn. The same durable conversation continues through implementation activity, preview, requested changes, validation, and approval.
+
 ### Tool boundary
 
 Pi’s default `bash`, `write`, and `edit` tools have normal host authority and are not a security sandbox. The product runner must not expose unrestricted built-ins to component-authoring sessions.

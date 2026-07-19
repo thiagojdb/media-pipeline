@@ -29,6 +29,7 @@ export const REAL_PI_EXCLUDED_TOOLS = [
   "find",
   "ls",
 ] as const;
+export const REAL_PI_RESPONSE_TOKEN_CEILING = 12_000;
 
 export class RealPiAuthoringAgent implements AuthoringAgent {
   constructor(
@@ -43,6 +44,7 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
     tools,
     signal,
     onUsage,
+    onTextDelta,
   }: Parameters<AuthoringAgent["run"]>[0]): Promise<AgentRunResult> {
     assertRealPiActivation(turn, this.modelSpec);
     throwIfAborted(signal);
@@ -80,7 +82,7 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
     const settings = pi.SettingsManager.inMemory({
       defaultProvider: provider,
       defaultModel: modelId,
-      defaultThinkingLevel: "medium",
+      defaultThinkingLevel: "low",
     });
     const loader = new pi.DefaultResourceLoader({
       cwd: workspace.root,
@@ -140,7 +142,7 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
       agentDir: this.sessionRoot,
       modelRuntime,
       model,
-      thinkingLevel: "medium",
+      thinkingLevel: "low",
       tools: [...REAL_PI_TOOL_ALLOWLIST],
       noTools: "builtin",
       excludeTools: [...REAL_PI_EXCLUDED_TOOLS],
@@ -152,6 +154,7 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
 
     let budgetExceeded = false;
     let usageWrites = Promise.resolve();
+    let textWrites = Promise.resolve();
     const persistUsage = () => {
       const usage = {
         toolCalls: tools.toolCalls,
@@ -166,6 +169,13 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
         });
     };
     const unsubscribe = session.subscribe((event) => {
+      if (event.type === "message_update") {
+        const update = event.assistantMessageEvent;
+        if (update.type === "text_delta" && update.delta) {
+          const delta = update.delta;
+          textWrites = textWrites.then(() => onTextDelta(delta));
+        }
+      }
       if (event.type === "message_end" && event.message.role === "assistant") {
         budget.recordResponse(event.message.usage);
         persistUsage();
@@ -219,9 +229,11 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
         { expandPromptTemplates: false },
       );
       await usageWrites;
+      await textWrites;
       return currentResult();
     } catch (error) {
       await usageWrites;
+      await textWrites;
       if (!signal.aborted && (budgetExceeded || tools.budgetExceeded))
         return currentResult();
       throw error;
@@ -229,6 +241,7 @@ export class RealPiAuthoringAgent implements AuthoringAgent {
       signal.removeEventListener("abort", abort);
       unsubscribe();
       await usageWrites;
+      await textWrites;
       session.dispose();
     }
   }
@@ -403,7 +416,11 @@ export class PiProviderBudget {
       );
     model.maxTokens = Math.max(
       1,
-      Math.min(this.modelTokenCeiling, remainingTokens),
+      Math.min(
+        this.modelTokenCeiling,
+        remainingTokens,
+        REAL_PI_RESPONSE_TOKEN_CEILING,
+      ),
     );
   }
 

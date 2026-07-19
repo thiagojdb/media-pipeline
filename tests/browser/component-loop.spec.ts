@@ -10,6 +10,10 @@ test("previews exact source, revises in chat, approves, and reopens the version"
     version: string;
     approvedAt: number;
   }> = [];
+  const messages = conversationMessages(
+    "Create an animated data card for a weekly audience metric.",
+    "I have enough detail to begin. I’m starting implementation now.",
+  );
 
   await page.context().route("**/api/component-loop/**", async (route) => {
     const url = new URL(route.request().url());
@@ -55,14 +59,32 @@ test("previews exact source, revises in chat, approves, and reopens the version"
       });
       return;
     }
-    if (path.endsWith("/revisions")) {
+    if (path.endsWith("/messages")) {
+      messages.push(
+        message(
+          "user-revision",
+          "user",
+          "Make the primary line purple and keep the drawn-on animation.",
+          20,
+        ),
+        message(
+          "assistant-revision",
+          "assistant",
+          "I’ll preserve the working version and start that revision now.",
+          21,
+          {
+            transitionBrief:
+              "Make the primary line purple and keep the drawn-on animation.",
+          },
+        ),
+      );
       candidates.push(candidate("candidate-1.1.0", "1.1.0"));
       await route.fulfill({ status: 202, json: { turnId: "turn-1.1.0" } });
       return;
     }
     await route.fulfill({
       status: 200,
-      json: status(candidates, versions),
+      json: status(candidates, versions, messages),
     });
   });
 
@@ -105,6 +127,59 @@ test("previews exact source, revises in chat, approves, and reopens the version"
   ).toBeVisible();
 });
 
+test("streams lightweight dialogue without creating a component", async ({
+  page,
+}) => {
+  let polls = 0;
+  await page.context().route("**/api/component-loop/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/requests")) {
+      await route.fulfill({ status: 202, json: { threadId: "dialogue-only" } });
+      return;
+    }
+    polls += 1;
+    const streaming = polls < 3;
+    await route.fulfill({
+      status: 200,
+      json: {
+        authoringMode: "real",
+        model: "openai-codex/gpt-5.4-mini",
+        phase: "dialogue",
+        messages: [
+          message("hello", "user", "Hi, who are you?", 1),
+          message(
+            "reply",
+            "assistant",
+            streaming
+              ? "Hi — I’m Relay"
+              : "Hi — I’m Relay, your component-building partner. We can talk before I build anything.",
+            2,
+            { state: streaming ? "streaming" : "complete" },
+          ),
+        ],
+        turns: [],
+        activities: [],
+        builds: [],
+        candidates: [],
+        versions: [],
+      },
+    });
+  });
+  await page.goto("/component-loop");
+  await page
+    .getByRole("textbox", { name: "Message Relay" })
+    .fill("Hi, who are you?");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(
+    page.getByText("Hi — I’m Relay", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText(/talk before I build anything/)).toBeVisible();
+  await expect(page.locator("iframe")).toHaveCount(0);
+  await expect(
+    page.getByRole("textbox", { name: "Message Relay" }),
+  ).toBeEnabled();
+});
+
 function candidate(id: string, version: string) {
   return {
     id,
@@ -135,10 +210,13 @@ function candidate(id: string, version: string) {
 function status(
   candidates: ReturnType<typeof candidate>[],
   versions: Array<{ id: string; version: string; approvedAt: number }>,
+  messages: ReturnType<typeof conversationMessages>,
 ) {
   return {
     authoringMode: "real",
     model: "openai-codex/gpt-5.4-mini",
+    phase: candidates.length ? "review" : "dialogue",
+    messages,
     turns: candidates.map((item) => ({
       id: `turn-${item.version}`,
       turnId: `turn-${item.version}`,
@@ -155,6 +233,9 @@ function status(
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
       wallTimeMs: 75,
+      assistantText:
+        "I implemented the requested component and handed it to validation.",
+      createdAt: item.version === "1.0.0" ? 10 : 30,
     })),
     activities: [],
     builds: candidates.map((item) => ({
@@ -164,5 +245,41 @@ function status(
     })),
     candidates,
     versions,
+  };
+}
+
+function conversationMessages(user: string, assistant: string) {
+  return [
+    message("user-initial", "user", user, 1),
+    message("assistant-initial", "assistant", assistant, 2, {
+      transitionBrief: user,
+    }),
+  ];
+}
+
+function message(
+  id: string,
+  role: "user" | "assistant",
+  content: string,
+  createdAt: number,
+  options: { state?: "streaming" | "complete"; transitionBrief?: string } = {},
+) {
+  return {
+    _id: id,
+    messageId: id,
+    role,
+    state: options.state ?? "complete",
+    content,
+    safeStatus:
+      options.state === "streaming"
+        ? "Thinking through your request…"
+        : "Response complete.",
+    transitionBrief: options.transitionBrief,
+    inputTokens: 8,
+    outputTokens: 12,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    costUsd: 0.001,
+    createdAt,
   };
 }

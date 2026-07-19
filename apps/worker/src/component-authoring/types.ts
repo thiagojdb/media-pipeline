@@ -103,6 +103,12 @@ export interface AuthoringTurnStore {
     leaseAttempt: number,
     usage: AuthoringUsage,
   ): Promise<void>;
+  appendAssistantText(
+    turnId: string,
+    workerId: string,
+    leaseAttempt: number,
+    delta: string,
+  ): Promise<void>;
   submitCandidate(
     turnId: string,
     workerId: string,
@@ -166,6 +172,7 @@ export interface AuthoringAgent {
     readonly tools: AuthoringTools;
     readonly signal: AbortSignal;
     readonly onUsage: (usage: AuthoringUsage) => Promise<void>;
+    readonly onTextDelta: (delta: string) => Promise<void>;
   }): Promise<AgentRunResult>;
 }
 

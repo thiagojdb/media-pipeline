@@ -51,7 +51,7 @@ Establish a small TypeScript repository and a component contract that subsequent
 ## M1 — Dependable Component Loop
 
 **Linear milestone:** Dependable Component Loop  
-**Issues:** MED-123 through MED-129, MED-131, MED-133, MED-135, MED-136, with Foundation dependencies
+**Issues:** MED-123 through MED-129, MED-131, MED-133, MED-135 through MED-137, with Foundation dependencies
 
 ### Product outcome
 
@@ -81,14 +81,15 @@ The implementation should generally progress through these proof layers:
    - MED-124: real-page golden flow and one explicit budgeted Pi run
    - MED-135: conversational creator workspace and visible agent progress
    - MED-136: exact generated source, sandboxed preview, chat revisions, and immutable approval
+   - MED-137: streamed multi-turn dialogue and an explicit model-controlled implementation handoff
 
 This order separates SDK/rendering defects from agent defects. Pi should not be asked to target an unproven component environment.
 
 ### Golden workflow
 
 1. Configure a channel’s colors and fonts.
-2. Ask Pi for an animated line chart using representative data.
-3. Observe bounded agent activity and independent validation.
+2. Discuss an animated line chart with Relay and answer its clarifying questions.
+3. Observe the explicit transition from lightweight dialogue into bounded agent activity and independent validation.
 4. If validation fails, observe structured repair without manual developer edits.
 5. Exercise fixtures and change valid component inputs.
 6. Play, seek, and inspect arbitrary frames.

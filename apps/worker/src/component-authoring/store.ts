@@ -80,6 +80,20 @@ export class ConvexAuthoringTurnStore implements AuthoringTurnStore {
       ...usage,
     });
   }
+  async appendAssistantText(
+    turnId: string,
+    workerId: string,
+    leaseAttempt: number,
+    delta: string,
+  ): Promise<void> {
+    await this.#client.mutation(api.appendAssistantText!, {
+      workerToken: this.token,
+      turnId,
+      workerId,
+      leaseAttempt,
+      delta,
+    });
+  }
   submitCandidate(
     turnId: string,
     workerId: string,
@@ -119,6 +133,7 @@ export class InMemoryAuthoringTurnStore implements AuthoringTurnStore {
   readonly turns = new Map<string, AuthoringTurn>();
   readonly activities: AuthoringActivity[] = [];
   readonly buildJobs = new Map<string, AuthoringCompletion>();
+  readonly assistantText = new Map<string, string>();
   constructor(turns: readonly AuthoringTurn[] = []) {
     turns.forEach((turn) => this.turns.set(turn.id, { ...turn }));
   }
@@ -203,6 +218,19 @@ export class InMemoryAuthoringTurnStore implements AuthoringTurnStore {
       priorCostUsd: usage.costUsd,
       priorWallTimeMs: usage.wallTimeMs,
     });
+  }
+  async appendAssistantText(
+    turnId: string,
+    workerId: string,
+    leaseAttempt: number,
+    delta: string,
+  ): Promise<void> {
+    if (!this.live(turnId, workerId, leaseAttempt))
+      throw new Error("Authoring lease expired.");
+    this.assistantText.set(
+      turnId,
+      `${this.assistantText.get(turnId) ?? ""}${delta}`,
+    );
   }
   async submitCandidate(
     turnId: string,

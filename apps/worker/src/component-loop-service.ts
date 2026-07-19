@@ -4,6 +4,7 @@ import { anyApi } from "convex/server";
 import { z } from "zod";
 
 import { buildCandidatePreviewHtml } from "./candidate-preview.js";
+import type { ComponentDialogueAgent } from "./component-dialogue-agent.js";
 
 const api = anyApi as Record<string, Record<string, unknown>>;
 const channelId = "relay-local-channel";
@@ -28,12 +29,14 @@ export class ComponentLoopRequestError extends Error {
 
 export class ComponentLoopService {
   readonly #client: ConvexHttpClient;
+  readonly #activeDialogue = new Set<string>();
 
   constructor(
     url: string,
     private readonly token: string,
     private readonly authoringMode: "fake" | "real",
     private readonly modelSpec?: string,
+    private readonly dialogueAgent?: ComponentDialogueAgent,
   ) {
     this.#client = new ConvexHttpClient(url);
   }
@@ -49,12 +52,261 @@ export class ComponentLoopService {
       })
       .parse(input);
     const threadId = `loop-${randomUUID()}`;
+    const userMessageId = `message-${randomUUID()}`;
+    const assistantMessageId = `message-${randomUUID()}`;
+    await this.#client.mutation(
+      api.componentConversation!.start as never,
+      {
+        workerToken: this.token,
+        channelId,
+        threadId,
+        userMessageId,
+        assistantMessageId,
+        content: value.prompt,
+        themeJson: JSON.stringify(value.theme),
+      } as never,
+    );
+    if (value.failureProbe) {
+      await this.#completeDialogueWithoutModel(
+        threadId,
+        assistantMessageId,
+        "Starting the deterministic recovery probe.",
+        `[FAKE_TOKEN_LIMIT] ${value.prompt}`,
+      );
+      await this.#beginInitial(
+        threadId,
+        `[FAKE_TOKEN_LIMIT] ${value.prompt}`,
+        value.theme,
+      );
+    } else {
+      this.#launchDialogue(threadId, assistantMessageId, value.theme);
+    }
+    return { channelId, threadId };
+  }
+
+  async send(threadId: string, input: unknown): Promise<{ messageId: string }> {
+    const value = z
+      .object({
+        prompt: z.string().trim().min(1).max(8_000),
+        theme: themeSchema,
+      })
+      .parse(input);
+    const userMessageId = `message-${randomUUID()}`;
+    const assistantMessageId = `message-${randomUUID()}`;
+    await this.#client.mutation(
+      api.componentConversation!.addTurn as never,
+      {
+        workerToken: this.token,
+        channelId,
+        threadId: bounded(threadId, "threadId", 200),
+        userMessageId,
+        assistantMessageId,
+        content: value.prompt,
+        themeJson: JSON.stringify(value.theme),
+      } as never,
+    );
+    this.#launchDialogue(threadId, assistantMessageId, value.theme);
+    return { messageId: assistantMessageId };
+  }
+
+  async status(threadId: string): Promise<unknown> {
+    const [status, conversation] = (await Promise.all([
+      this.#client.query(
+        api.componentLoop!.status as never,
+        {
+          workerToken: this.token,
+          channelId,
+          threadId: bounded(threadId, "threadId", 200),
+        } as never,
+      ),
+      this.#client.query(
+        api.componentConversation!.get as never,
+        {
+          workerToken: this.token,
+          channelId,
+          threadId: bounded(threadId, "threadId", 200),
+        } as never,
+      ),
+    ])) as [
+      Record<string, unknown>,
+      { thread: { phase: string }; messages: unknown[] } | null,
+    ];
+    return {
+      ...status,
+      phase: conversation?.thread.phase ?? "dialogue",
+      messages: conversation?.messages ?? [],
+      authoringMode: this.authoringMode,
+      model: this.authoringMode === "real" ? this.modelSpec : undefined,
+    };
+  }
+
+  #launchDialogue(
+    threadId: string,
+    assistantMessageId: string,
+    theme: z.infer<typeof themeSchema>,
+  ) {
+    if (this.#activeDialogue.has(threadId)) return;
+    this.#activeDialogue.add(threadId);
+    void this.#processDialogue(threadId, assistantMessageId, theme)
+      .catch(async (error) => {
+        await this.#client
+          .mutation(
+            api.componentConversation!.fail as never,
+            {
+              workerToken: this.token,
+              channelId,
+              threadId,
+              messageId: assistantMessageId,
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Dialogue failed safely.",
+            } as never,
+          )
+          .catch(() => undefined);
+      })
+      .finally(() => this.#activeDialogue.delete(threadId));
+  }
+
+  async #processDialogue(
+    threadId: string,
+    assistantMessageId: string,
+    theme: z.infer<typeof themeSchema>,
+  ) {
+    if (!this.dialogueAgent)
+      throw new Error("Component dialogue is not configured.");
+    const conversation = (await this.#client.query(
+      api.componentConversation!.get as never,
+      { workerToken: this.token, channelId, threadId } as never,
+    )) as { messages: Array<{ role: "user" | "assistant"; content: string }> };
+    const result = await this.dialogueAgent.run({
+      history: conversation.messages
+        .filter((message) => message.content)
+        .map(({ role, content }) => ({ role, content })),
+      onTextDelta: async (delta) => {
+        await this.#client.mutation(
+          api.componentConversation!.appendDelta as never,
+          {
+            workerToken: this.token,
+            channelId,
+            threadId,
+            messageId: assistantMessageId,
+            delta,
+          } as never,
+        );
+      },
+      onSafeStatus: async (safeStatus) => {
+        await this.#client.mutation(
+          api.componentConversation!.appendDelta as never,
+          {
+            workerToken: this.token,
+            channelId,
+            threadId,
+            messageId: assistantMessageId,
+            delta: "",
+            safeStatus,
+          } as never,
+        );
+      },
+    });
+    await this.#client.mutation(
+      api.componentConversation!.complete as never,
+      {
+        workerToken: this.token,
+        channelId,
+        threadId,
+        messageId: assistantMessageId,
+        transitionBrief: result.transitionBrief,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        cacheReadTokens: result.cacheReadTokens,
+        cacheWriteTokens: result.cacheWriteTokens,
+        costUsd: result.costUsd,
+      } as never,
+    );
+    if (result.transitionBrief)
+      await this.#beginImplementation(threadId, result.transitionBrief, theme);
+  }
+
+  async #completeDialogueWithoutModel(
+    threadId: string,
+    messageId: string,
+    content: string,
+    transitionBrief: string,
+  ) {
+    await this.#client.mutation(
+      api.componentConversation!.appendDelta as never,
+      {
+        workerToken: this.token,
+        channelId,
+        threadId,
+        messageId,
+        delta: content,
+      } as never,
+    );
+    await this.#client.mutation(
+      api.componentConversation!.complete as never,
+      {
+        workerToken: this.token,
+        channelId,
+        threadId,
+        messageId,
+        transitionBrief,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        costUsd: 0,
+      } as never,
+    );
+  }
+
+  async #beginImplementation(
+    threadId: string,
+    brief: string,
+    theme: z.infer<typeof themeSchema>,
+  ) {
+    const status = (await this.#client.query(
+      api.componentLoop!.status as never,
+      {
+        workerToken: this.token,
+        channelId,
+        threadId,
+      } as never,
+    )) as {
+      candidates: Array<{ id: string; status: string }>;
+      versions: Array<{ id: string }>;
+    };
+    const candidate = status.candidates
+      .filter((item) =>
+        ["reviewable", "changes_requested"].includes(item.status),
+      )
+      .at(-1);
+    const version = status.versions.at(-1);
+    if (candidate || version) {
+      await this.revise(threadId, {
+        ...(candidate
+          ? { candidateId: candidate.id }
+          : { versionId: version!.id }),
+        prompt: brief,
+        theme,
+      });
+      return;
+    }
+    await this.#beginInitial(threadId, brief, theme);
+  }
+
+  async #beginInitial(
+    threadId: string,
+    brief: string,
+    theme: z.infer<typeof themeSchema>,
+  ) {
     const turnId = `turn-${randomUUID()}`;
     const source = starterComponentSource;
     const userRequest =
-      this.authoringMode === "fake"
-        ? `${value.failureProbe ? "[FAKE_TOKEN_LIMIT] " : "[FAKE_LINE_CHART_INITIAL] "}${value.prompt}`
-        : value.prompt;
+      this.authoringMode === "fake" && !brief.startsWith("[FAKE_")
+        ? `[FAKE_LINE_CHART_INITIAL] ${brief}`
+        : brief;
     await this.#client.mutation(
       api.componentLoop!.start as never,
       {
@@ -71,28 +323,11 @@ export class ComponentLoopService {
         ],
         baseSource: source,
         baseSourceHash: sha(source),
-        channelThemeJson: JSON.stringify(value.theme),
+        channelThemeJson: JSON.stringify(theme),
         assetsMetadataJson: "{}",
         ...this.#budgets(),
       } as never,
     );
-    return { channelId, threadId };
-  }
-
-  async status(threadId: string): Promise<unknown> {
-    const status = (await this.#client.query(
-      api.componentLoop!.status as never,
-      {
-        workerToken: this.token,
-        channelId,
-        threadId: bounded(threadId, "threadId", 200),
-      } as never,
-    )) as Record<string, unknown>;
-    return {
-      ...status,
-      authoringMode: this.authoringMode,
-      model: this.authoringMode === "real" ? this.modelSpec : undefined,
-    };
   }
 
   async approve(candidateId: string): Promise<{ versionId: string }> {

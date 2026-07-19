@@ -12,6 +12,41 @@ const buildState = v.union(
 );
 
 export default defineSchema({
+  componentConversationThreads: defineTable({
+    channelId: v.string(),
+    threadId: v.string(),
+    phase: v.union(
+      v.literal("dialogue"),
+      v.literal("authoring"),
+      v.literal("review"),
+    ),
+    themeJson: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_channel_thread", ["channelId", "threadId"]),
+  componentConversationMessages: defineTable({
+    channelId: v.string(),
+    threadId: v.string(),
+    messageId: v.string(),
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    state: v.union(
+      v.literal("streaming"),
+      v.literal("complete"),
+      v.literal("failed"),
+    ),
+    content: v.string(),
+    safeStatus: v.optional(v.string()),
+    transitionBrief: v.optional(v.string()),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    cacheReadTokens: v.optional(v.number()),
+    cacheWriteTokens: v.optional(v.number()),
+    costUsd: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_thread_created", ["channelId", "threadId", "createdAt"])
+    .index("by_message", ["channelId", "threadId", "messageId"]),
   components: defineTable({
     channelId: v.string(),
     componentId: v.string(),
@@ -177,6 +212,7 @@ export default defineSchema({
     contextHash: v.optional(v.string()),
     sessionRef: v.optional(v.string()),
     assistantSummary: v.optional(v.string()),
+    assistantText: v.optional(v.string()),
     toolCalls: v.optional(v.number()),
     modelTurns: v.optional(v.number()),
     inputTokens: v.optional(v.number()),

@@ -20,6 +20,10 @@ import { ComponentAuthoringService } from "./component-authoring/service.js";
 import { ConvexAuthoringTurnStore } from "./component-authoring/store.js";
 import { AuthoringWorkspaceManager } from "./component-authoring/workspace.js";
 import { ComponentLoopService } from "./component-loop-service.js";
+import {
+  DeterministicFakeDialogueAgent,
+  RealPiDialogueAgent,
+} from "./component-dialogue-agent.js";
 
 const port = Number.parseInt(process.env.WORKER_PORT ?? "3212", 10);
 const useFakeRenderer = process.env.RELAY_RENDER_MODE === "fake";
@@ -131,6 +135,16 @@ const componentLoop =
         componentLoopToken,
         authoringMode as "fake" | "real",
         process.env.AUTHORING_PI_MODEL,
+        authoringMode === "real"
+          ? new RealPiDialogueAgent(
+              process.env.AUTHORING_PI_MODEL ?? "",
+              path.resolve(
+                process.env.AUTHORING_PI_DIALOGUE_SESSION_ROOT ??
+                  ".relay/component-dialogue-sessions",
+              ),
+              process.env.AUTHORING_PI_CREDENTIAL_JSON,
+            )
+          : new DeterministicFakeDialogueAgent(),
       )
     : undefined;
 

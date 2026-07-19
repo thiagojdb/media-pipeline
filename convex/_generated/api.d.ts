@@ -10,6 +10,7 @@
 
 import type * as componentAuthoring from "../componentAuthoring.js";
 import type * as componentBuildJobs from "../componentBuildJobs.js";
+import type * as componentConversation from "../componentConversation.js";
 import type * as componentLoop from "../componentLoop.js";
 import type * as componentReview from "../componentReview.js";
 
@@ -22,6 +23,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   componentAuthoring: typeof componentAuthoring;
   componentBuildJobs: typeof componentBuildJobs;
+  componentConversation: typeof componentConversation;
   componentLoop: typeof componentLoop;
   componentReview: typeof componentReview;
 }>;

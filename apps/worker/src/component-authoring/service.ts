@@ -79,6 +79,13 @@ export class ComponentAuthoringService {
         signal: controller.signal,
         onUsage: (usage) =>
           this.store.recordUsage(turn.id, this.workerId, turn.attempt, usage),
+        onTextDelta: (delta) =>
+          this.store.appendAssistantText(
+            turn.id,
+            this.workerId,
+            turn.attempt,
+            delta,
+          ),
       });
       const finalUsage = usageFrom(lastResult, turn, started, tools.toolCalls);
       await this.store.recordUsage(

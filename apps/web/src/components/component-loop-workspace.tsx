@@ -59,6 +59,23 @@ type Turn = {
   cacheWriteTokens: number;
   wallTimeMs: number;
   terminalMessage?: string;
+  assistantText: string;
+  createdAt: number;
+};
+type ConversationMessage = {
+  _id: string;
+  messageId: string;
+  role: "user" | "assistant";
+  state: "streaming" | "complete" | "failed";
+  content: string;
+  safeStatus?: string;
+  transitionBrief?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  costUsd?: number;
+  createdAt: number;
 };
 type Version = {
   id: string;
@@ -69,6 +86,8 @@ type Version = {
 type LoopStatus = {
   authoringMode: "fake" | "real";
   model?: string;
+  phase: "dialogue" | "authoring" | "review";
+  messages: ConversationMessage[];
   turns: Turn[];
   activities: Activity[];
   builds: Build[];
@@ -178,37 +197,18 @@ export function ComponentLoopWorkspace() {
   const send = async () => {
     const prompt = draft.trim();
     if (!prompt) return;
-    const latest = status?.versions.at(-1);
-    const latestCandidate = status?.candidates
-      .filter((candidate) =>
-        ["reviewable", "changes_requested"].includes(candidate.status),
-      )
-      .at(-1);
     if (!threadId) {
       await start(prompt);
-    } else if (latestCandidate || latest) {
+    } else {
       setDraft("");
-      await act("/api/component-loop/threads/" + threadId + "/revisions", {
-        ...(latestCandidate
-          ? { candidateId: latestCandidate.id }
-          : { versionId: latest!.id }),
+      await act("/api/component-loop/threads/" + threadId + "/messages", {
         prompt,
         theme,
       });
     }
   };
 
-  const canSend =
-    Boolean(draft.trim()) &&
-    !busy &&
-    !working &&
-    (!threadId ||
-      Boolean(
-        status?.versions.length ||
-        status?.candidates.some((candidate) =>
-          ["reviewable", "changes_requested"].includes(candidate.status),
-        ),
-      ));
+  const canSend = Boolean(draft.trim()) && !busy && !working;
 
   return (
     <main className="min-h-screen bg-[#f7f7f8]">
@@ -235,7 +235,9 @@ export function ComponentLoopWorkspace() {
             {working
               ? "Agent working"
               : threadId
-                ? "Ready for review"
+                ? status?.phase === "dialogue"
+                  ? "Ready to chat"
+                  : "Ready for review"
                 : "Ready"}
             {status && (
               <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[10px]">
@@ -304,10 +306,10 @@ export function ComponentLoopWorkspace() {
                 }}
                 placeholder={
                   working
-                    ? "Relay is implementing your request…"
+                    ? "Relay is responding…"
                     : status?.versions.length
-                      ? "Ask Relay for the next revision…"
-                      : "Describe the component you want to build…"
+                      ? "Talk through the next revision…"
+                      : "Talk with Relay about what you want to build…"
                 }
                 value={draft}
               />
@@ -374,8 +376,8 @@ function EmptyConversation() {
         What should Relay build?
       </h2>
       <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
-        Describe a reusable video component. Relay will show implementation,
-        independent validation, and a reviewable preview here.
+        Start with an idea—or just say hello. Relay will talk it through and
+        only begin implementation when the brief is clear.
       </p>
     </div>
   );
@@ -394,9 +396,24 @@ function Conversation({
   onApprove: (id: string) => void;
   onRequestChanges: (id: string) => void;
 }) {
+  const timeline = [
+    ...(status.messages ?? []).map((message) => ({
+      kind: "message" as const,
+      createdAt: message.createdAt,
+      message,
+    })),
+    ...status.turns.map((turn) => ({
+      kind: "turn" as const,
+      createdAt: turn.createdAt,
+      turn,
+    })),
+  ].sort((left, right) => left.createdAt - right.createdAt);
   return (
     <div className="space-y-9">
-      {status.turns.map((turn) => {
+      {timeline.map((item) => {
+        if (item.kind === "message")
+          return <ChatMessage key={item.message._id} message={item.message} />;
+        const turn = item.turn;
         const activities = status.activities.filter(
           (item) => item.turnId === turn.id,
         );
@@ -411,11 +428,6 @@ function Conversation({
           );
         return (
           <div className="space-y-5" key={turn.id}>
-            <div className="flex justify-end">
-              <div className="max-w-[80%] rounded-2xl rounded-br-md bg-slate-900 px-4 py-3 text-sm leading-6 text-white">
-                {creatorText(turn.userRequest)}
-              </div>
-            </div>
             <AgentMessage
               activities={activities}
               busy={busy}
@@ -433,6 +445,59 @@ function Conversation({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function ChatMessage({ message }: { message: ConversationMessage }) {
+  if (message.role === "user")
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-slate-900 px-4 py-3 text-sm leading-6 text-white">
+          {message.content}
+        </div>
+      </div>
+    );
+  const tokens =
+    (message.inputTokens ?? 0) +
+    (message.outputTokens ?? 0) +
+    (message.cacheReadTokens ?? 0) +
+    (message.cacheWriteTokens ?? 0);
+  return (
+    <div className="flex gap-3">
+      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+        <Sparkles className="size-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <strong className="text-sm">Relay</strong>
+          <span className="text-xs text-slate-400">
+            {message.state === "streaming" ? "responding…" : "conversation"}
+          </span>
+        </div>
+        <div className="mt-2 text-sm leading-6 whitespace-pre-wrap text-slate-700">
+          {message.content || <span className="animate-pulse">●</span>}
+          {message.state === "streaming" && message.content && (
+            <span className="ml-0.5 animate-pulse">▋</span>
+          )}
+        </div>
+        {message.safeStatus && (
+          <details className="mt-3 rounded-lg border bg-slate-50 px-3 py-2 text-xs text-slate-500">
+            <summary className="cursor-pointer">Activity</summary>
+            <p className="mt-2">{message.safeStatus}</p>
+          </details>
+        )}
+        {message.transitionBrief && (
+          <p className="mt-3 flex items-center gap-2 text-xs font-medium text-indigo-700">
+            <Wrench className="size-3.5" /> Component implementation started
+          </p>
+        )}
+        {tokens > 0 && (
+          <p className="mt-2 text-[11px] text-slate-400">
+            Dialogue · {tokens} provider tokens
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -481,16 +546,17 @@ function AgentMessage({
                     : "finished"}
           </span>
         </div>
-        <div className="mt-2 text-sm leading-6 text-slate-700">
-          {working ? (
-            <AgentLoading label="Implementing and validating your component…" />
-          ) : failed ? (
-            (turn.terminalMessage ?? "This run needs your attention.")
-          ) : candidate ? (
-            "I finished the component and validation passed. Inspect the preview and decide what happens next."
-          ) : (
-            (turn.terminalMessage ?? "Implementation finished.")
-          )}
+        <div className="mt-2 text-sm leading-6 whitespace-pre-wrap text-slate-700">
+          {working
+            ? turn.assistantText || (
+                <AgentLoading label="Implementing and validating your component…" />
+              )
+            : failed
+              ? (turn.terminalMessage ?? "This run needs your attention.")
+              : candidate
+                ? turn.assistantText ||
+                  "I finished the component and validation passed. Inspect the preview and decide what happens next."
+                : (turn.terminalMessage ?? "Implementation finished.")}
         </div>
 
         {activities.length > 0 && (
@@ -894,15 +960,12 @@ function AgentLoading({ label }: { label: string }) {
 
 function hasActiveWork(status: LoopStatus): boolean {
   return (
+    (status.messages ?? []).some((message) => message.state === "streaming") ||
     status.turns.some((turn) => ["queued", "running"].includes(turn.state)) ||
     status.builds.some((build) =>
       ["queued", "running", "validating"].includes(build.state),
     )
   );
-}
-
-function creatorText(value: string): string {
-  return value.replace(/^(?:\[FAKE_[A-Z_]+\]\s*)+/, "");
 }
 
 function activityName(value: string): string {

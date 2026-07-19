@@ -75,18 +75,21 @@ Each component declares structured inputs, fixtures, timing behavior, supported 
 
 The central product loop is:
 
-1. A creator describes a component in normal language.
-2. Relay starts a bounded Pi coding session in a component workspace.
-3. Pi receives the public SDK, allowed tools and dependencies, channel design context, relevant assets and examples, the current source for revisions, and explicit acceptance requirements.
-4. Pi writes code and may run checks through the tools Relay grants it.
-5. When Pi reports completion, Relay independently validates the candidate.
-6. Validation failures are returned to the same session as structured evidence for bounded repair attempts.
-7. A passing build becomes a reviewable candidate, not an automatically approved component.
-8. The creator exercises fixtures, changes inputs, and inspects arbitrary frames.
-9. The creator approves, rejects, or requests another revision.
-10. Approval creates an immutable version available to channel projects.
+1. A creator discusses the component with Relay in a normal multi-turn conversation.
+2. Relay streams its response and asks concise clarifying questions without loading component source or implementation tools.
+3. Once the request is actionable, Relay announces the transition and explicitly hands a self-contained brief to a bounded Pi coding session.
+4. Pi receives the public SDK, allowed tools and dependencies, channel design context, relevant assets and examples, the current source for revisions, and explicit acceptance requirements.
+5. Pi writes code and may run checks through the tools Relay grants it while its safe status and response text remain visible in the same conversation.
+6. When Pi reports completion, Relay independently validates the candidate.
+7. Validation failures are returned to the same session as structured evidence for bounded repair attempts.
+8. A passing build becomes a reviewable candidate, not an automatically approved component.
+9. The creator exercises fixtures, changes inputs, and inspects arbitrary frames.
+10. The creator approves, rejects, or asks for another revision in the same conversation.
+11. Approval creates an immutable version available to channel projects.
 
 The agent saying “done” is never the acceptance condition.
+
+A greeting, exploratory question, or incomplete idea must remain a lightweight conversation. It must not allocate an authoring workspace, disclose the implementation context, or spend an authoring budget.
 
 ### Mechanical acceptance
 

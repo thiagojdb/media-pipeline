@@ -30,6 +30,7 @@ import {
   PiProviderBudget,
   piModelRuntimeOptions,
   REAL_PI_EXCLUDED_TOOLS,
+  REAL_PI_RESPONSE_TOKEN_CEILING,
   REAL_PI_TOOL_ALLOWLIST,
   sessionManagerFor,
 } from "../../src/component-authoring/real-pi-agent.js";
@@ -454,6 +455,18 @@ describe("constrained component authoring", () => {
       cacheWriteTokens: 5_000,
       costUsd: 0.05,
     });
+  });
+
+  it("caps one real provider response below the cumulative turn budget", () => {
+    const configured = turn("provider-output-cap", "request", {
+      maxTokens: 100_000,
+    });
+    const budget = new PiProviderBudget(configured, 128_000);
+    const model = { maxTokens: 128_000 };
+
+    budget.beforeProviderRequest(model);
+
+    expect(model.maxTokens).toBe(REAL_PI_RESPONSE_TOKEN_CEILING);
   });
 
   it.each([

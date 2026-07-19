@@ -20,6 +20,56 @@ afterEach(() => {
 });
 
 describe("creator component loop boundary", () => {
+  it("persists streamed dialogue without creating authoring work", async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(api.componentConversation.start, {
+      workerToken,
+      channelId: "channel-loop",
+      threadId: "dialogue-thread",
+      userMessageId: "message-user",
+      assistantMessageId: "message-assistant",
+      content: "Hi, who are you?",
+      themeJson: "{}",
+    });
+    await t.mutation(api.componentConversation.appendDelta, {
+      workerToken,
+      channelId: "channel-loop",
+      threadId: "dialogue-thread",
+      messageId: "message-assistant",
+      delta: "Hi — I’m Relay.",
+      safeStatus: "Preparing a response…",
+    });
+    await t.mutation(api.componentConversation.complete, {
+      workerToken,
+      channelId: "channel-loop",
+      threadId: "dialogue-thread",
+      messageId: "message-assistant",
+      inputTokens: 8,
+      outputTokens: 6,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      costUsd: 0.001,
+    });
+    const conversation = await t.query(api.componentConversation.get, {
+      workerToken,
+      channelId: "channel-loop",
+      threadId: "dialogue-thread",
+    });
+    const status = await t.query(api.componentLoop.status, {
+      workerToken,
+      channelId: "channel-loop",
+      threadId: "dialogue-thread",
+    });
+    expect(conversation?.messages).toHaveLength(2);
+    expect(conversation?.messages[1]).toMatchObject({
+      role: "assistant",
+      state: "complete",
+      content: "Hi — I’m Relay.",
+    });
+    expect(status.turns).toEqual([]);
+    expect(status.builds).toEqual([]);
+  });
+
   it("queues durable work and returns only safe creator status", async () => {
     const t = convexTest(schema, modules);
     const turnId = await t.mutation(api.componentLoop.start, input());
