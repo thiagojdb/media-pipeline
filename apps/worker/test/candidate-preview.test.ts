@@ -19,6 +19,53 @@ describe("candidate preview document", () => {
     expect(html).toContain("renderFrame(12)");
     expect(html).toContain('window.addEventListener("message"');
   });
+
+  it("reports its duration and fps to the parent document", async () => {
+    const html = await buildCandidatePreviewHtml(
+      {
+        componentId: "message-driven-preview",
+        version: "1.0.0",
+        sourceHash: "a".repeat(64),
+        sourceSnapshot: source,
+      },
+      { fixtureId: "default" },
+    );
+
+    expect(html).toContain('"relay-preview-meta-v1"');
+    expect(html).toContain("durationInFrames, fps:");
+    expect(html).toContain("fixtureId: fixture.id");
+  });
+
+  it("validates an input override against the component schema inside the document", async () => {
+    const html = await buildCandidatePreviewHtml(
+      {
+        componentId: "message-driven-preview",
+        version: "1.0.0",
+        sourceHash: "a".repeat(64),
+        sourceSnapshot: source,
+      },
+      { input: { label: "Edited in the library" } },
+    );
+
+    expect(html).toContain("Edited in the library");
+    expect(html).toContain(".safeParse(inputOverride)");
+    expect(html).toContain('"relay-preview-input-error-v1"');
+    expect(html).toContain("Input does not match the component schema");
+  });
+
+  it("does not validate when no input override is provided", async () => {
+    const html = await buildCandidatePreviewHtml(
+      {
+        componentId: "message-driven-preview",
+        version: "1.0.0",
+        sourceHash: "a".repeat(64),
+        sourceSnapshot: source,
+      },
+      { fixtureId: "default" },
+    );
+
+    expect(html).toContain("inputOverride = void 0;");
+  });
 });
 
 const source = `import {defineVideoComponent, type VideoComponentProps} from "@relay/component-sdk";

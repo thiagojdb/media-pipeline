@@ -259,6 +259,7 @@ function previewOptions(url: URL): {
   fixtureId?: string;
   frame?: number;
   theme?: unknown;
+  input?: unknown;
 } {
   const fixtureId = url.searchParams.get("fixture") ?? undefined;
   const rawFrame = url.searchParams.get("frame");
@@ -276,10 +277,31 @@ function previewOptions(url: URL): {
       );
     }
   }
+  const rawInput = url.searchParams.get("input");
+  let input: unknown;
+  if (rawInput) {
+    if (rawInput.length > 16_384) {
+      throw new ComponentLoopRequestError(
+        "invalid_preview_input",
+        "Preview input is too large.",
+        400,
+      );
+    }
+    try {
+      input = JSON.parse(Buffer.from(rawInput, "base64url").toString("utf8"));
+    } catch {
+      throw new ComponentLoopRequestError(
+        "invalid_preview_input",
+        "Preview input is invalid.",
+        400,
+      );
+    }
+  }
   return {
     ...(fixtureId ? { fixtureId: fixtureId.slice(0, 200) } : {}),
     ...(frame !== undefined && Number.isFinite(frame) ? { frame } : {}),
     ...(theme !== undefined ? { theme } : {}),
+    ...(input !== undefined ? { input } : {}),
   };
 }
 

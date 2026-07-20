@@ -143,6 +143,99 @@ test("opens the approved channel library and starts a fresh exact-version revisi
   expect(revisionStarts).toBe(1);
 });
 
+test("plays an approved version with fixture and input controls", async ({
+  page,
+}) => {
+  await page.context().route("**/api/component-loop/**", async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (path.endsWith("/library/animated-bar-graph")) {
+      await route.fulfill({
+        status: 200,
+        json: {
+          id: "component-animated-bar-graph",
+          componentId: "animated-bar-graph",
+          latestApprovedVersionId: "version-1.1.0",
+          createdAt: 100,
+          updatedAt: 200,
+          versions: [
+            version("version-1.1.0", "1.1.0", "thread-origin-latest", 200),
+          ],
+        },
+      });
+      return;
+    }
+    if (path.includes("/versions/") && path.endsWith("/preview")) {
+      const rawInput = url.searchParams.get("input");
+      const input = rawInput
+        ? (JSON.parse(Buffer.from(rawInput, "base64url").toString("utf8")) as {
+            title?: string;
+          })
+        : undefined;
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: previewDocument(input !== undefined && input.title === ""),
+      });
+      return;
+    }
+    await route.fulfill({ status: 404, json: { message: "Not found." } });
+  });
+
+  await page.goto("/components/animated-bar-graph");
+
+  const previewDocumentFrame = page.frameLocator(
+    'iframe[title="Approved preview of animated-bar-graph 1.1.0"]',
+  );
+
+  // The player adopts the duration reported by the preview document.
+  await expect(
+    page.getByRole("button", { name: "Play preview" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("frame-output")).toHaveText("frame 89 / 239");
+  await expect(page.getByLabel("Preview frame")).toHaveAttribute("max", "239");
+
+  // The editor starts from the selected fixture input.
+  await expect(page.getByLabel("Component input JSON")).toHaveValue(
+    '{\n  "title": "Growth"\n}',
+  );
+
+  // Playback streams frames into the preview document.
+  await expect(previewDocumentFrame.locator("#frame")).toHaveText("89");
+  await page.getByRole("button", { name: "Play preview" }).click();
+  await expect(previewDocumentFrame.locator("#frame")).not.toHaveText("89");
+  await page.getByRole("button", { name: "Pause preview" }).click();
+
+  // Switching fixtures reloads the preview and reseeds the editor.
+  await page.getByLabel("Preview fixture").selectOption("dense");
+  await expect(
+    page.getByTitle("Approved preview of animated-bar-graph 1.1.0"),
+  ).toHaveAttribute("src", /fixture=dense/);
+  await expect(page.getByLabel("Component input JSON")).toHaveValue(
+    '{\n  "title": "Dense"\n}',
+  );
+  await expect(page.getByTestId("frame-output")).toHaveText("frame 0 / 239");
+
+  // Applying edited input reloads the preview with the override.
+  await page.getByLabel("Component input JSON").fill('{"title": "Custom cut"}');
+  await page.getByRole("button", { name: "Apply input" }).click();
+  await expect(
+    page.getByTitle("Approved preview of animated-bar-graph 1.1.0"),
+  ).toHaveAttribute("src", /input=/);
+  await expect(
+    page.getByText("Input does not match the component schema"),
+  ).toHaveCount(0);
+
+  // Schema failures reported by the document surface next to the editor.
+  await page.getByLabel("Component input JSON").fill('{"title": ""}');
+  await page.getByRole("button", { name: "Apply input" }).click();
+  const issuesAlert = page
+    .getByRole("alert")
+    .filter({ hasText: "Input does not match the component schema" });
+  await expect(issuesAlert).toBeVisible();
+  await expect(issuesAlert).toContainText("title: Title is required.");
+});
+
 function version(
   id: string,
   number: string,
@@ -159,8 +252,18 @@ function version(
     previewFrame: 89,
     originThreadId,
     fixtures: [
-      { id: "growth", name: "Staggered growth bars" },
-      { id: "dense", name: "Dense dataset" },
+      {
+        id: "growth",
+        name: "Staggered growth bars",
+        input: { title: "Growth" },
+        checkpoints: [{ label: "peak", frame: 120 }],
+      },
+      {
+        id: "dense",
+        name: "Dense dataset",
+        input: { title: "Dense" },
+        checkpoints: [{ label: "peak", frame: 96 }],
+      },
     ],
     dimensions: [{ width: 1920, height: 1080 }],
   };
@@ -232,4 +335,23 @@ function revisionStatus(chatted: boolean) {
       compactionCount: 0,
     },
   };
+}
+
+function previewDocument(invalidInput: boolean) {
+  return `<!doctype html><html><body>
+<div id="frame">-</div>
+<script>
+  window.addEventListener("message", (event) => {
+    if (event.data && event.data.type === "relay-preview-frame-v1") {
+      document.getElementById("frame").textContent = String(event.data.frame);
+    }
+  });
+  ${
+    invalidInput
+      ? 'parent.postMessage({type: "relay-preview-input-error-v1", issues: [{path: "title", message: "Title is required."}]}, "*");'
+      : ""
+  }
+  parent.postMessage({type: "relay-preview-meta-v1", durationInFrames: 240, fps: 30, fixtureId: "growth"}, "*");
+</script>
+</body></html>`;
 }

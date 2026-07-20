@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -8,11 +8,21 @@ import {
   GitBranch,
   LoaderCircle,
   MessageSquareText,
+  Pause,
   Play,
   ShieldCheck,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+
+type LibraryFixture = {
+  id: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  checkpoints?: Array<{ label?: string; frame: number }>;
+};
+
+type PreviewIssue = { path: string; message: string };
 
 type LibraryVersion = {
   id: string;
@@ -41,7 +51,7 @@ type LibraryDetail = {
   updatedAt: number;
   versions: Array<
     LibraryVersion & {
-      fixtures: Array<{ id: string; name?: string }>;
+      fixtures: LibraryFixture[];
       dimensions: unknown;
       previousVersionId?: string;
     }
@@ -231,15 +241,16 @@ export function ComponentLibraryDetail({
                     {componentName(detail.componentId)} v{selected.version}
                   </h2>
                   <p className="mt-1 text-xs text-slate-500">
-                    Exact immutable approved preview
+                    Interactive preview — the approved source stays immutable
                   </p>
                 </div>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
                   <ShieldCheck className="size-3.5" /> Approved
                 </span>
               </div>
-              <VersionPreview
+              <LibraryVersionPlayer
                 componentId={detail.componentId}
+                key={selected.id}
                 version={selected}
               />
               <div className="grid gap-3 border-t px-5 py-4 text-xs text-slate-500 sm:grid-cols-3">
@@ -330,6 +341,274 @@ function ComponentCard({ item }: { item: LibraryItem }) {
         </Button>
       </div>
     </article>
+  );
+}
+
+function LibraryVersionPlayer({
+  componentId,
+  version,
+}: {
+  componentId: string;
+  version: LibraryVersion & { fixtures: LibraryFixture[] };
+}) {
+  const fixtures = version.fixtures;
+  const [fixtureId, setFixtureId] = useState(() =>
+    version.previewFixtureId &&
+    fixtures.some((fixture) => fixture.id === version.previewFixtureId)
+      ? version.previewFixtureId
+      : (fixtures[0]?.id ?? ""),
+  );
+  const fixture = fixtures.find((item) => item.id === fixtureId) ?? fixtures[0];
+  const [draftInput, setDraftInput] = useState(() =>
+    JSON.stringify(fixture?.input ?? {}, null, 2),
+  );
+  const [appliedInput, setAppliedInput] = useState<string>();
+  const [draftError, setDraftError] = useState<string>();
+  const [issues, setIssues] = useState<PreviewIssue[]>([]);
+  const [meta, setMeta] = useState<{ durationInFrames: number; fps: number }>();
+  const fallbackMax = Math.max(
+    179,
+    ...(fixture?.checkpoints?.map((item) => item.frame) ?? [0]),
+  );
+  const maximumFrame = meta
+    ? Math.max(0, meta.durationInFrames - 1)
+    : fallbackMax;
+  const [frame, setFrame] = useState(() =>
+    Math.min(version.previewFrame, maximumFrame),
+  );
+  const [playing, setPlaying] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    if (!playing) return;
+    const timer = window.setInterval(
+      () =>
+        setFrame((current) => {
+          if (current >= maximumFrame) {
+            setPlaying(false);
+            return 0;
+          }
+          return current + 1;
+        }),
+      1000 / (meta?.fps ?? 30),
+    );
+    return () => window.clearInterval(timer);
+  }, [maximumFrame, meta?.fps, playing]);
+
+  useEffect(() => {
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: "relay-preview-frame-v1", frame },
+      "*",
+    );
+  }, [frame]);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data as
+        | {
+            type?: string;
+            durationInFrames?: number;
+            fps?: number;
+            issues?: PreviewIssue[];
+          }
+        | undefined;
+      if (
+        data?.type === "relay-preview-meta-v1" &&
+        typeof data.durationInFrames === "number" &&
+        Number.isFinite(data.durationInFrames) &&
+        typeof data.fps === "number" &&
+        Number.isFinite(data.fps)
+      ) {
+        setMeta({
+          durationInFrames: Math.max(1, Math.floor(data.durationInFrames)),
+          fps: data.fps,
+        });
+        return;
+      }
+      if (data?.type === "relay-preview-input-error-v1") {
+        setIssues(
+          (data.issues ?? []).filter(
+            (issue) =>
+              issue &&
+              typeof issue.path === "string" &&
+              typeof issue.message === "string",
+          ),
+        );
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  const stopAtFrame = (nextFrame: number) => {
+    setPlaying(false);
+    setFrame(nextFrame);
+  };
+
+  const changeFixture = (nextFixtureId: string) => {
+    const nextFixture = fixtures.find((item) => item.id === nextFixtureId);
+    if (!nextFixture) return;
+    setFixtureId(nextFixture.id);
+    setDraftInput(JSON.stringify(nextFixture.input ?? {}, null, 2));
+    setAppliedInput(undefined);
+    setDraftError(undefined);
+    setIssues([]);
+    setMeta(undefined);
+    stopAtFrame(0);
+  };
+
+  const applyInput = () => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(draftInput);
+    } catch (error) {
+      setDraftError(
+        error instanceof Error ? error.message : "The input is not valid JSON.",
+      );
+      return;
+    }
+    setDraftError(undefined);
+    setIssues([]);
+    setMeta(undefined);
+    stopAtFrame(0);
+    setAppliedInput(browserBase64Url(JSON.stringify(parsed)));
+  };
+
+  const resetInput = () => {
+    setDraftInput(JSON.stringify(fixture?.input ?? {}, null, 2));
+    setAppliedInput(undefined);
+    setDraftError(undefined);
+    setIssues([]);
+    setMeta(undefined);
+    stopAtFrame(0);
+  };
+
+  const query = new URLSearchParams({ frame: "0" });
+  if (fixture?.id) query.set("fixture", fixture.id);
+  if (appliedInput) query.set("input", appliedInput);
+
+  return (
+    <div>
+      <div className="bg-slate-950">
+        <div className="relative aspect-video overflow-hidden">
+          <iframe
+            className="size-full border-0"
+            key={`${version.id}:${fixture?.id ?? ""}:${appliedInput ?? "fixture"}`}
+            onLoad={() =>
+              iframeRef.current?.contentWindow?.postMessage(
+                { type: "relay-preview-frame-v1", frame },
+                "*",
+              )
+            }
+            ref={iframeRef}
+            sandbox="allow-scripts"
+            src={`/api/component-loop/versions/${version.id}/preview?${query}`}
+            title={`Approved preview of ${componentId} ${version.version}`}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-3 border-t border-white/10 px-4 py-3 text-xs text-slate-300">
+          <button
+            aria-label={playing ? "Pause preview" : "Play preview"}
+            className="inline-flex items-center gap-1.5 rounded border border-white/15 px-2.5 py-1.5 hover:bg-white/10"
+            onClick={() => setPlaying((value) => !value)}
+            type="button"
+          >
+            {playing ? (
+              <Pause className="size-3.5" />
+            ) : (
+              <Play className="size-3.5" />
+            )}
+            {playing ? "Pause" : "Play"}
+          </button>
+          <select
+            aria-label="Preview fixture"
+            className="max-w-56 rounded border border-white/15 bg-white/10 px-2 py-1.5"
+            onChange={(event) => changeFixture(event.target.value)}
+            value={fixture?.id ?? ""}
+          >
+            {fixtures.map((item) => (
+              <option className="text-slate-950" key={item.id} value={item.id}>
+                {item.name ?? item.id}
+              </option>
+            ))}
+          </select>
+          <input
+            aria-label="Preview frame"
+            className="min-w-24 flex-1 accent-white"
+            max={maximumFrame}
+            min={0}
+            onChange={(event) => stopAtFrame(Number(event.target.value))}
+            type="range"
+            value={Math.min(frame, maximumFrame)}
+          />
+          <output className="font-mono" data-testid="frame-output">
+            frame {Math.min(frame, maximumFrame)} / {maximumFrame}
+          </output>
+        </div>
+      </div>
+
+      <div className="border-t px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold">Component inputs</h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Edit the JSON and apply it to this preview. The approved source
+              and fixtures never change.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={resetInput}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Reset to fixture
+            </Button>
+            <Button onClick={applyInput} size="sm" type="button">
+              Apply input
+            </Button>
+          </div>
+        </div>
+        <textarea
+          aria-label="Component input JSON"
+          className="mt-3 h-36 w-full resize-y rounded-md border bg-slate-950 p-3 font-mono text-xs text-slate-100"
+          onChange={(event) => setDraftInput(event.target.value)}
+          spellCheck={false}
+          value={draftInput}
+        />
+        {draftError ? (
+          <p className="mt-2 text-xs text-red-700" role="alert">
+            {draftError}
+          </p>
+        ) : null}
+        {issues.length > 0 ? (
+          <div
+            className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3"
+            role="alert"
+          >
+            <p className="text-sm font-semibold text-red-900">
+              Input does not match the component schema
+            </p>
+            <ul className="mt-2 space-y-1.5 text-sm text-red-800">
+              {issues.map((issue, index) => (
+                <li key={`${issue.path}-${index}`}>
+                  <span className="font-mono font-semibold">
+                    {issue.path || "input"}
+                  </span>
+                  : {issue.message}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-red-700">
+              The preview shows this overlay until the edits pass the component
+              schema.
+            </p>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -427,4 +706,14 @@ function formatDate(value: number): string {
 
 function errorMessage(value: unknown): string {
   return value instanceof Error ? value.message : "The request failed.";
+}
+
+function browserBase64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  bytes.forEach((byte) => (binary += String.fromCharCode(byte)));
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
 }

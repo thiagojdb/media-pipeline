@@ -626,7 +626,12 @@ export class ComponentLoopService {
 
   async candidatePreview(
     candidateId: string,
-    options: { fixtureId?: string; frame?: number; theme?: unknown },
+    options: {
+      fixtureId?: string;
+      frame?: number;
+      theme?: unknown;
+      input?: unknown;
+    },
   ): Promise<string> {
     const artifact = await this.#candidateArtifact(candidateId);
     return buildCandidatePreviewHtml(artifact, options);
@@ -634,7 +639,12 @@ export class ComponentLoopService {
 
   async versionPreview(
     versionId: string,
-    options: { fixtureId?: string; frame?: number; theme?: unknown },
+    options: {
+      fixtureId?: string;
+      frame?: number;
+      theme?: unknown;
+      input?: unknown;
+    },
   ): Promise<string> {
     const artifact = (await this.#client.query(
       api.componentReview!.getVersion as never,
