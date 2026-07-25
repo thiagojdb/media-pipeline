@@ -184,6 +184,8 @@ Remotion is a deliberate product dependency. If measured licensing or scale requ
 
 Convex file storage is sufficient for initial component sources, fixtures, preview evidence, and draft outputs. Domain records retain ownership, media type, size, and hashes where reproducibility requires them.
 
+MED-143 applies that rule to project evidence. Browser files upload directly through a short-lived Convex upload URL, then a channel-authorized mutation validates the stored media type and byte size before publishing a source record with its storage hash. URL sources are canonicalized, reject embedded credentials and secret-like query parameters, and retain a reference hash. Removing either kind is a soft domain transition so failed revisions and future derived records cannot lose their provenance; rejected or failed uploads are never published as project sources. Next.js adapters return only allowlisted domain errors so backend details and the development server token cannot cross into browser responses.
+
 The system should not introduce an abstract storage framework during Foundation. If source footage or render volume later requires S3-compatible storage, migrate behind explicit asset access functions using measured requirements.
 
 Secrets never enter component props, source bundles, job logs, browser responses, or render inputs. Provider credentials remain available only to the Pi model runtime/controller that needs them; generated component code and render processes do not receive them.
@@ -193,6 +195,8 @@ Secrets never enter component props, source bundles, job logs, browser responses
 Every project, reusable component, asset, and production job belongs to a channel. Membership records exist from the initial schema even if the first development flow bootstraps one user and channel.
 
 The identity provider and invitation interface are not selected by this foundation issue. Before external collaboration ships, authentication and every Convex operation must enforce membership and role checks. Avoid data shapes that would require converting owner-scoped records into channel-scoped records later.
+
+MED-142 establishes the private-development form of this boundary. Convex stores users, channels, memberships, and channel-scoped projects; every project query and mutation resolves a server-supplied development identity to an explicit membership before reading or changing data. A Next.js server adapter holds the dedicated project token and bootstraps the single development user and channel, so the browser cannot select or spoof either identity. This bootstrap is not the future external-auth design; a later identity provider replaces the server-supplied subject while retaining the same membership-backed records and authorization checks.
 
 ## State models
 

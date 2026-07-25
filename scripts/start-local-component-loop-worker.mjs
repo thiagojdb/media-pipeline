@@ -7,6 +7,7 @@ const convexUrl = "http://127.0.0.1:3210";
 const buildToken = "relay-local-build-worker";
 const authoringToken = "relay-local-authoring-worker";
 const loopToken = "relay-local-component-loop";
+const projectsToken = "relay-local-projects";
 const authoringMode = process.env.AUTHORING_MODE ?? "fake";
 if (!["fake", "real"].includes(authoringMode))
   throw new Error("AUTHORING_MODE must be fake or real.");
@@ -35,6 +36,7 @@ for (const [name, value] of [
   ["COMPONENT_BUILD_WORKER_TOKEN", buildToken],
   ["AUTHORING_WORKER_TOKEN", authoringToken],
   ["COMPONENT_LOOP_WORKER_TOKEN", loopToken],
+  ["PROJECTS_SERVER_TOKEN", projectsToken],
 ]) {
   await run("npx", [
     "convex",

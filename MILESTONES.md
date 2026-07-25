@@ -130,7 +130,7 @@ This order separates SDK/rendering defects from agent defects. Pi should not be 
 ## M2 — Source-to-Draft Video
 
 **Linear milestone:** Source-to-Draft Video
-**Active issue:** MED-141 — Build the channel component library and revision chat entrypoints
+**Next issue:** MED-144 — Import and edit versioned project scripts
 
 ### Outcome
 
@@ -149,15 +149,17 @@ A channel member can create a project, add source material, produce or import sc
 - Editing-agent proposals scoped to beats or ranges
 - Preview with narration
 
-### Gate before decomposition
+### Delivery order
 
-Do not create detailed M2 issues until M1 has proven:
+M1 and the MED-141 component-library bridge are complete. M2 is decomposed as
+MED-142 through MED-153 and proceeds through these dependency layers:
 
-- the component contract survives real agent creation and revision;
-- preview and render agree;
-- the worker/job boundary is recoverable;
-- actual Pi cost and failure rates are known;
-- the team has reviewed the M1 dogfood experience.
+1. MED-142 establishes membership-backed channel projects.
+2. MED-143, MED-144, and MED-146 add sources, versioned scripts, and uploaded narration.
+3. MED-145 and MED-147 add generated narration and timed semantic beats.
+4. MED-148 and MED-149 establish the immutable composition model and manual component insertion.
+5. MED-150 through MED-152 add synchronized preview, agent proposals, and draft rendering.
+6. MED-153 proves the complete source-to-draft workflow with a real dogfood run.
 
 ## M3 — Review-to-Final Video
 

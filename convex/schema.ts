@@ -12,6 +12,60 @@ const buildState = v.union(
 );
 
 export default defineSchema({
+  users: defineTable({
+    identitySubject: v.string(),
+    name: v.string(),
+    email: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_identity_subject", ["identitySubject"]),
+  channels: defineTable({
+    slug: v.string(),
+    name: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_slug", ["slug"]),
+  channelMemberships: defineTable({
+    channelId: v.id("channels"),
+    userId: v.id("users"),
+    role: v.union(v.literal("owner"), v.literal("member")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_channel_user", ["channelId", "userId"])
+    .index("by_user_channel", ["userId", "channelId"]),
+  projects: defineTable({
+    channelId: v.id("channels"),
+    creatorMembershipId: v.id("channelMemberships"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    status: v.union(v.literal("active"), v.literal("archived")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    archivedAt: v.optional(v.number()),
+  })
+    .index("by_channel_updated", ["channelId", "updatedAt"])
+    .index("by_channel_status", ["channelId", "status"]),
+  projectSources: defineTable({
+    channelId: v.id("channels"),
+    projectId: v.id("projects"),
+    addedByMembershipId: v.id("channelMemberships"),
+    kind: v.union(v.literal("url"), v.literal("file")),
+    status: v.union(v.literal("active"), v.literal("removed")),
+    title: v.string(),
+    normalizedUrl: v.optional(v.string()),
+    storageId: v.optional(v.id("_storage")),
+    fileName: v.optional(v.string()),
+    mediaType: v.string(),
+    byteSize: v.number(),
+    contentHash: v.string(),
+    hashKind: v.union(v.literal("reference_sha256"), v.literal("file_sha256")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    removedAt: v.optional(v.number()),
+  })
+    .index("by_project_status_created", ["projectId", "status", "createdAt"])
+    .index("by_storage_id", ["storageId"]),
   componentConversationThreads: defineTable({
     channelId: v.string(),
     threadId: v.string(),

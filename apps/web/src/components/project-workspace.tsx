@@ -1,0 +1,1017 @@
+"use client";
+
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  Archive,
+  ArrowLeft,
+  ArrowRight,
+  Clapperboard,
+  ExternalLink,
+  FileText,
+  FolderKanban,
+  Globe2,
+  Link2,
+  LoaderCircle,
+  PencilLine,
+  Plus,
+  Trash2,
+  Upload,
+} from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+
+type Project = {
+  _id: string;
+  name: string;
+  description?: string;
+  status: "active" | "archived";
+  createdAt: number;
+  updatedAt: number;
+  archivedAt?: number;
+};
+
+type Channel = { id: string; slug: string; name: string };
+
+type Source = {
+  _id: string;
+  kind: "url" | "file";
+  title: string;
+  normalizedUrl?: string;
+  fileName?: string;
+  mediaType: string;
+  byteSize: number;
+  contentHash: string;
+  createdAt: number;
+  downloadUrl?: string;
+};
+
+export function ProjectListWorkspace() {
+  const [data, setData] = useState<{ channel: Channel; projects: Project[] }>();
+  const [error, setError] = useState<string>();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void request<{ channel: Channel; projects: Project[] }>("/api/projects")
+      .then((value) => {
+        if (active) setData(value);
+      })
+      .catch((cause) => {
+        if (active) setError(errorMessage(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const create = async (event: FormEvent) => {
+    event.preventDefault();
+    setCreating(true);
+    setError(undefined);
+    try {
+      const result = await request<{ projectId: string }>("/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, description }),
+      });
+      window.location.assign(`/projects/${result.projectId}`);
+    } catch (cause) {
+      setError(errorMessage(cause));
+      setCreating(false);
+    }
+  };
+
+  const active = data?.projects.filter(
+    (project) => project.status === "active",
+  );
+  const archived = data?.projects.filter(
+    (project) => project.status === "archived",
+  );
+
+  return (
+    <ProjectShell channelName={data?.channel.name}>
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
+        <div>
+          <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
+            Channel productions
+          </p>
+          <h1 className="mt-2 max-w-2xl text-4xl font-semibold tracking-[-0.035em] text-slate-950 sm:text-5xl">
+            Every video starts with a project.
+          </h1>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
+            Keep each production inside its channel from the first source to the
+            final cut. Archived work remains available as a record.
+          </p>
+
+          {error ? <ProjectError message={error} /> : null}
+          {!data && !error ? (
+            <ProjectLoading label="Opening projects…" />
+          ) : null}
+
+          {active?.length ? (
+            <ProjectSection label="In production" projects={active} />
+          ) : data ? (
+            <section className="mt-10 rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12">
+              <Clapperboard className="size-7 text-slate-400" />
+              <h2 className="mt-4 text-lg font-semibold">No active projects</h2>
+              <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">
+                Name the production in the project slate to begin.
+              </p>
+            </section>
+          ) : null}
+
+          {archived?.length ? (
+            <ProjectSection label="Archive" projects={archived} subdued />
+          ) : null}
+        </div>
+
+        <form
+          className="sticky top-6 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-xl shadow-slate-950/10"
+          onSubmit={create}
+        >
+          <div className="border-b border-white/10 px-6 py-5">
+            <div className="flex items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-xl bg-white text-slate-950">
+                <Plus className="size-4" />
+              </div>
+              <div>
+                <p className="text-xs tracking-[0.16em] text-slate-400 uppercase">
+                  Project slate
+                </p>
+                <h2 className="font-semibold">Start a production</h2>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-5 px-6 py-6">
+            <label className="block text-sm font-medium" htmlFor="project-name">
+              Project name
+            </label>
+            <input
+              autoComplete="off"
+              className="mt-[-0.75rem] h-11 w-full rounded-lg border border-white/15 bg-white/8 px-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-white/50 focus:ring-2 focus:ring-white/10"
+              id="project-name"
+              maxLength={120}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Election night explained"
+              required
+              value={name}
+            />
+            <label
+              className="block text-sm font-medium"
+              htmlFor="project-description"
+            >
+              Production note <span className="text-slate-500">optional</span>
+            </label>
+            <textarea
+              className="mt-[-0.75rem] min-h-28 w-full resize-y rounded-lg border border-white/15 bg-white/8 px-3 py-3 text-sm leading-6 text-white outline-none placeholder:text-slate-500 focus:border-white/50 focus:ring-2 focus:ring-white/10"
+              id="project-description"
+              maxLength={2000}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="What is this video trying to explain?"
+              value={description}
+            />
+            <Button
+              className="w-full bg-white text-slate-950 hover:bg-slate-200"
+              disabled={creating || !name.trim()}
+              type="submit"
+            >
+              {creating ? <LoaderCircle className="animate-spin" /> : <Plus />}
+              Create project
+            </Button>
+          </div>
+        </form>
+      </div>
+    </ProjectShell>
+  );
+}
+
+export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
+  const [data, setData] = useState<{ channel: Channel; project: Project }>();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [error, setError] = useState<string>();
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    const value = await request<{ channel: Channel; project: Project }>(
+      `/api/projects/${projectId}`,
+    );
+    setData(value);
+    setName(value.project.name);
+    setDescription(value.project.description ?? "");
+  };
+
+  useEffect(() => {
+    let active = true;
+    void request<{ channel: Channel; project: Project }>(
+      `/api/projects/${projectId}`,
+    )
+      .then((value) => {
+        if (!active) return;
+        setData(value);
+        setName(value.project.name);
+        setDescription(value.project.description ?? "");
+      })
+      .catch((cause) => {
+        if (active) setError(errorMessage(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+
+  const update = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "update", name, description }),
+      });
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const archive = async () => {
+    setSaving(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "archive" }),
+      });
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ProjectShell channelName={data?.channel.name}>
+      <a
+        className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-950"
+        href="/projects"
+      >
+        <ArrowLeft className="size-4" /> All projects
+      </a>
+      {error ? <ProjectError message={error} /> : null}
+      {!data && !error ? <ProjectLoading label="Opening project…" /> : null}
+      {data ? (
+        <>
+          <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div
+                className={`h-2 ${
+                  data.project.status === "active"
+                    ? "bg-blue-600"
+                    : "bg-slate-300"
+                }`}
+              />
+              <div className="p-6 sm:p-8">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
+                      {data.project.status === "active"
+                        ? "In production"
+                        : "Archived production"}
+                    </p>
+                    <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
+                      {data.project.name}
+                    </h1>
+                  </div>
+                  <StatusPill status={data.project.status} />
+                </div>
+
+                {data.project.status === "active" ? (
+                  <form className="mt-10 max-w-2xl space-y-5" onSubmit={update}>
+                    <label
+                      className="block text-sm font-medium"
+                      htmlFor="edit-name"
+                    >
+                      Project name
+                    </label>
+                    <input
+                      className="mt-[-0.75rem] h-11 w-full rounded-lg border bg-white px-3 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                      id="edit-name"
+                      maxLength={120}
+                      onChange={(event) => setName(event.target.value)}
+                      required
+                      value={name}
+                    />
+                    <label
+                      className="block text-sm font-medium"
+                      htmlFor="edit-description"
+                    >
+                      Production note
+                    </label>
+                    <textarea
+                      className="mt-[-0.75rem] min-h-32 w-full resize-y rounded-lg border bg-white px-3 py-3 text-sm leading-6 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                      id="edit-description"
+                      maxLength={2000}
+                      onChange={(event) => setDescription(event.target.value)}
+                      value={description}
+                    />
+                    <Button disabled={saving || !name.trim()} type="submit">
+                      {saving ? (
+                        <LoaderCircle className="animate-spin" />
+                      ) : (
+                        <PencilLine />
+                      )}
+                      Save changes
+                    </Button>
+                  </form>
+                ) : (
+                  <div className="mt-10 max-w-2xl rounded-xl bg-slate-100 p-5">
+                    <p className="text-sm font-medium">
+                      This project is read-only.
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      {data.project.description ||
+                        "No production note was saved."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <aside className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                <p className="text-xs font-medium tracking-[0.16em] text-slate-500 uppercase">
+                  Production record
+                </p>
+                <dl className="mt-4 space-y-4 text-sm">
+                  <div>
+                    <dt className="text-slate-500">Created</dt>
+                    <dd className="mt-1 font-medium">
+                      {formatDate(data.project.createdAt)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Last updated</dt>
+                    <dd className="mt-1 font-medium">
+                      {formatDate(data.project.updatedAt)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+              {data.project.status === "active" ? (
+                <Button
+                  className="w-full"
+                  disabled={saving}
+                  onClick={archive}
+                  variant="outline"
+                >
+                  <Archive /> Archive project
+                </Button>
+              ) : null}
+            </aside>
+          </div>
+          <SourceWorkspace
+            editable={data.project.status === "active"}
+            projectId={projectId}
+          />
+        </>
+      ) : null}
+    </ProjectShell>
+  );
+}
+
+function SourceWorkspace({
+  editable,
+  projectId,
+}: {
+  editable: boolean;
+  projectId: string;
+}) {
+  const [sources, setSources] = useState<Source[]>();
+  const [error, setError] = useState<string>();
+  const [mode, setMode] = useState<"url" | "file">("url");
+  const [title, setTitle] = useState("");
+  const [url, setUrl] = useState("");
+  const [file, setFile] = useState<File>();
+  const [busy, setBusy] = useState<string>();
+  const [confirmRemove, setConfirmRemove] = useState<string>();
+
+  const refresh = useCallback(async () => {
+    const value = await request<{ sources: Source[] }>(
+      `/api/projects/${projectId}/sources`,
+    );
+    setSources(value.sources);
+  }, [projectId]);
+
+  useEffect(() => {
+    let active = true;
+    void request<{ sources: Source[] }>(`/api/projects/${projectId}/sources`)
+      .then((value) => {
+        if (active) setSources(value.sources);
+      })
+      .catch((cause) => {
+        if (active) setError(errorMessage(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+
+  const addUrl = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy("Saving URL…");
+    setError(undefined);
+    try {
+      await sourceAction(projectId, { action: "add_url", title, url });
+      setTitle("");
+      setUrl("");
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const addFile = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!file) return;
+    setBusy("Preparing upload…");
+    setError(undefined);
+    try {
+      const mediaType = fileMediaType(file);
+      const prepared = await sourceAction<{
+        uploadUrl: string;
+        maximumBytes: number;
+      }>(projectId, {
+        action: "prepare_file",
+        fileName: file.name,
+        mediaType,
+        byteSize: file.size,
+      });
+      setBusy("Uploading file…");
+      const upload = await fetch(prepared.uploadUrl, {
+        method: "POST",
+        headers: { "content-type": mediaType },
+        body: file,
+      });
+      const uploaded = (await upload.json()) as {
+        storageId?: string;
+        message?: string;
+      };
+      if (!upload.ok || !uploaded.storageId) {
+        throw new Error(
+          uploaded.message ?? "The file upload did not complete. Try again.",
+        );
+      }
+      setBusy("Saving source…");
+      await sourceAction(projectId, {
+        action: "finalize_file",
+        title: title || file.name,
+        fileName: file.name,
+        mediaType,
+        storageId: uploaded.storageId,
+      });
+      setTitle("");
+      setFile(undefined);
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  const remove = async (sourceId: string) => {
+    if (confirmRemove !== sourceId) {
+      setConfirmRemove(sourceId);
+      return;
+    }
+    setBusy("Removing source…");
+    setError(undefined);
+    try {
+      await sourceAction(projectId, { action: "remove", sourceId });
+      setConfirmRemove(undefined);
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(undefined);
+    }
+  };
+
+  return (
+    <section className="mt-12 border-t border-slate-300 pt-10">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
+            Evidence ledger
+          </p>
+          <h2 className="mt-2 text-3xl font-semibold tracking-tight">
+            Project sources
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+            Preserve the references and files this production relies on. Each
+            entry keeps its origin and fingerprint with the project.
+          </p>
+        </div>
+        {sources ? (
+          <p className="font-mono text-xs text-slate-500">
+            {sources.length} source{sources.length === 1 ? "" : "s"}
+          </p>
+        ) : null}
+      </div>
+
+      {error ? <SourceError message={error} /> : null}
+
+      <div
+        className={`mt-8 grid gap-8 ${
+          editable ? "lg:grid-cols-[minmax(0,1fr)_22rem]" : ""
+        }`}
+      >
+        <div>
+          {!sources && !error ? (
+            <ProjectLoading label="Opening sources…" />
+          ) : null}
+          {sources?.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12">
+              <Link2 className="size-7 text-slate-400" />
+              <h3 className="mt-4 font-semibold">No sources added yet</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Add the first web reference or source file for this production.
+              </p>
+            </div>
+          ) : null}
+          {sources?.length ? (
+            <div className="space-y-3">
+              {sources.map((source) => (
+                <SourceCard
+                  busy={Boolean(busy)}
+                  confirmRemove={confirmRemove === source._id}
+                  editable={editable}
+                  key={source._id}
+                  onRemove={() => void remove(source._id)}
+                  source={source}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        {editable ? (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="grid grid-cols-2 border-b bg-slate-50 p-1.5">
+              <button
+                aria-pressed={mode === "url"}
+                className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  mode === "url"
+                    ? "bg-white text-slate-950 shadow-sm"
+                    : "text-slate-500 hover:text-slate-950"
+                }`}
+                onClick={() => {
+                  setMode("url");
+                  setTitle("");
+                }}
+                type="button"
+              >
+                <Globe2 className="size-4" /> Web URL
+              </button>
+              <button
+                aria-pressed={mode === "file"}
+                className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  mode === "file"
+                    ? "bg-white text-slate-950 shadow-sm"
+                    : "text-slate-500 hover:text-slate-950"
+                }`}
+                onClick={() => {
+                  setMode("file");
+                  setTitle("");
+                }}
+                type="button"
+              >
+                <Upload className="size-4" /> File
+              </button>
+            </div>
+
+            {mode === "url" ? (
+              <form className="space-y-5 p-5" onSubmit={addUrl}>
+                <SourceComposerHeading
+                  detail="Save a public http or https reference."
+                  title="Add web source"
+                />
+                <SourceTextField
+                  id="source-url-title"
+                  label="Source title"
+                  maxLength={200}
+                  onChange={setTitle}
+                  placeholder="National results dashboard"
+                  value={title}
+                />
+                <SourceTextField
+                  id="source-url"
+                  label="URL"
+                  maxLength={2048}
+                  onChange={setUrl}
+                  placeholder="https://example.com/report"
+                  type="url"
+                  value={url}
+                />
+                <Button
+                  className="w-full"
+                  disabled={Boolean(busy) || !title.trim() || !url.trim()}
+                  type="submit"
+                >
+                  {busy ? <LoaderCircle className="animate-spin" /> : <Link2 />}
+                  {busy ?? "Add web source"}
+                </Button>
+              </form>
+            ) : (
+              <form className="space-y-5 p-5" onSubmit={addFile}>
+                <SourceComposerHeading
+                  detail="PDF, text, data, image, audio, or video up to 25 MB."
+                  title="Upload source file"
+                />
+                <label
+                  className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 text-center hover:border-slate-500"
+                  htmlFor="source-file"
+                >
+                  <Upload className="size-5 text-slate-500" />
+                  <span className="mt-2 text-sm font-medium">
+                    {file?.name ?? "Choose a source file"}
+                  </span>
+                  <span className="mt-1 text-xs text-slate-500">
+                    {file ? formatBytes(file.size) : "Maximum 25 MB"}
+                  </span>
+                </label>
+                <input
+                  accept=".csv,.json,.md,.pdf,.txt,.jpeg,.jpg,.png,.webp,.mp3,.mp4,.wav,.webm"
+                  className="sr-only"
+                  id="source-file"
+                  onChange={(event) => {
+                    const selected = event.target.files?.[0];
+                    setFile(selected);
+                    setTitle(selected?.name ?? "");
+                  }}
+                  type="file"
+                />
+                <SourceTextField
+                  id="source-file-title"
+                  label="Source title"
+                  maxLength={200}
+                  onChange={setTitle}
+                  placeholder="Interview transcript"
+                  value={title}
+                />
+                <Button
+                  className="w-full"
+                  disabled={Boolean(busy) || !file || !title.trim()}
+                  type="submit"
+                >
+                  {busy ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : (
+                    <Upload />
+                  )}
+                  {busy ?? "Upload source"}
+                </Button>
+              </form>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function SourceCard({
+  busy,
+  confirmRemove,
+  editable,
+  onRemove,
+  source,
+}: {
+  busy: boolean;
+  confirmRemove: boolean;
+  editable: boolean;
+  onRemove: () => void;
+  source: Source;
+}) {
+  const href =
+    source.kind === "url" ? source.normalizedUrl : source.downloadUrl;
+  return (
+    <article className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-5 pl-7 shadow-sm">
+      <div
+        className={`absolute inset-y-0 left-0 w-1.5 ${
+          source.kind === "url" ? "bg-amber-400" : "bg-blue-600"
+        }`}
+      />
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+            {source.kind === "url" ? (
+              <Globe2 className="size-3.5" />
+            ) : (
+              <FileText className="size-3.5" />
+            )}
+            {source.kind === "url" ? "Web reference" : source.mediaType}
+          </div>
+          <h3 className="mt-2 truncate font-semibold tracking-tight">
+            {source.title}
+          </h3>
+          <p className="mt-1 truncate text-sm text-slate-500">
+            {source.normalizedUrl ?? source.fileName}
+          </p>
+        </div>
+        {href ? (
+          <a
+            aria-label={`Open ${source.title}`}
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg border text-slate-500 hover:bg-slate-50 hover:text-slate-950"
+            href={href}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <ExternalLink className="size-3.5" />
+          </a>
+        ) : null}
+      </div>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+        <p className="font-mono text-[10px] text-slate-400">
+          {source.kind === "file" ? `${formatBytes(source.byteSize)} · ` : ""}
+          {formatDate(source.createdAt)} · {shortHash(source.contentHash)}
+        </p>
+        {editable ? (
+          <button
+            className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition ${
+              confirmRemove
+                ? "bg-red-600 text-white hover:bg-red-700"
+                : "text-slate-500 hover:bg-red-50 hover:text-red-700"
+            }`}
+            disabled={busy}
+            onClick={onRemove}
+            type="button"
+          >
+            <Trash2 className="size-3" />
+            {confirmRemove ? "Confirm remove" : "Remove source"}
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function SourceComposerHeading({
+  detail,
+  title,
+}: {
+  detail: string;
+  title: string;
+}) {
+  return (
+    <div>
+      <h3 className="font-semibold">{title}</h3>
+      <p className="mt-1 text-xs leading-5 text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
+function SourceTextField({
+  id,
+  label,
+  maxLength,
+  onChange,
+  placeholder,
+  type = "text",
+  value,
+}: {
+  id: string;
+  label: string;
+  maxLength: number;
+  onChange: (value: string) => void;
+  placeholder: string;
+  type?: "text" | "url";
+  value: string;
+}) {
+  return (
+    <label className="block text-sm font-medium" htmlFor={id}>
+      {label}
+      <input
+        className="mt-2 h-10 w-full rounded-lg border bg-white px-3 text-sm outline-none placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+        id={id}
+        maxLength={maxLength}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        required
+        type={type}
+        value={value}
+      />
+    </label>
+  );
+}
+
+function SourceError({ message }: { message: string }) {
+  return (
+    <div
+      className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+      role="alert"
+    >
+      <strong className="block">The source could not be saved</strong>
+      {message}
+    </div>
+  );
+}
+
+function ProjectSection({
+  label,
+  projects,
+  subdued = false,
+}: {
+  label: string;
+  projects: Project[];
+  subdued?: boolean;
+}) {
+  return (
+    <section className="mt-10">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+        <h2 className="text-sm font-semibold">{label}</h2>
+        <span className="font-mono text-xs text-slate-500">
+          {projects.length}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {projects.map((project) => (
+          <a
+            className={`group relative overflow-hidden rounded-xl border bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-400 hover:shadow-md ${
+              subdued ? "opacity-70 hover:opacity-100" : ""
+            }`}
+            href={`/projects/${project._id}`}
+            key={project._id}
+          >
+            <div
+              className={`absolute inset-y-0 left-0 w-1 ${
+                project.status === "active" ? "bg-blue-600" : "bg-slate-300"
+              }`}
+            />
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-semibold tracking-tight">{project.name}</h3>
+                <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">
+                  {project.description || "No production note"}
+                </p>
+              </div>
+              <ArrowRight className="mt-0.5 size-4 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-950" />
+            </div>
+            <p className="mt-5 font-mono text-[11px] text-slate-400">
+              Updated {formatDate(project.updatedAt)}
+            </p>
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProjectShell({
+  children,
+  channelName,
+}: {
+  children: React.ReactNode;
+  channelName?: string | undefined;
+}) {
+  return (
+    <main className="min-h-screen bg-[#f6f7f9]">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8">
+          <a className="flex items-center gap-3" href="/projects">
+            <div className="flex size-9 items-center justify-center rounded-xl bg-blue-600 text-white">
+              <FolderKanban className="size-4" />
+            </div>
+            <div>
+              <strong className="block text-sm">
+                {channelName ?? "Relay Studio"}
+              </strong>
+              <span className="text-xs text-slate-500">Video projects</span>
+            </div>
+          </a>
+          <nav className="flex items-center gap-1 text-sm" aria-label="Channel">
+            <a
+              className="rounded-lg px-3 py-2 font-medium text-slate-950"
+              href="/projects"
+            >
+              Projects
+            </a>
+            <a
+              className="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+              href="/components"
+            >
+              Components
+            </a>
+          </nav>
+        </div>
+      </header>
+      <div className="mx-auto max-w-7xl px-5 py-8 lg:px-8 lg:py-12">
+        {children}
+      </div>
+    </main>
+  );
+}
+
+function StatusPill({ status }: { status: Project["status"] }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ${
+        status === "active"
+          ? "bg-blue-50 text-blue-700"
+          : "bg-slate-100 text-slate-600"
+      }`}
+    >
+      <span
+        className={`size-1.5 rounded-full ${
+          status === "active" ? "bg-blue-600" : "bg-slate-400"
+        }`}
+      />
+      {status === "active" ? "Active" : "Archived"}
+    </span>
+  );
+}
+
+function ProjectLoading({ label }: { label: string }) {
+  return (
+    <div className="mt-10 flex items-center gap-2 text-sm text-slate-600">
+      <LoaderCircle className="size-4 animate-spin" /> {label}
+    </div>
+  );
+}
+
+function ProjectError({ message }: { message: string }) {
+  return (
+    <div
+      className="mt-8 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+      role="alert"
+    >
+      <strong className="block">
+        The project workspace could not continue
+      </strong>
+      {message}
+    </div>
+  );
+}
+
+async function request<T = unknown>(
+  url: string,
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch(url, { ...init, cache: "no-store" });
+  const body = (await response.json()) as T & { message?: string };
+  if (!response.ok) throw new Error(body.message ?? "The request failed.");
+  return body;
+}
+
+function sourceAction<T = unknown>(
+  projectId: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  return request<T>(`/api/projects/${projectId}/sources`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+function formatDate(value: number): string {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(
+    new Date(value),
+  );
+}
+
+function formatBytes(value: number): string {
+  if (value < 1_024) return `${value} B`;
+  if (value < 1_024 * 1_024) return `${(value / 1_024).toFixed(1)} KB`;
+  return `${(value / (1_024 * 1_024)).toFixed(1)} MB`;
+}
+
+function shortHash(value: string): string {
+  return `sha256:${value.slice(0, 10)}`;
+}
+
+function fileMediaType(file: File): string {
+  if (file.type) return file.type;
+  const extension = file.name.split(".").at(-1)?.toLowerCase();
+  const fallback: Record<string, string> = {
+    csv: "text/csv",
+    json: "application/json",
+    md: "text/markdown",
+    txt: "text/plain",
+  };
+  return extension ? (fallback[extension] ?? "") : "";
+}
+
+function errorMessage(value: unknown): string {
+  return value instanceof Error ? value.message : "The request failed.";
+}
