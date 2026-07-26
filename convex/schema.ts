@@ -43,6 +43,8 @@ export default defineSchema({
     currentScriptVersionNumber: v.optional(v.number()),
     currentNarrationVersionId: v.optional(v.id("narrationVersions")),
     currentNarrationVersionNumber: v.optional(v.number()),
+    currentCompositionVersionId: v.optional(v.id("compositionVersions")),
+    currentCompositionVersionNumber: v.optional(v.number()),
     status: v.union(v.literal("active"), v.literal("archived")),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -131,6 +133,17 @@ export default defineSchema({
       "order",
     ])
     .index("by_project_created", ["projectId", "createdAt"]),
+  compositionVersions: defineTable({
+    channelId: v.id("channels"),
+    projectId: v.id("projects"),
+    narrationVersionId: v.id("narrationVersions"),
+    createdByMembershipId: v.id("channelMemberships"),
+    version: v.number(),
+    schemaVersion: v.literal(1),
+    provenance: v.union(v.literal("manual"), v.literal("agent")),
+    compositionJson: v.string(),
+    createdAt: v.number(),
+  }).index("by_project_version", ["projectId", "version"]),
   narrationJobs: defineTable({
     channelId: v.id("channels"),
     projectId: v.id("projects"),
