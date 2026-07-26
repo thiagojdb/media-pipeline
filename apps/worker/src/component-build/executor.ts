@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
 import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { validateComponentSource } from "@relay/component-testkit";
 import { build } from "esbuild";
@@ -15,6 +16,9 @@ import type {
 
 const MAX_LOG_BYTES = 64_000;
 const WALL_TIME_MS = 20_000;
+const repositoryNodeModules = fileURLToPath(
+  new URL("../../../../node_modules", import.meta.url),
+);
 
 export class IsolatedCandidateExecutor implements CandidateExecutor {
   constructor(private readonly probe?: "isolation" | "crash") {}
@@ -77,7 +81,7 @@ export class IsolatedCandidateExecutor implements CandidateExecutor {
           target: "node24",
           jsx: "automatic",
           logLevel: "silent",
-          nodePaths: [path.resolve("node_modules")],
+          nodePaths: [repositoryNodeModules],
         });
       }
       preflight = evidence([
