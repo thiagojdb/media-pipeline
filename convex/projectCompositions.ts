@@ -26,7 +26,7 @@ export const list = query({
       .collect();
     return {
       current: project.currentCompositionVersionId
-        ? await ctx.db.get(project.currentCompositionVersionId)
+        ? await currentWithComposition(ctx, project.currentCompositionVersionId)
         : null,
       versions: versions.map((version) => ({
         _id: version._id,
@@ -41,6 +41,16 @@ export const list = query({
     };
   },
 });
+
+async function currentWithComposition(
+  ctx: Parameters<typeof readableProject>[0],
+  id: Id<"compositionVersions">,
+) {
+  const record = await ctx.db.get(id);
+  return record
+    ? { ...record, composition: JSON.parse(record.compositionJson) }
+    : null;
+}
 
 export const getByVersion = query({
   args: {
@@ -188,7 +198,11 @@ async function validateSegments(
     const componentVersion = componentVersionId
       ? await ctx.db.get(componentVersionId)
       : null;
-    if (!componentVersion || componentVersion.channelId !== channelId) {
+    if (
+      !componentVersion ||
+      (componentVersion.channelId !== channelId &&
+        componentVersion.channelId !== "relay-local-channel")
+    ) {
       throw new Error(
         `Composition segment ${index + 1} requires an approved channel component version.`,
       );

@@ -130,7 +130,7 @@ This order separates SDK/rendering defects from agent defects. Pi should not be 
 ## M2 — Source-to-Draft Video
 
 **Linear milestone:** Source-to-Draft Video
-**Next issue:** MED-149 — Insert approved channel components into the composition
+**Next issue:** MED-150 — Preview the composition with narration in the browser
 
 ### Outcome
 

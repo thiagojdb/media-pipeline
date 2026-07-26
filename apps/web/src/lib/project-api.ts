@@ -118,6 +118,63 @@ export type ProjectBeatWorkspace = {
   beats: ProjectBeat[];
 };
 
+export type ProjectComposition = {
+  schemaVersion: 1;
+  narrationVersionId: string;
+  fps: number;
+  width: number;
+  height: number;
+  segments: Array<
+    | {
+        id: string;
+        kind: "component";
+        componentVersionId: string;
+        input: unknown;
+        anchor:
+          | { kind: "time"; startMs: number; endMs: number }
+          | {
+              kind: "beat";
+              beatId: string;
+              startMs: number;
+              endMs: number;
+            };
+      }
+    | {
+        id: string;
+        kind: "media";
+        sourceId: string;
+        fit: "cover" | "contain";
+        anchor:
+          | { kind: "time"; startMs: number; endMs: number }
+          | {
+              kind: "beat";
+              beatId: string;
+              startMs: number;
+              endMs: number;
+            };
+      }
+  >;
+};
+
+export type ProjectCompositionWorkspace = {
+  current: {
+    _id: string;
+    version: number;
+    provenance: "manual" | "agent";
+    narrationVersionId: string;
+    composition: ProjectComposition;
+    createdAt: number;
+  } | null;
+  versions: Array<{
+    _id: string;
+    version: number;
+    provenance: "manual" | "agent";
+    narrationVersionId: string;
+    segmentCount: number;
+    createdAt: number;
+  }>;
+};
+
 type Workspace = {
   user: { id: string; name: string };
   channel: { id: string; slug: string; name: string };
@@ -322,6 +379,30 @@ export async function replaceProjectBeats(
     narrationVersionId,
     beats,
   })) as { beatIds: string[] };
+}
+
+export async function listProjectCompositions(
+  projectId: string,
+): Promise<ProjectCompositionWorkspace> {
+  const workspace = await developmentWorkspace();
+  return (await convex().query(anyApi.projectCompositions!.list!, {
+    ...access(workspace),
+    projectId,
+  })) as ProjectCompositionWorkspace;
+}
+
+export async function saveProjectComposition(
+  projectId: string,
+  composition: ProjectComposition,
+  provenance: "manual" | "agent" = "manual",
+): Promise<{ compositionVersionId: string; version: number }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(anyApi.projectCompositions!.save!, {
+    ...access(workspace),
+    projectId,
+    composition,
+    provenance,
+  })) as { compositionVersionId: string; version: number };
 }
 
 export async function listProjectSources(

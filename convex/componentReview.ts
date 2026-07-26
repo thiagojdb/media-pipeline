@@ -279,6 +279,7 @@ export const getLibraryComponent = query({
         return {
           ...libraryVersion(version, build?.threadId, fixtures),
           fixtures,
+          inputSchemaJson: version.inputSchemaJson,
           dimensions: JSON.parse(version.dimensionsJson) as unknown,
           previousVersionId: version.previousVersionId,
         };

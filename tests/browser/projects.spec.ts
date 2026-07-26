@@ -92,6 +92,72 @@ test("creates, opens, renames, and archives a channel project through real route
     title: string;
     summary?: string;
   }> = [];
+  let compositionVersion = 0;
+  let composition:
+    | {
+        schemaVersion: 1;
+        narrationVersionId: string;
+        fps: number;
+        width: number;
+        height: number;
+        segments: Array<{
+          id: string;
+          kind: "component";
+          componentVersionId: string;
+          input: unknown;
+          anchor: {
+            kind: "beat";
+            beatId: string;
+            startMs: number;
+            endMs: number;
+          };
+        }>;
+      }
+    | undefined;
+
+  await page
+    .context()
+    .route("**/api/component-loop/library**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/api/component-loop/library") {
+        await route.fulfill({
+          status: 200,
+          json: [
+            {
+              id: "component-result-card",
+              componentId: "result-card",
+              latestVersion: {
+                id: "approved-result-card-v1",
+                version: "1.0.0",
+              },
+            },
+          ],
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        json: {
+          componentId: "result-card",
+          latestApprovedVersionId: "approved-result-card-v1",
+          versions: [
+            {
+              id: "approved-result-card-v1",
+              version: "1.0.0",
+              inputSchemaJson: JSON.stringify({
+                type: "object",
+                properties: {
+                  title: { type: "string", title: "Card title" },
+                  score: { type: "number", title: "Result score" },
+                },
+                required: ["title", "score"],
+              }),
+              fixtures: [{ input: { title: "Election result", score: 51 } }],
+            },
+          ],
+        },
+      });
+    });
 
   await page.context().route("https://upload.test/source", async (route) => {
     expect(route.request().method()).toBe("POST");
@@ -465,6 +531,56 @@ test("creates, opens, renames, and archives a channel project through real route
         return;
       }
     }
+    if (
+      url.pathname === "/api/projects/project-election-night/compositions" &&
+      project
+    ) {
+      if (request.method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          json: {
+            current: composition
+              ? {
+                  _id: `composition-${compositionVersion}`,
+                  version: compositionVersion,
+                  provenance: "manual",
+                  narrationVersionId: composition.narrationVersionId,
+                  composition,
+                  createdAt: 500 + compositionVersion,
+                }
+              : null,
+            versions: Array.from(
+              { length: compositionVersion },
+              (_, index) => ({
+                _id: `composition-${compositionVersion - index}`,
+                version: compositionVersion - index,
+                provenance: "manual",
+                narrationVersionId:
+                  composition?.narrationVersionId ?? "narration-version-1",
+                segmentCount: composition?.segments.length ?? 0,
+                createdAt: 500 + compositionVersion - index,
+              }),
+            ),
+          },
+        });
+        return;
+      }
+      if (request.method() === "POST") {
+        const input = request.postDataJSON() as {
+          composition: typeof composition;
+        };
+        composition = input.composition;
+        compositionVersion += 1;
+        await route.fulfill({
+          status: 201,
+          json: {
+            compositionVersionId: `composition-${compositionVersion}`,
+            version: compositionVersion,
+          },
+        });
+        return;
+      }
+    }
     if (url.pathname === "/api/projects/project-election-night" && project) {
       if (request.method() === "GET") {
         await route.fulfill({ status: 200, json: { channel, project } });
@@ -609,6 +725,36 @@ test("creates, opens, renames, and archives a channel project through real route
   await expect(page.getByLabel("Beat 2 title")).toHaveValue(
     "Regional explanation",
   );
+
+  await expect(
+    page.getByRole("heading", {
+      name: "Place approved visuals on the story",
+    }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Approved component")).toHaveValue(
+    "result-card",
+  );
+  await expect(page.getByLabel("Exact approved version")).toHaveValue(
+    "approved-result-card-v1",
+  );
+  await page.getByLabel("Component input title").fill("Regional result");
+  await page.getByLabel("Component input score").fill("72");
+  await page.getByRole("button", { name: "Insert at beat" }).click();
+  await expect(page.getByText("Composition version 1 saved.")).toBeVisible();
+  await expect(page.getByText("result-card@1.0.0")).toBeVisible();
+  await page
+    .getByLabel("Segment 1 inputs")
+    .fill('{"title":"Verified regional result","score":73}');
+  await page.getByRole("button", { name: "Save inputs" }).click();
+  await expect(page.getByText("Composition version 2 saved.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Segment 1 inputs")).toContainText(
+    "Verified regional result",
+  );
+  const compositionSection = page
+    .locator("section")
+    .filter({ hasText: "Project composition" });
+  await expect(compositionSection.getByText("Current · v2")).toBeVisible();
 
   await expect(page.getByText("No sources added yet")).toBeVisible();
   await page.getByLabel("Source title").fill("National results");

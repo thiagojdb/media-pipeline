@@ -208,6 +208,8 @@ MED-147 stores semantic beats as ordered, project-owned ranges pinned to one exa
 
 MED-148 defines the single structured project composition consumed by both preview and rendering. Each immutable composition version pins one narration version and an ordered set of beat- or time-anchored visual segments. Segments reference either an exact approved channel component version with inputs checked against that version's stored JSON Schema, or an active project source. Zod validates the record shape first; Convex then validates ownership, exact beat timing, non-overlap, narration bounds, source availability, component approval, and component inputs before advancing the explicit current-version pointer.
 
+MED-149 exposes that composition boundary as a manual project workflow. The channel library supplies approved versions and their stored input schemas; the browser generates version-specific controls, anchors inserted component instances to exact beats, and submits the complete candidate composition through the same Convex validator. Insert, input edit, beat move, and removal each publish a new immutable composition version, while a rejected candidate leaves the current pointer and working composition unchanged.
+
 ## State models
 
 ### Component candidate

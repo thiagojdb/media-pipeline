@@ -8,6 +8,7 @@ import {
   ArrowRight,
   ArrowUp,
   AudioLines,
+  Boxes,
   CircleStop,
   Clapperboard,
   ExternalLink,
@@ -125,6 +126,73 @@ type BeatData = {
     durationMs: number;
   }>;
   beats: Beat[];
+};
+
+type Composition = {
+  schemaVersion: 1;
+  narrationVersionId: string;
+  fps: number;
+  width: number;
+  height: number;
+  segments: CompositionSegment[];
+};
+
+type CompositionSegment = {
+  id: string;
+  kind: "component";
+  componentVersionId: string;
+  input: unknown;
+  anchor:
+    | { kind: "time"; startMs: number; endMs: number }
+    | {
+        kind: "beat";
+        beatId: string;
+        startMs: number;
+        endMs: number;
+      };
+};
+
+type CompositionData = {
+  current: {
+    _id: string;
+    version: number;
+    provenance: "manual" | "agent";
+    composition: Composition;
+    createdAt: number;
+  } | null;
+  versions: Array<{
+    _id: string;
+    version: number;
+    provenance: "manual" | "agent";
+    segmentCount: number;
+    createdAt: number;
+  }>;
+};
+
+type LibraryItem = {
+  componentId: string;
+  latestVersion: { id: string; version: string };
+};
+
+type JsonInputSchema = {
+  type?: string;
+  title?: string;
+  description?: string;
+  properties?: Record<string, JsonInputSchema>;
+  required?: string[];
+  enum?: unknown[];
+  default?: unknown;
+};
+
+type LibraryDetail = {
+  componentId: string;
+  latestApprovedVersionId: string;
+  versions: Array<{
+    id: string;
+    version: string;
+    inputSchemaJson: string;
+    fixtures: Array<{ input?: Record<string, unknown> }>;
+  }>;
 };
 
 export function ProjectListWorkspace() {
@@ -471,6 +539,10 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
             editable={data.project.status === "active"}
             projectId={projectId}
           />
+          <CompositionWorkspace
+            editable={data.project.status === "active"}
+            projectId={projectId}
+          />
           <SourceWorkspace
             editable={data.project.status === "active"}
             projectId={projectId}
@@ -479,6 +551,596 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
       ) : null}
     </ProjectShell>
   );
+}
+
+function CompositionWorkspace({
+  editable,
+  projectId,
+}: {
+  editable: boolean;
+  projectId: string;
+}) {
+  const [data, setData] = useState<CompositionData>();
+  const [beatData, setBeatData] = useState<BeatData>();
+  const [library, setLibrary] = useState<LibraryItem[]>([]);
+  const [detail, setDetail] = useState<LibraryDetail>();
+  const [componentId, setComponentId] = useState("");
+  const [versionId, setVersionId] = useState("");
+  const [beatId, setBeatId] = useState("");
+  const [input, setInput] = useState<Record<string, unknown>>({});
+  const [draftInputs, setDraftInputs] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const [savedVersion, setSavedVersion] = useState<number>();
+
+  const load = useCallback(async () => {
+    const [compositionData, beats, items] = await Promise.all([
+      request<CompositionData>(`/api/projects/${projectId}/compositions`),
+      request<BeatData>(`/api/projects/${projectId}/beats`),
+      request<LibraryItem[]>("/api/component-loop/library"),
+    ]);
+    setData(compositionData);
+    setBeatData(beats);
+    setLibrary(items);
+    setDraftInputs(
+      Object.fromEntries(
+        (compositionData.current?.composition.segments ?? []).map((segment) => [
+          segment.id,
+          JSON.stringify(segment.input, null, 2),
+        ]),
+      ),
+    );
+    const nextComponentId = componentId || items[0]?.componentId || "";
+    setComponentId(nextComponentId);
+    setBeatId(
+      (current) =>
+        current ||
+        beats.beats.find(
+          (beat) => beat.narrationVersionId === beats.currentNarrationVersionId,
+        )?._id ||
+        "",
+    );
+    if (nextComponentId) {
+      const nextDetail = await request<LibraryDetail>(
+        `/api/component-loop/library/${encodeURIComponent(nextComponentId)}`,
+      );
+      setDetail(nextDetail);
+      const nextVersionId = versionId || nextDetail.latestApprovedVersionId;
+      setVersionId(nextVersionId);
+      const selected = nextDetail.versions.find(
+        (version) => version.id === nextVersionId,
+      );
+      setInput(
+        selected?.fixtures[0]?.input ?? defaultInput(inputSchema(selected)),
+      );
+    }
+  }, [componentId, projectId, versionId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void load().catch((cause) => setError(errorMessage(cause)));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  const chooseComponent = async (nextComponentId: string) => {
+    setComponentId(nextComponentId);
+    setError(undefined);
+    try {
+      const nextDetail = await request<LibraryDetail>(
+        `/api/component-loop/library/${encodeURIComponent(nextComponentId)}`,
+      );
+      setDetail(nextDetail);
+      setVersionId(nextDetail.latestApprovedVersionId);
+      const version = nextDetail.versions.find(
+        (item) => item.id === nextDetail.latestApprovedVersionId,
+      );
+      setInput(
+        version?.fixtures[0]?.input ?? defaultInput(inputSchema(version)),
+      );
+    } catch (cause) {
+      setError(errorMessage(cause));
+    }
+  };
+
+  const chooseVersion = (nextVersionId: string) => {
+    setVersionId(nextVersionId);
+    const version = detail?.versions.find((item) => item.id === nextVersionId);
+    setInput(version?.fixtures[0]?.input ?? defaultInput(inputSchema(version)));
+  };
+
+  const persist = async (composition: Composition) => {
+    setBusy(true);
+    setError(undefined);
+    setSavedVersion(undefined);
+    try {
+      const result = await request<{ version: number }>(
+        `/api/projects/${projectId}/compositions`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ provenance: "manual", composition }),
+        },
+      );
+      setSavedVersion(result.version);
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const insert = async () => {
+    const beat = beatData?.beats.find((item) => item._id === beatId);
+    const narrationVersionId =
+      data?.current?.composition.narrationVersionId ??
+      beatData?.currentNarrationVersionId;
+    if (!beat || !narrationVersionId || !versionId) return;
+    const base =
+      data?.current?.composition ??
+      ({
+        schemaVersion: 1,
+        narrationVersionId,
+        fps: 30,
+        width: 1_920,
+        height: 1_080,
+        segments: [],
+      } satisfies Composition);
+    const segment: CompositionSegment = {
+      id: `segment-${Date.now()}`,
+      kind: "component",
+      componentVersionId: versionId,
+      input,
+      anchor: {
+        kind: "beat",
+        beatId: beat._id!,
+        startMs: beat.startMs,
+        endMs: beat.endMs,
+      },
+    };
+    await persist({
+      ...base,
+      segments: [...base.segments, segment].sort(
+        (left, right) => left.anchor.startMs - right.anchor.startMs,
+      ),
+    });
+  };
+
+  const editSegment = async (segmentId: string) => {
+    const current = data?.current?.composition;
+    if (!current) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(draftInputs[segmentId] ?? "{}");
+    } catch {
+      setError("Component input must be valid JSON.");
+      return;
+    }
+    await persist({
+      ...current,
+      segments: current.segments.map((segment) =>
+        segment.id === segmentId ? { ...segment, input: parsed } : segment,
+      ),
+    });
+  };
+
+  const moveToBeat = async (segmentId: string, nextBeatId: string) => {
+    const current = data?.current?.composition;
+    const beat = beatData?.beats.find((item) => item._id === nextBeatId);
+    if (!current || !beat) return;
+    await persist({
+      ...current,
+      segments: current.segments
+        .map((segment) =>
+          segment.id === segmentId
+            ? {
+                ...segment,
+                anchor: {
+                  kind: "beat" as const,
+                  beatId: beat._id!,
+                  startMs: beat.startMs,
+                  endMs: beat.endMs,
+                },
+              }
+            : segment,
+        )
+        .sort((left, right) => left.anchor.startMs - right.anchor.startMs),
+    });
+  };
+
+  const removeSegment = async (segmentId: string) => {
+    const current = data?.current?.composition;
+    if (!current) return;
+    await persist({
+      ...current,
+      segments: current.segments.filter((segment) => segment.id !== segmentId),
+    });
+  };
+
+  const selectedVersion = detail?.versions.find(
+    (version) => version.id === versionId,
+  );
+  const currentBeats =
+    beatData?.beats.filter(
+      (beat) =>
+        beat.narrationVersionId ===
+        (data?.current?.composition.narrationVersionId ??
+          beatData.currentNarrationVersionId),
+    ) ?? [];
+
+  return (
+    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 px-6 py-5 sm:px-8">
+        <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
+          Project composition
+        </p>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold tracking-tight">
+            Place approved visuals on the story
+          </h2>
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 font-mono text-xs text-slate-600">
+            {data?.current
+              ? `Current · v${data.current.version}`
+              : "No composition yet"}
+          </span>
+        </div>
+      </div>
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="p-6 sm:p-8">
+          {error ? <ProjectError message={error} /> : null}
+          {savedVersion ? (
+            <p className="mb-4 text-sm font-medium text-emerald-700">
+              Composition version {savedVersion} saved.
+            </p>
+          ) : null}
+          {!data ? <ProjectLoading label="Opening composition…" /> : null}
+          {data?.current?.composition.segments.length ? (
+            <ol className="space-y-4">
+              {data.current.composition.segments.map((segment, index) => (
+                <li
+                  className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                  key={segment.id}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase">
+                        Segment {index + 1} ·{" "}
+                        {formatTimestamp(segment.anchor.startMs)}–
+                        {formatTimestamp(segment.anchor.endMs)}
+                      </p>
+                      <strong className="mt-1 block text-sm">
+                        Approved component ·{" "}
+                        {componentVersionLabel(
+                          segment.componentVersionId,
+                          library,
+                          detail,
+                        )}
+                      </strong>
+                    </div>
+                    <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs text-blue-800">
+                      {segment.anchor.kind === "beat"
+                        ? "Beat anchored"
+                        : "Time anchored"}
+                    </span>
+                  </div>
+                  <label className="mt-4 block text-xs font-medium text-slate-600">
+                    Component inputs
+                    <textarea
+                      aria-label={`Segment ${index + 1} inputs`}
+                      className="mt-1 min-h-28 w-full rounded-lg border bg-white p-3 font-mono text-xs"
+                      onChange={(event) =>
+                        setDraftInputs((current) => ({
+                          ...current,
+                          [segment.id]: event.target.value,
+                        }))
+                      }
+                      value={
+                        draftInputs[segment.id] ??
+                        JSON.stringify(segment.input, null, 2)
+                      }
+                    />
+                  </label>
+                  {editable ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Button
+                        disabled={busy}
+                        onClick={() => void editSegment(segment.id)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Save inputs
+                      </Button>
+                      <label className="text-xs text-slate-600">
+                        Move to beat
+                        <select
+                          aria-label={`Segment ${index + 1} beat`}
+                          className="ml-2 h-9 rounded-lg border bg-white px-2 text-sm"
+                          disabled={busy}
+                          onChange={(event) =>
+                            void moveToBeat(segment.id, event.target.value)
+                          }
+                          value={
+                            segment.anchor.kind === "beat"
+                              ? segment.anchor.beatId
+                              : ""
+                          }
+                        >
+                          <option value="">Select beat</option>
+                          {currentBeats.map((beat) => (
+                            <option key={beat._id} value={beat._id}>
+                              {beat.title}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <Button
+                        disabled={busy}
+                        onClick={() => void removeSegment(segment.id)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <Trash2 /> Remove
+                      </Button>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          ) : data ? (
+            <div className="rounded-xl border border-dashed p-8 text-center">
+              <Clapperboard className="mx-auto size-6 text-slate-400" />
+              <p className="mt-3 text-sm text-slate-500">
+                Insert the first approved component at a semantic beat.
+              </p>
+            </div>
+          ) : null}
+          {data?.versions.length ? (
+            <p className="mt-4 font-mono text-xs text-slate-500">
+              {data.versions.length} immutable composition version
+              {data.versions.length === 1 ? "" : "s"}
+            </p>
+          ) : null}
+        </div>
+        <aside className="border-t border-slate-200 bg-slate-950 p-6 text-white lg:border-t-0 lg:border-l">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-blue-400 text-slate-950">
+            <Boxes className="size-5" />
+          </div>
+          <h3 className="mt-4 font-semibold">Insert from channel library</h3>
+          {!library.length && data ? (
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Approve a channel component before composing the project.
+            </p>
+          ) : null}
+          {editable && library.length ? (
+            <div className="mt-5 space-y-4">
+              <label className="block text-xs font-medium text-slate-300">
+                Approved component
+                <select
+                  className="mt-1 h-10 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm"
+                  onChange={(event) => void chooseComponent(event.target.value)}
+                  value={componentId}
+                >
+                  {library.map((item) => (
+                    <option
+                      className="text-slate-950"
+                      key={item.componentId}
+                      value={item.componentId}
+                    >
+                      {item.componentId}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs font-medium text-slate-300">
+                Exact approved version
+                <select
+                  className="mt-1 h-10 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm"
+                  onChange={(event) => chooseVersion(event.target.value)}
+                  value={versionId}
+                >
+                  {detail?.versions.map((version) => (
+                    <option
+                      className="text-slate-950"
+                      key={version.id}
+                      value={version.id}
+                    >
+                      {version.version}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs font-medium text-slate-300">
+                Anchor beat
+                <select
+                  className="mt-1 h-10 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm"
+                  onChange={(event) => setBeatId(event.target.value)}
+                  value={beatId}
+                >
+                  {currentBeats.map((beat) => (
+                    <option
+                      className="text-slate-950"
+                      key={beat._id}
+                      value={beat._id}
+                    >
+                      {beat.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedVersion ? (
+                <SchemaInputForm
+                  input={input}
+                  onChange={setInput}
+                  schema={inputSchema(selectedVersion)}
+                />
+              ) : null}
+              <Button
+                className="w-full bg-blue-400 text-slate-950 hover:bg-blue-300"
+                disabled={busy || !beatId || !versionId}
+                onClick={() => void insert()}
+              >
+                {busy ? <LoaderCircle className="animate-spin" /> : <Plus />}
+                Insert at beat
+              </Button>
+            </div>
+          ) : null}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function SchemaInputForm({
+  input,
+  onChange,
+  schema,
+}: {
+  input: Record<string, unknown>;
+  onChange: (value: Record<string, unknown>) => void;
+  schema: JsonInputSchema;
+}) {
+  return (
+    <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-3">
+      <p className="text-xs font-medium text-slate-300">
+        Version-specific inputs
+      </p>
+      {Object.entries(schema.properties ?? {}).map(([key, property]) => {
+        const label = property.title ?? key;
+        if (property.enum) {
+          return (
+            <label className="block text-xs text-slate-300" key={key}>
+              {label}
+              <select
+                aria-label={`Component input ${key}`}
+                className="mt-1 h-9 w-full rounded-lg border border-white/15 bg-white/10 px-2 text-sm"
+                onChange={(event) =>
+                  onChange({ ...input, [key]: parseEnum(event.target.value) })
+                }
+                value={JSON.stringify(input[key])}
+              >
+                {property.enum.map((option) => (
+                  <option
+                    className="text-slate-950"
+                    key={JSON.stringify(option)}
+                    value={JSON.stringify(option)}
+                  >
+                    {String(option)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          );
+        }
+        if (property.type === "boolean") {
+          return (
+            <label
+              className="flex items-center gap-2 text-xs text-slate-300"
+              key={key}
+            >
+              <input
+                aria-label={`Component input ${key}`}
+                checked={Boolean(input[key])}
+                onChange={(event) =>
+                  onChange({ ...input, [key]: event.target.checked })
+                }
+                type="checkbox"
+              />
+              {label}
+            </label>
+          );
+        }
+        const scalar = ["string", "number", "integer"].includes(
+          property.type ?? "",
+        );
+        return (
+          <label className="block text-xs text-slate-300" key={key}>
+            {label}
+            {scalar ? (
+              <input
+                aria-label={`Component input ${key}`}
+                className="mt-1 h-9 w-full rounded-lg border border-white/15 bg-white/10 px-2 text-sm"
+                onChange={(event) =>
+                  onChange({
+                    ...input,
+                    [key]:
+                      property.type === "string"
+                        ? event.target.value
+                        : Number(event.target.value),
+                  })
+                }
+                type={property.type === "string" ? "text" : "number"}
+                value={String(input[key] ?? "")}
+              />
+            ) : (
+              <textarea
+                aria-label={`Component input ${key}`}
+                className="mt-1 min-h-20 w-full rounded-lg border border-white/15 bg-white/10 p-2 font-mono text-xs"
+                onChange={(event) => {
+                  try {
+                    onChange({
+                      ...input,
+                      [key]: JSON.parse(event.target.value),
+                    });
+                  } catch {
+                    // Keep the last valid structured value until JSON is valid.
+                  }
+                }}
+                value={JSON.stringify(input[key] ?? null, null, 2)}
+              />
+            )}
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function defaultInput(schema: JsonInputSchema): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(schema.properties ?? {}).map(([key, property]) => [
+      key,
+      property.default ??
+        property.enum?.[0] ??
+        (property.type === "string"
+          ? ""
+          : property.type === "number" || property.type === "integer"
+            ? 0
+            : property.type === "boolean"
+              ? false
+              : property.type === "array"
+                ? []
+                : {}),
+    ]),
+  );
+}
+
+function inputSchema(
+  version?: LibraryDetail["versions"][number],
+): JsonInputSchema {
+  if (!version) return {};
+  try {
+    return JSON.parse(version.inputSchemaJson) as JsonInputSchema;
+  } catch {
+    return {};
+  }
+}
+
+function parseEnum(value: string): unknown {
+  return JSON.parse(value) as unknown;
+}
+
+function componentVersionLabel(
+  versionId: string,
+  library: LibraryItem[],
+  detail?: LibraryDetail,
+): string {
+  const version = detail?.versions.find((item) => item.id === versionId);
+  if (version && detail) return `${detail.componentId}@${version.version}`;
+  const latest = library.find((item) => item.latestVersion.id === versionId);
+  return latest
+    ? `${latest.componentId}@${latest.latestVersion.version}`
+    : versionId.slice(0, 12);
 }
 
 function BeatWorkspace({
