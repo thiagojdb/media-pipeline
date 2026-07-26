@@ -9,6 +9,7 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 const api = anyApi.projects!;
 const narrationApi = anyApi.projectNarrations!;
+const beatsApi = anyApi.projectBeats!;
 const serverToken = "projects-test-token";
 const narrationWorkerToken = "narration-test-token";
 
@@ -497,6 +498,103 @@ describe("membership-backed channel projects", () => {
       },
     ]);
     expect(result.versions[0]?._id).not.toBe(result.versions[1]?._id);
+  });
+
+  it("orders and validates semantic beats against an exact narration version", async () => {
+    const t = convexTest(schema, modules);
+    const workspace = await bootstrap(t, "creator");
+    const projectId = await t.mutation(api.create, {
+      ...access(workspace.channel.id, "creator"),
+      name: "Timed story",
+    });
+    const narrationVersionId = await t.run(async (ctx) => {
+      const storageId = await ctx.storage.store(
+        new Blob([`RIFF${"0".repeat(124)}`], { type: "audio/wav" }),
+      );
+      const id = await ctx.db.insert("narrationVersions", {
+        channelId: workspace.channel.id,
+        projectId,
+        createdByMembershipId: workspace.membership.id,
+        version: 1,
+        provenance: "upload",
+        storageId,
+        mediaType: "audio/wav",
+        durationMs: 4_000,
+        timingSegments: [],
+        createdAt: Date.now(),
+      });
+      await ctx.db.patch(projectId, {
+        currentNarrationVersionId: id,
+        currentNarrationVersionNumber: 1,
+      });
+      return id;
+    });
+
+    await t.mutation(beatsApi.replace, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      narrationVersionId,
+      beats: [
+        {
+          startMs: 0,
+          endMs: 1_200,
+          title: "Hook",
+          summary: "State the surprising result.",
+        },
+        {
+          startMs: 1_500,
+          endMs: 4_000,
+          title: "Explanation",
+        },
+      ],
+    });
+    const result = await t.query(beatsApi.list, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+    });
+    expect(result).toMatchObject({
+      currentNarrationVersionId: narrationVersionId,
+      narrationVersions: [
+        { _id: narrationVersionId, version: 1, durationMs: 4_000 },
+      ],
+      beats: [
+        {
+          narrationVersionId,
+          order: 0,
+          startMs: 0,
+          endMs: 1_200,
+          title: "Hook",
+        },
+        {
+          narrationVersionId,
+          order: 1,
+          startMs: 1_500,
+          endMs: 4_000,
+          title: "Explanation",
+        },
+      ],
+    });
+    await expect(
+      t.mutation(beatsApi.replace, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+        narrationVersionId,
+        beats: [
+          { startMs: 0, endMs: 2_000, title: "First" },
+          { startMs: 1_900, endMs: 3_000, title: "Overlap" },
+        ],
+      }),
+    ).rejects.toThrow("overlaps");
+    await expect(
+      t.mutation(beatsApi.replace, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+        narrationVersionId,
+        beats: [{ startMs: 4_000, endMs: 4_000, title: "Zero" }],
+      }),
+    ).rejects.toThrow("positive duration");
+    const narration = await t.run((ctx) => ctx.db.get(narrationVersionId));
+    expect(narration).toMatchObject({ durationMs: 4_000, version: 1 });
   });
 
   it("rejects unsafe URLs, invalid files, oversized uploads, and non-member access", async () => {

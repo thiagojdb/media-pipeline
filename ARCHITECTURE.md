@@ -204,6 +204,8 @@ MED-145 adds durable narration jobs with leases, attempt fencing, heartbeat reco
 
 MED-146 extends that same immutable version boundary to uploaded narration. The browser uploads directly to Convex storage after a server-authorized prepare step; a durable worker then probes the stored file with FFprobe and publishes its exact duration, codec, sample rate, channel count, and source filename. Replacements advance the project narration pointer without changing earlier versions, so compositions can continue to reference the exact audio version they were built against.
 
+MED-147 stores semantic beats as ordered, project-owned ranges pinned to one exact immutable narration version. The Convex boundary atomically validates and replaces a version's editable beat set, rejecting non-integer timing, overlap, out-of-bounds markers, and zero-duration ranges before changing persisted state. Beat editing never patches narration or audio, and older beat sets remain available with their superseded narration version.
+
 ## State models
 
 ### Component candidate

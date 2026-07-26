@@ -98,6 +98,26 @@ export type ProjectNarrationJob = {
   updatedAt: number;
 };
 
+export type ProjectBeat = {
+  _id: string;
+  narrationVersionId: string;
+  order: number;
+  startMs: number;
+  endMs: number;
+  title: string;
+  summary?: string | undefined;
+};
+
+export type ProjectBeatWorkspace = {
+  currentNarrationVersionId: string | null;
+  narrationVersions: Array<{
+    _id: string;
+    version: number;
+    durationMs: number;
+  }>;
+  beats: ProjectBeat[];
+};
+
 type Workspace = {
   user: { id: string; name: string };
   channel: { id: string; slug: string; name: string };
@@ -273,6 +293,35 @@ export async function finalizeNarrationUpload(
     projectId,
     ...input,
   })) as { jobId: string };
+}
+
+export async function listProjectBeats(
+  projectId: string,
+): Promise<ProjectBeatWorkspace> {
+  const workspace = await developmentWorkspace();
+  return (await convex().query(anyApi.projectBeats!.list!, {
+    ...access(workspace),
+    projectId,
+  })) as ProjectBeatWorkspace;
+}
+
+export async function replaceProjectBeats(
+  projectId: string,
+  narrationVersionId: string,
+  beats: Array<{
+    startMs: number;
+    endMs: number;
+    title: string;
+    summary?: string | undefined;
+  }>,
+): Promise<{ beatIds: string[] }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(anyApi.projectBeats!.replace!, {
+    ...access(workspace),
+    projectId,
+    narrationVersionId,
+    beats,
+  })) as { beatIds: string[] };
 }
 
 export async function listProjectSources(

@@ -83,6 +83,15 @@ test("creates, opens, renames, and archives a channel project through real route
   let narrationPolls = 0;
   let narrationUploadCount = 0;
   let pendingNarrationFileName = "";
+  let beats: Array<{
+    _id: string;
+    narrationVersionId: string;
+    order: number;
+    startMs: number;
+    endMs: number;
+    title: string;
+    summary?: string;
+  }> = [];
 
   await page.context().route("https://upload.test/source", async (route) => {
     expect(route.request().method()).toBe("POST");
@@ -412,6 +421,50 @@ test("creates, opens, renames, and archives a channel project through real route
         return;
       }
     }
+    if (
+      url.pathname === "/api/projects/project-election-night/beats" &&
+      project
+    ) {
+      if (request.method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          json: {
+            currentNarrationVersionId: narrationVersions[0]?._id ?? null,
+            narrationVersions: narrationVersions.map(
+              ({ _id, version, durationMs }) => ({
+                _id,
+                version,
+                durationMs,
+              }),
+            ),
+            beats,
+          },
+        });
+        return;
+      }
+      if (request.method() === "PUT") {
+        const input = request.postDataJSON() as {
+          narrationVersionId: string;
+          beats: Array<{
+            startMs: number;
+            endMs: number;
+            title: string;
+            summary?: string;
+          }>;
+        };
+        beats = input.beats.map((beat, order) => ({
+          _id: `beat-${order + 1}`,
+          narrationVersionId: input.narrationVersionId,
+          order,
+          ...beat,
+        }));
+        await route.fulfill({
+          status: 200,
+          json: { beatIds: beats.map((beat) => beat._id) },
+        });
+        return;
+      }
+    }
     if (url.pathname === "/api/projects/project-election-night" && project) {
       if (request.method() === "GET") {
         await route.fulfill({ status: 200, json: { channel, project } });
@@ -499,7 +552,7 @@ test("creates, opens, renames, and archives a channel project through real route
   await expect(
     page.getByText("2.0 seconds with 2 timing segments"),
   ).toBeVisible();
-  await expect(page.locator("audio[controls]")).toHaveAttribute(
+  await expect(page.locator("audio[controls]").first()).toHaveAttribute(
     "src",
     /^data:audio\/wav/,
   );
@@ -533,9 +586,28 @@ test("creates, opens, renames, and archives a channel project through real route
   ).toBeVisible();
   await expect(page.getByText("Version 3", { exact: true })).toBeVisible();
   await expect(page.getByText("Superseded")).toHaveCount(2);
-  await expect(page.locator("audio[controls]")).toHaveAttribute(
+  await expect(page.locator("audio[controls]").first()).toHaveAttribute(
     "src",
     /^data:audio\/wav/,
+  );
+
+  await expect(
+    page.getByRole("heading", { name: "Shape narration into timed beats" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Add beat" }).click();
+  await page.getByLabel("Beat 1 title").fill("Opening hook");
+  await page.getByLabel("Beat 1 summary").fill("Name the surprising result.");
+  await page.getByRole("button", { name: "Split" }).click();
+  await page.getByLabel("Beat 2 title").fill("Regional explanation");
+  await page.getByLabel("Beat 1 end seconds").fill("1.1");
+  await page.getByLabel("Beat 2 start seconds").fill("1.1");
+  await page.getByRole("button", { name: "Save beat timeline" }).click();
+  await expect(page.getByText("Beat timeline saved.")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Beat 1 title")).toHaveValue("Opening hook");
+  await expect(page.getByLabel("Beat 1 end seconds")).toHaveValue("1.1");
+  await expect(page.getByLabel("Beat 2 title")).toHaveValue(
+    "Regional explanation",
   );
 
   await expect(page.getByText("No sources added yet")).toBeVisible();

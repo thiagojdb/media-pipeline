@@ -3,8 +3,10 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import {
   Archive,
+  ArrowDown,
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   AudioLines,
   CircleStop,
   Clapperboard,
@@ -17,6 +19,7 @@ import {
   PencilLine,
   Plus,
   Save,
+  Scissors,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -102,6 +105,26 @@ type NarrationJob = {
   model: string;
   terminalMessage?: string;
   createdAt: number;
+};
+
+type Beat = {
+  _id?: string | undefined;
+  narrationVersionId: string;
+  order: number;
+  startMs: number;
+  endMs: number;
+  title: string;
+  summary?: string | undefined;
+};
+
+type BeatData = {
+  currentNarrationVersionId: string | null;
+  narrationVersions: Array<{
+    _id: string;
+    version: number;
+    durationMs: number;
+  }>;
+  beats: Beat[];
 };
 
 export function ProjectListWorkspace() {
@@ -444,6 +467,10 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
             editable={data.project.status === "active"}
             projectId={projectId}
           />
+          <BeatWorkspace
+            editable={data.project.status === "active"}
+            projectId={projectId}
+          />
           <SourceWorkspace
             editable={data.project.status === "active"}
             projectId={projectId}
@@ -451,6 +478,438 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
         </>
       ) : null}
     </ProjectShell>
+  );
+}
+
+function BeatWorkspace({
+  editable,
+  projectId,
+}: {
+  editable: boolean;
+  projectId: string;
+}) {
+  const [data, setData] = useState<BeatData>();
+  const [narrations, setNarrations] = useState<NarrationVersion[]>([]);
+  const [narrationId, setNarrationId] = useState("");
+  const [drafts, setDrafts] = useState<Beat[]>([]);
+  const [error, setError] = useState<string>();
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(
+    async (preferCurrent = false) => {
+      const [beatData, narrationData] = await Promise.all([
+        request<BeatData>(`/api/projects/${projectId}/beats`),
+        request<{ versions: NarrationVersion[] }>(
+          `/api/projects/${projectId}/narrations`,
+        ),
+      ]);
+      const selected = preferCurrent
+        ? (beatData.currentNarrationVersionId ??
+          beatData.narrationVersions[0]?._id ??
+          "")
+        : narrationId ||
+          beatData.currentNarrationVersionId ||
+          beatData.narrationVersions[0]?._id ||
+          "";
+      setData(beatData);
+      setNarrations(narrationData.versions);
+      setNarrationId(selected);
+      setDrafts(
+        beatData.beats
+          .filter((beat) => beat.narrationVersionId === selected)
+          .sort((left, right) => left.order - right.order),
+      );
+    },
+    [narrationId, projectId],
+  );
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      request<BeatData>(`/api/projects/${projectId}/beats`),
+      request<{ versions: NarrationVersion[] }>(
+        `/api/projects/${projectId}/narrations`,
+      ),
+    ])
+      .then(([beatData, narrationData]) => {
+        if (!active) return;
+        const selected =
+          beatData.currentNarrationVersionId ??
+          beatData.narrationVersions[0]?._id ??
+          "";
+        setData(beatData);
+        setNarrations(narrationData.versions);
+        setNarrationId(selected);
+        setDrafts(
+          beatData.beats
+            .filter((beat) => beat.narrationVersionId === selected)
+            .sort((left, right) => left.order - right.order),
+        );
+      })
+      .catch((cause) => {
+        if (active) setError(errorMessage(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    const onNarrationSaved = () => void load(true);
+    window.addEventListener("relay-narration-saved", onNarrationSaved);
+    return () =>
+      window.removeEventListener("relay-narration-saved", onNarrationSaved);
+  }, [load]);
+
+  const selectNarration = (nextId: string) => {
+    setNarrationId(nextId);
+    setDrafts(
+      (data?.beats ?? [])
+        .filter((beat) => beat.narrationVersionId === nextId)
+        .sort((left, right) => left.order - right.order),
+    );
+    setSaved(false);
+  };
+  const version = data?.narrationVersions.find(
+    (item) => item._id === narrationId,
+  );
+  const narration = narrations.find((item) => item._id === narrationId);
+  const durationMs = version?.durationMs ?? 0;
+  const superseded =
+    Boolean(narrationId) && narrationId !== data?.currentNarrationVersionId;
+
+  const update = (index: number, change: Partial<Beat>) => {
+    setDrafts((current) =>
+      current.map((beat, itemIndex) =>
+        itemIndex === index ? { ...beat, ...change } : beat,
+      ),
+    );
+    setSaved(false);
+  };
+  const add = () => {
+    const startMs = drafts.at(-1)?.endMs ?? 0;
+    if (startMs >= durationMs) {
+      setError("The narration has no unassigned time after the final beat.");
+      return;
+    }
+    setDrafts((current) => [
+      ...current,
+      {
+        narrationVersionId: narrationId,
+        order: current.length,
+        startMs,
+        endMs: durationMs,
+        title: `Beat ${current.length + 1}`,
+      },
+    ]);
+    setSaved(false);
+  };
+  const split = (index: number) => {
+    setDrafts((current) => {
+      const beat = current[index];
+      if (!beat || beat.endMs - beat.startMs < 200) return current;
+      const splitAt = Math.round((beat.startMs + beat.endMs) / 2);
+      return current
+        .flatMap((item, itemIndex) =>
+          itemIndex === index
+            ? [
+                { ...item, endMs: splitAt },
+                {
+                  ...item,
+                  _id: undefined,
+                  startMs: splitAt,
+                  title: `${item.title} — continuation`,
+                },
+              ]
+            : [item],
+        )
+        .map((item, order) => ({ ...item, order }));
+    });
+    setSaved(false);
+  };
+  const mergePrevious = (index: number) => {
+    if (index === 0) return;
+    setDrafts((current) =>
+      current
+        .filter((_, itemIndex) => itemIndex !== index)
+        .map((beat, order) =>
+          order === index - 1
+            ? {
+                ...beat,
+                endMs: current[index]!.endMs,
+                summary: [beat.summary, current[index]!.summary]
+                  .filter(Boolean)
+                  .join(" "),
+              }
+            : { ...beat, order },
+        ),
+    );
+    setSaved(false);
+  };
+  const move = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= drafts.length) return;
+    setDrafts((current) => {
+      const next = current.map((beat) => ({ ...beat }));
+      const left = next[index]!;
+      const right = next[target]!;
+      [left.title, right.title] = [right.title, left.title];
+      [left.summary, right.summary] = [right.summary, left.summary];
+      return next;
+    });
+    setSaved(false);
+  };
+  const remove = (index: number) => {
+    setDrafts((current) =>
+      current
+        .filter((_, itemIndex) => itemIndex !== index)
+        .map((beat, order) => ({ ...beat, order })),
+    );
+    setSaved(false);
+  };
+  const save = async () => {
+    setBusy(true);
+    setError(undefined);
+    setSaved(false);
+    try {
+      await request(`/api/projects/${projectId}/beats`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          narrationVersionId: narrationId,
+          beats: drafts.map(({ startMs, endMs, title, summary }) => ({
+            startMs,
+            endMs,
+            title,
+            summary,
+          })),
+        }),
+      });
+      setSaved(true);
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 px-6 py-5 sm:px-8">
+        <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
+          Semantic timeline
+        </p>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold tracking-tight">
+            Shape narration into timed beats
+          </h2>
+          {version ? (
+            <span
+              className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                superseded
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-emerald-100 text-emerald-800"
+              }`}
+            >
+              {superseded ? "Superseded narration" : "Current narration"} · v
+              {version.version}
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div className="p-6 sm:p-8">
+        {error ? <ProjectError message={error} /> : null}
+        {!data && !error ? <ProjectLoading label="Opening beats…" /> : null}
+        {data && !data.narrationVersions.length ? (
+          <p className="text-sm text-slate-500">
+            Generate or upload narration before creating beats.
+          </p>
+        ) : null}
+        {version ? (
+          <>
+            <div className="flex flex-wrap items-end gap-4">
+              <label className="text-sm font-medium">
+                Narration version
+                <select
+                  className="mt-2 block h-10 rounded-lg border bg-white px-3 text-sm"
+                  onChange={(event) => selectNarration(event.target.value)}
+                  value={narrationId}
+                >
+                  {data?.narrationVersions.map((item) => (
+                    <option key={item._id} value={item._id}>
+                      Version {item.version} · {formatDuration(item.durationMs)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {narration?.audioUrl ? (
+                <audio
+                  aria-label={`Narration version ${version.version}`}
+                  className="min-w-64 flex-1"
+                  controls
+                  preload="metadata"
+                  src={narration.audioUrl}
+                >
+                  <track kind="captions" />
+                </audio>
+              ) : null}
+            </div>
+            <div className="relative mt-6 h-3 overflow-hidden rounded-full bg-slate-100">
+              {drafts.map((beat, index) => (
+                <span
+                  className="absolute h-full border-r border-white bg-blue-500"
+                  key={beat._id ?? `${beat.startMs}-${index}`}
+                  style={{
+                    left: `${(beat.startMs / durationMs) * 100}%`,
+                    width: `${((beat.endMs - beat.startMs) / durationMs) * 100}%`,
+                  }}
+                />
+              ))}
+            </div>
+            <ol className="mt-6 space-y-4">
+              {drafts.map((beat, index) => (
+                <li
+                  className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                  key={beat._id ?? `${beat.startMs}-${index}`}
+                >
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem_8rem]">
+                    <label className="text-xs font-medium text-slate-600">
+                      Beat title
+                      <input
+                        aria-label={`Beat ${index + 1} title`}
+                        className="mt-1 h-10 w-full rounded-lg border bg-white px-3 text-sm text-slate-950"
+                        maxLength={120}
+                        onChange={(event) =>
+                          update(index, { title: event.target.value })
+                        }
+                        value={beat.title}
+                      />
+                    </label>
+                    <label className="text-xs font-medium text-slate-600">
+                      Start seconds
+                      <input
+                        aria-label={`Beat ${index + 1} start seconds`}
+                        className="mt-1 h-10 w-full rounded-lg border bg-white px-3 font-mono text-sm"
+                        max={durationMs / 1000}
+                        min={0}
+                        onChange={(event) =>
+                          update(index, {
+                            startMs: Math.round(
+                              Number(event.target.value) * 1000,
+                            ),
+                          })
+                        }
+                        step={0.1}
+                        type="number"
+                        value={beat.startMs / 1000}
+                      />
+                    </label>
+                    <label className="text-xs font-medium text-slate-600">
+                      End seconds
+                      <input
+                        aria-label={`Beat ${index + 1} end seconds`}
+                        className="mt-1 h-10 w-full rounded-lg border bg-white px-3 font-mono text-sm"
+                        max={durationMs / 1000}
+                        min={0}
+                        onChange={(event) =>
+                          update(index, {
+                            endMs: Math.round(
+                              Number(event.target.value) * 1000,
+                            ),
+                          })
+                        }
+                        step={0.1}
+                        type="number"
+                        value={beat.endMs / 1000}
+                      />
+                    </label>
+                  </div>
+                  <label className="mt-3 block text-xs font-medium text-slate-600">
+                    Editorial summary
+                    <input
+                      aria-label={`Beat ${index + 1} summary`}
+                      className="mt-1 h-10 w-full rounded-lg border bg-white px-3 text-sm"
+                      maxLength={1000}
+                      onChange={(event) =>
+                        update(index, { summary: event.target.value })
+                      }
+                      placeholder="What should this moment communicate?"
+                      value={beat.summary ?? ""}
+                    />
+                  </label>
+                  {editable ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        aria-label={`Move beat ${index + 1} up`}
+                        disabled={index === 0}
+                        onClick={() => move(index, -1)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <ArrowUp /> Up
+                      </Button>
+                      <Button
+                        aria-label={`Move beat ${index + 1} down`}
+                        disabled={index === drafts.length - 1}
+                        onClick={() => move(index, 1)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <ArrowDown /> Down
+                      </Button>
+                      <Button
+                        onClick={() => split(index)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <Scissors /> Split
+                      </Button>
+                      <Button
+                        disabled={index === 0}
+                        onClick={() => mergePrevious(index)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        Merge previous
+                      </Button>
+                      <Button
+                        aria-label={`Delete beat ${index + 1}`}
+                        onClick={() => remove(index)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <Trash2 /> Delete
+                      </Button>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+            {editable ? (
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <Button onClick={add} variant="outline">
+                  <Plus /> Add beat
+                </Button>
+                <Button
+                  disabled={busy || !narrationId}
+                  onClick={() => void save()}
+                >
+                  {busy ? <LoaderCircle className="animate-spin" /> : <Save />}
+                  Save beat timeline
+                </Button>
+                {saved ? (
+                  <span className="text-sm font-medium text-emerald-700">
+                    Beat timeline saved.
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -485,6 +944,7 @@ function NarrationWorkspace({
       (current) => current || scriptData.versions[0]?._id || "",
     );
     setData(narrationData);
+    window.dispatchEvent(new Event("relay-narration-saved"));
   }, [projectId]);
 
   useEffect(() => {
@@ -527,7 +987,10 @@ function NarrationWorkspace({
       void request<{ versions: NarrationVersion[]; jobs: NarrationJob[] }>(
         `/api/projects/${projectId}/narrations`,
       )
-        .then(setData)
+        .then((value) => {
+          setData(value);
+          window.dispatchEvent(new Event("relay-narration-saved"));
+        })
         .catch((cause) => setError(errorMessage(cause)));
     }, 700);
     return () => window.clearInterval(timer);

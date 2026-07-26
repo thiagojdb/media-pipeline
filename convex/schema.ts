@@ -112,6 +112,25 @@ export default defineSchema({
   })
     .index("by_project_version", ["projectId", "version"])
     .index("by_script_version", ["scriptVersionId"]),
+  beats: defineTable({
+    channelId: v.id("channels"),
+    projectId: v.id("projects"),
+    narrationVersionId: v.id("narrationVersions"),
+    createdByMembershipId: v.id("channelMemberships"),
+    order: v.number(),
+    startMs: v.number(),
+    endMs: v.number(),
+    title: v.string(),
+    summary: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_project_narration_order", [
+      "projectId",
+      "narrationVersionId",
+      "order",
+    ])
+    .index("by_project_created", ["projectId", "createdAt"]),
   narrationJobs: defineTable({
     channelId: v.id("channels"),
     projectId: v.id("projects"),
