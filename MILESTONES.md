@@ -130,7 +130,7 @@ This order separates SDK/rendering defects from agent defects. Pi should not be 
 ## M2 — Source-to-Draft Video
 
 **Linear milestone:** Source-to-Draft Video
-**Next issue:** MED-150 — Preview the composition with narration in the browser
+**Next issue:** MED-151 — Let the editing agent propose beat-scoped composition changes
 
 ### Outcome
 

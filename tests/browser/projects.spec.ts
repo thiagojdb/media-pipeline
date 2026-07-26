@@ -158,6 +158,21 @@ test("creates, opens, renames, and archives a channel project through real route
         },
       });
     });
+  await page
+    .context()
+    .route("**/api/component-loop/versions/**/preview**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: `<!doctype html><body data-frame="0"><script>
+          window.addEventListener("message", (event) => {
+            if (event.data?.type === "relay-preview-frame-v1") {
+              document.body.dataset.frame = String(event.data.frame);
+            }
+          });
+        </script></body>`,
+      });
+    });
 
   await page.context().route("https://upload.test/source", async (route) => {
     expect(route.request().method()).toBe("POST");
@@ -427,7 +442,7 @@ test("creates, opens, renames, and archives a channel project through real route
                 version: 1,
                 provenance: "generated",
                 mediaType: "audio/wav",
-                audioUrl: "data:audio/wav;base64,UklGRg==",
+                audioUrl: silentWavDataUrl(3_000),
                 durationMs: 2_000,
                 timingSegments: [
                   {
@@ -462,7 +477,7 @@ test("creates, opens, renames, and archives a channel project through real route
                 version: narrationVersions.length + 1,
                 provenance: "upload",
                 mediaType: "audio/wav",
-                audioUrl: "data:audio/wav;base64,UklGRg==",
+                audioUrl: silentWavDataUrl(3_000),
                 durationMs: 2_500 + narrationUploadCount * 100,
                 timingSegments: [],
                 provider: "relay-upload",
@@ -756,6 +771,38 @@ test("creates, opens, renames, and archives a channel project through real route
     .filter({ hasText: "Project composition" });
   await expect(compositionSection.getByText("Current · v2")).toBeVisible();
 
+  await expect(
+    page.getByRole("heading", {
+      name: "Watch the composition on narration time",
+    }),
+  ).toBeVisible();
+  const renderFrame = page.getByTestId("composition-render-frame");
+  await expect(renderFrame.getByTestId("preview-editing-overlays")).toHaveCount(
+    0,
+  );
+  await page.getByLabel("Composition timeline").fill("450");
+  await expect(page.getByTestId("composition-frame-output")).toContainText(
+    "frame 13",
+  );
+  const componentFrame = page.getByTitle("Composition rendered frame");
+  await expect
+    .poll(async () =>
+      componentFrame.contentFrame().locator("body").getAttribute("data-frame"),
+    )
+    .toBe("13");
+  await page
+    .getByRole("button", { name: /Regional explanation · frame/ })
+    .click();
+  await expect(page.getByTestId("composition-frame-output")).toContainText(
+    "frame 33",
+  );
+  await page.getByRole("button", { name: /Opening hook · frame 0/ }).click();
+  await page.getByRole("button", { name: "Play composition" }).click();
+  await expect
+    .poll(async () => page.getByLabel("Composition timeline").inputValue())
+    .not.toBe("0");
+  await page.getByRole("button", { name: "Pause composition" }).click();
+
   await expect(page.getByText("No sources added yet")).toBeVisible();
   await page.getByLabel("Source title").fill("National results");
   await page.getByLabel("URL").fill("https://example.com/results");
@@ -805,3 +852,22 @@ test("creates, opens, renames, and archives a channel project through real route
   await expect(page.getByRole("heading", { name: "Archive" })).toBeVisible();
   await expect(page.getByText("Election results explained")).toBeVisible();
 });
+
+function silentWavDataUrl(durationMs: number): string {
+  const sampleRate = 8_000;
+  const sampleCount = Math.ceil((durationMs / 1_000) * sampleRate);
+  const buffer = Buffer.alloc(44 + sampleCount * 2);
+  buffer.write("RIFF", 0);
+  buffer.writeUInt32LE(buffer.length - 8, 4);
+  buffer.write("WAVEfmt ", 8);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(sampleRate * 2, 28);
+  buffer.writeUInt16LE(2, 32);
+  buffer.writeUInt16LE(16, 34);
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(sampleCount * 2, 40);
+  return `data:audio/wav;base64,${buffer.toString("base64")}`;
+}

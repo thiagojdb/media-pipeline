@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { compositionFrameAtTime, segmentFrameAtTime } from "@relay/rendering";
 import {
   Archive,
   ArrowDown,
@@ -18,6 +19,8 @@ import {
   Link2,
   LoaderCircle,
   PencilLine,
+  Pause,
+  Play,
   Plus,
   Save,
   Scissors,
@@ -543,6 +546,7 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
             editable={data.project.status === "active"}
             projectId={projectId}
           />
+          <ProjectCompositionPreview projectId={projectId} />
           <SourceWorkspace
             editable={data.project.status === "active"}
             projectId={projectId}
@@ -550,6 +554,259 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
         </>
       ) : null}
     </ProjectShell>
+  );
+}
+
+function ProjectCompositionPreview({ projectId }: { projectId: string }) {
+  const [compositionData, setCompositionData] = useState<CompositionData>();
+  const [narrations, setNarrations] = useState<NarrationVersion[]>([]);
+  const [beatData, setBeatData] = useState<BeatData>();
+  const [currentMs, setCurrentMs] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [error, setError] = useState<string>();
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+
+  const load = useCallback(async () => {
+    const [compositions, narrationData, beats] = await Promise.all([
+      request<CompositionData>(`/api/projects/${projectId}/compositions`),
+      request<{ versions: NarrationVersion[] }>(
+        `/api/projects/${projectId}/narrations`,
+      ),
+      request<BeatData>(`/api/projects/${projectId}/beats`),
+    ]);
+    setCompositionData(compositions);
+    setNarrations(narrationData.versions);
+    setBeatData(beats);
+  }, [projectId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void load().catch((cause) => setError(errorMessage(cause)));
+    }, 0);
+    const onCompositionSaved = () => void load();
+    window.addEventListener("relay-composition-saved", onCompositionSaved);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("relay-composition-saved", onCompositionSaved);
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (!playing) return;
+    let frameRequest = 0;
+    const update = () => {
+      if (audioRef.current) {
+        setCurrentMs(audioRef.current.currentTime * 1_000);
+      }
+      frameRequest = window.requestAnimationFrame(update);
+    };
+    frameRequest = window.requestAnimationFrame(update);
+    return () => window.cancelAnimationFrame(frameRequest);
+  }, [playing]);
+
+  const composition = compositionData?.current?.composition;
+  const narration = narrations.find(
+    (version) => version._id === composition?.narrationVersionId,
+  );
+  const durationMs = narration?.durationMs ?? 0;
+  const activeSegment = composition?.segments.find(
+    (segment) =>
+      currentMs >= segment.anchor.startMs && currentMs < segment.anchor.endMs,
+  );
+  const relativeFrame =
+    composition && activeSegment
+      ? segmentFrameAtTime(
+          currentMs,
+          activeSegment.anchor.startMs,
+          composition.fps,
+        )
+      : 0;
+
+  useEffect(() => {
+    frameRef.current?.contentWindow?.postMessage(
+      { type: "relay-preview-frame-v1", frame: relativeFrame },
+      "*",
+    );
+  }, [activeSegment?.id, relativeFrame]);
+
+  const seek = (nextMs: number) => {
+    const clamped = Math.max(0, Math.min(nextMs, durationMs));
+    if (audioRef.current) audioRef.current.currentTime = clamped / 1_000;
+    setCurrentMs(clamped);
+  };
+  const togglePlayback = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      try {
+        await audio.play();
+      } catch (cause) {
+        setError(errorMessage(cause));
+      }
+    } else {
+      audio.pause();
+    }
+  };
+  const previewBeats =
+    beatData?.beats.filter(
+      (beat) => beat.narrationVersionId === composition?.narrationVersionId,
+    ) ?? [];
+  const previewUrl =
+    activeSegment?.kind === "component"
+      ? `/api/component-loop/versions/${activeSegment.componentVersionId}/preview?${new URLSearchParams(
+          {
+            frame: "0",
+            input: browserBase64Url(JSON.stringify(activeSegment.input)),
+          },
+        )}`
+      : undefined;
+
+  return (
+    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-sm">
+      <div className="border-b border-white/10 px-6 py-5 sm:px-8">
+        <p className="text-xs font-medium tracking-[0.18em] text-slate-400 uppercase">
+          Synchronized preview
+        </p>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold tracking-tight">
+            Watch the composition on narration time
+          </h2>
+          {compositionData?.current ? (
+            <span className="rounded-full bg-white/10 px-3 py-1.5 font-mono text-xs">
+              v{compositionData.current.version} · {composition?.fps} fps
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div className="p-6 sm:p-8">
+        {error ? (
+          <div
+            className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-100"
+            role="alert"
+          >
+            {error}
+          </div>
+        ) : null}
+        {!compositionData ? (
+          <div className="flex items-center gap-2 text-sm text-slate-400">
+            <LoaderCircle className="size-4 animate-spin" /> Opening preview…
+          </div>
+        ) : null}
+        {composition && narration?.audioUrl ? (
+          <>
+            <div
+              className="mx-auto w-full max-w-5xl overflow-hidden rounded-xl border border-white/10 bg-black"
+              data-testid="composition-render-frame"
+              style={{
+                aspectRatio: `${composition.width}/${composition.height}`,
+              }}
+            >
+              {previewUrl ? (
+                <iframe
+                  className="size-full border-0"
+                  key={activeSegment?.id}
+                  onLoad={() =>
+                    frameRef.current?.contentWindow?.postMessage(
+                      {
+                        type: "relay-preview-frame-v1",
+                        frame: relativeFrame,
+                      },
+                      "*",
+                    )
+                  }
+                  ref={frameRef}
+                  sandbox="allow-scripts"
+                  src={previewUrl}
+                  title="Composition rendered frame"
+                />
+              ) : (
+                <div className="size-full bg-black" />
+              )}
+            </div>
+            <audio
+              onEnded={() => setPlaying(false)}
+              onPause={() => setPlaying(false)}
+              onPlay={() => setPlaying(true)}
+              onTimeUpdate={(event) =>
+                setCurrentMs(event.currentTarget.currentTime * 1_000)
+              }
+              preload="metadata"
+              ref={audioRef}
+              src={narration.audioUrl}
+            >
+              <track kind="captions" />
+            </audio>
+            <div className="mx-auto mt-5 max-w-5xl">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  aria-label={
+                    playing ? "Pause composition" : "Play composition"
+                  }
+                  className="border-white/20 text-white hover:bg-white/10"
+                  onClick={() => void togglePlayback()}
+                  variant="outline"
+                >
+                  {playing ? <Pause /> : <Play />}
+                  {playing ? "Pause" : "Play"}
+                </Button>
+                <input
+                  aria-label="Composition timeline"
+                  className="min-w-48 flex-1 accent-blue-400"
+                  max={durationMs}
+                  min={0}
+                  onChange={(event) => seek(Number(event.target.value))}
+                  step={1}
+                  type="range"
+                  value={Math.min(currentMs, durationMs)}
+                />
+                <output
+                  className="min-w-32 text-right font-mono text-xs text-slate-300"
+                  data-testid="composition-frame-output"
+                >
+                  frame{" "}
+                  {compositionFrameAtTime(
+                    Math.min(currentMs, durationMs),
+                    composition.fps,
+                  )}{" "}
+                  · {formatTimestamp(currentMs)}
+                </output>
+              </div>
+              <div
+                className="mt-4 flex flex-wrap gap-2"
+                data-testid="preview-editing-overlays"
+              >
+                {previewBeats.map((beat) => (
+                  <button
+                    className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-slate-200 hover:bg-white/10"
+                    key={beat._id}
+                    onClick={() => seek(beat.startMs)}
+                    type="button"
+                  >
+                    {beat.title} · frame{" "}
+                    {compositionFrameAtTime(beat.startMs, composition.fps)}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-slate-500">
+                {activeSegment
+                  ? `Rendering ${activeSegment.id} at segment frame ${relativeFrame}.`
+                  : "No visual segment covers this narration frame."}{" "}
+                Timeline markers remain outside the rendered frame.
+              </p>
+            </div>
+          </>
+        ) : compositionData?.current ? (
+          <p className="text-sm text-slate-400">
+            The pinned narration audio is unavailable for preview.
+          </p>
+        ) : compositionData ? (
+          <p className="text-sm text-slate-400">
+            Save a composition version to open the synchronized preview.
+          </p>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -664,6 +921,7 @@ function CompositionWorkspace({
       );
       setSavedVersion(result.version);
       await load();
+      window.dispatchEvent(new Event("relay-composition-saved"));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -1128,6 +1386,17 @@ function inputSchema(
 
 function parseEnum(value: string): unknown {
   return JSON.parse(value) as unknown;
+}
+
+function browserBase64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return window
+    .btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
 }
 
 function componentVersionLabel(

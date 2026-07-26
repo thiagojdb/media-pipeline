@@ -10,6 +10,24 @@ import {
 import { useCurrentFrame, useVideoConfig } from "remotion";
 import type { z } from "zod";
 
+export function compositionFrameAtTime(timeMs: number, fps: number): number {
+  if (!Number.isFinite(timeMs) || timeMs < 0) {
+    throw new Error("Composition time must be a non-negative finite number.");
+  }
+  if (!Number.isSafeInteger(fps) || fps <= 0) {
+    throw new Error("Composition FPS must be a positive integer.");
+  }
+  return Math.floor((timeMs * fps) / 1_000 + Number.EPSILON);
+}
+
+export function segmentFrameAtTime(
+  timeMs: number,
+  segmentStartMs: number,
+  fps: number,
+): number {
+  return compositionFrameAtTime(Math.max(0, timeMs - segmentStartMs), fps);
+}
+
 export interface VideoComponentFrameProps<Schema extends z.ZodObject> {
   readonly definition: DefinedVideoComponent<Schema>;
   readonly input: z.output<Schema>;

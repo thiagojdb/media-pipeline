@@ -210,6 +210,8 @@ MED-148 defines the single structured project composition consumed by both previ
 
 MED-149 exposes that composition boundary as a manual project workflow. The channel library supplies approved versions and their stored input schemas; the browser generates version-specific controls, anchors inserted component instances to exact beats, and submits the complete candidate composition through the same Convex validator. Insert, input edit, beat move, and removal each publish a new immutable composition version, while a rejected candidate leaves the current pointer and working composition unchanged.
 
+MED-150 evaluates the current composition against its pinned narration clock in the browser. Preview and rendering share the same zero-based millisecond-to-frame functions; the player derives both global and segment-relative frames from the composition FPS and sends the latter to the approved component frame host. Narration audio is the playback clock, seeking and beat jumps update the same frame calculation, and all timeline markers and editing state live outside the rendered viewport.
+
 ## State models
 
 ### Component candidate
