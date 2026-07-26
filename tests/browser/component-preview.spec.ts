@@ -7,6 +7,11 @@ async function openPreview(page: Page) {
   await expect(page.getByTestId("component-identity")).toHaveText(
     "animated-line-chart@1.0.0",
   );
+  await expect(
+    page
+      .getByRole("navigation", { name: "Channel" })
+      .getByRole("link", { name: "Components" }),
+  ).toHaveAttribute("aria-current", "page");
 }
 
 test("rejects unknown ids and wrong versions without falling back", async ({

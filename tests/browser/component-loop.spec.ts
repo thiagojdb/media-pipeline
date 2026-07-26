@@ -88,7 +88,7 @@ test("previews exact source, revises in chat, approves, and reopens the version"
     });
   });
 
-  await page.goto("/component-loop");
+  await page.goto("/components/build");
   await page
     .getByRole("textbox", { name: "Message Relay" })
     .fill("Create an animated data card for a weekly audience metric.");
@@ -186,13 +186,15 @@ test("restores a durable conversation after reload and starts a new chat safely"
     });
   });
 
-  await page.goto("/component-loop");
+  await page.goto("/components/build");
   await page
     .getByRole("textbox", { name: "Message Relay" })
     .fill("Build a conversation I can reopen.");
   await page.getByRole("button", { name: "Send message" }).click();
 
-  await expect(page).toHaveURL(/\?thread=thread-persisted$/);
+  await expect(page).toHaveURL(
+    /\/components\/conversations\/thread-persisted$/,
+  );
   await expect(
     page.getByTitle("Exact preview of generated-chart 1.0.0"),
   ).toBeVisible();
@@ -222,9 +224,9 @@ test("restores a durable conversation after reload and starts a new chat safely"
   );
   expect(starts).toBe(1);
 
-  await page.getByRole("button", { name: "New chat" }).click();
+  await page.getByRole("button", { name: "New component" }).click();
 
-  await expect(page).toHaveURL(/\/component-loop$/);
+  await expect(page).toHaveURL(/\/components\/build$/);
   await expect(page.getByText("What should Relay build?")).toBeVisible();
   await expect
     .poll(() =>
@@ -235,11 +237,11 @@ test("restores a durable conversation after reload and starts a new chat safely"
     .toBeNull();
   expect(starts).toBe(1);
 
-  await page.goto("/component-loop?thread=thread-missing");
+  await page.goto("/components/conversations/thread-missing");
   await expect(
     page.getByRole("alert").filter({ hasText: "Relay needs your attention" }),
   ).toContainText("This Relay conversation is unavailable");
-  await page.getByRole("button", { name: "New chat" }).click();
+  await page.getByRole("button", { name: "New component" }).click();
   await expect(page.getByText("What should Relay build?")).toBeVisible();
 });
 
@@ -284,7 +286,7 @@ test("keeps the inline preview mounted during playback and repeated seeks", asyn
     });
   });
 
-  await page.goto("/component-loop");
+  await page.goto("/components/build");
   await page
     .getByRole("textbox", { name: "Message Relay" })
     .fill("Build a playback test component.");
@@ -356,7 +358,7 @@ test("streams lightweight dialogue without creating a component", async ({
       },
     });
   });
-  await page.goto("/component-loop");
+  await page.goto("/components/build");
   await page
     .getByRole("textbox", { name: "Message Relay" })
     .fill("Hi, who are you?");

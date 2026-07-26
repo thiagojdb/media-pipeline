@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { RelayShell } from "@/components/relay-shell";
 
 type LibraryFixture = {
   id: string;
@@ -77,24 +78,23 @@ export function ComponentLibraryWorkspace() {
   }, []);
 
   return (
-    <LibraryShell>
+    <RelayShell active="components">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
-            Channel library
+          <p className="font-mono text-[10px] tracking-[0.14em] text-[#7b858c] uppercase">
+            Components
           </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            Reusable components
+          <h1 className="mt-2 font-[family-name:var(--font-display)] text-4xl font-semibold tracking-[-0.035em] text-[#171b1f]">
+            Channel library
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-            Approved component versions live here. Open one to inspect its
-            history, return to its original conversation, or begin a fresh
-            revision chat.
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-[#68747d]">
+            Reusable, approved visual treatments for every production in this
+            channel. Each project pins an exact version.
           </p>
         </div>
-        <Button asChild>
-          <a href="/component-loop">
-            Build a component <ArrowRight />
+        <Button asChild className="bg-[#355ce8] text-white hover:bg-[#294cc8]">
+          <a href="/components/build">
+            New component <ArrowRight />
           </a>
         </Button>
       </div>
@@ -121,7 +121,7 @@ export function ComponentLibraryWorkspace() {
           ))}
         </div>
       ) : null}
-    </LibraryShell>
+    </RelayShell>
   );
 }
 
@@ -181,7 +181,9 @@ export function ComponentLibraryDetail({
         `/api/component-loop/versions/${selected.id}/revision-thread`,
         { method: "POST" },
       );
-      window.location.assign(`/component-loop?thread=${result.threadId}`);
+      window.location.assign(
+        `/components/conversations/${encodeURIComponent(result.threadId)}`,
+      );
     } catch (cause) {
       setError(errorMessage(cause));
       setStarting(false);
@@ -189,13 +191,20 @@ export function ComponentLibraryDetail({
   };
 
   return (
-    <LibraryShell>
-      <a
-        className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-950"
-        href="/components"
+    <RelayShell active="components">
+      <nav
+        aria-label="Breadcrumb"
+        className="flex items-center gap-2 text-xs text-[#68747d]"
       >
-        <ArrowLeft className="size-4" /> Component library
-      </a>
+        <a
+          className="inline-flex items-center gap-1.5 hover:text-[#171b1f]"
+          href="/components"
+        >
+          <ArrowLeft className="size-3.5" /> Components
+        </a>
+        <span aria-hidden="true">/</span>
+        <span>Library item</span>
+      </nav>
 
       {error ? <LibraryError message={error} /> : null}
       {!detail && !error ? <LibraryLoading label="Opening component…" /> : null}
@@ -204,7 +213,7 @@ export function ComponentLibraryDetail({
           <div className="mt-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
-                Approved channel component
+                Components · approved
               </p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight">
                 {componentName(detail.componentId)}
@@ -217,8 +226,12 @@ export function ComponentLibraryDetail({
             <div className="flex flex-wrap gap-2">
               {selected.originThreadId ? (
                 <Button asChild variant="outline">
-                  <a href={`/component-loop?thread=${selected.originThreadId}`}>
-                    <MessageSquareText /> Open original conversation
+                  <a
+                    href={`/components/conversations/${encodeURIComponent(
+                      selected.originThreadId,
+                    )}`}
+                  >
+                    <MessageSquareText /> Open build conversation
                   </a>
                 </Button>
               ) : null}
@@ -305,7 +318,7 @@ export function ComponentLibraryDetail({
           </div>
         </>
       ) : null}
-    </LibraryShell>
+    </RelayShell>
   );
 }
 
@@ -635,30 +648,6 @@ function VersionPreview({
         <Play className="size-3" /> frame {version.previewFrame}
       </div>
     </div>
-  );
-}
-
-function LibraryShell({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="min-h-screen bg-[#f7f7f8]">
-      <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8">
-          <a className="flex items-center gap-3" href="/components">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-slate-950 text-white">
-              <Boxes className="size-4" />
-            </div>
-            <div>
-              <strong className="block text-sm">Relay channel studio</strong>
-              <span className="text-xs text-slate-500">Component library</span>
-            </div>
-          </a>
-          <Button asChild size="sm" variant="outline">
-            <a href="/component-loop">Open Relay chat</a>
-          </Button>
-        </div>
-      </header>
-      <div className="mx-auto max-w-7xl px-5 py-8 lg:px-8">{children}</div>
-    </main>
   );
 }
 

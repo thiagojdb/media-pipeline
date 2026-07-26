@@ -156,11 +156,15 @@ test("creates, opens, renames, and archives a channel project through real route
   };
   let projectRenders: MockProjectRender[] = [];
   let projectRenderPolls = 0;
+  let editCompositionReads = 0;
+  let editBeatReads = 0;
+  let editLibraryReads = 0;
 
   await page
     .context()
     .route("**/api/component-loop/library**", async (route) => {
       const path = new URL(route.request().url()).pathname;
+      editLibraryReads += 1;
       if (path === "/api/component-loop/library") {
         await route.fulfill({
           status: 200,
@@ -570,6 +574,7 @@ test("creates, opens, renames, and archives a channel project through real route
       project
     ) {
       if (request.method() === "GET") {
+        editBeatReads += 1;
         await route.fulfill({
           status: 200,
           json: {
@@ -614,6 +619,7 @@ test("creates, opens, renames, and archives a channel project through real route
       project
     ) {
       if (request.method() === "GET") {
+        editCompositionReads += 1;
         await route.fulfill({
           status: 200,
           json: {
@@ -900,7 +906,8 @@ test("creates, opens, renames, and archives a channel project through real route
     await route.fulfill({ status: 404, json: { message: "Not found." } });
   });
 
-  await page.goto("/projects");
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/projects$/);
   await expect(
     page.getByRole("heading", { name: "Every video starts with a project." }),
   ).toBeVisible();
@@ -917,22 +924,24 @@ test("creates, opens, renames, and archives a channel project through real route
     page.getByRole("heading", { name: "Election night explained" }),
   ).toBeVisible();
   await page.reload();
+  await page.getByRole("button", { name: /Project settings/ }).click();
   await expect(page.getByLabel("Project name")).toHaveValue(
     "Election night explained",
   );
+  await page.getByRole("button", { name: /Project settings/ }).click();
 
   const firstScript = "Opening line.\n\nThe first explanation.";
   await page.getByLabel("Script text").fill(firstScript);
   await page.getByLabel("Script provenance").selectOption("import");
-  await page.getByRole("button", { name: "Save new version" }).click();
-  await expect(page.getByText("Current · v1")).toBeVisible();
+  await page.getByRole("button", { name: "Save as version 1" }).click();
+  await expect(page.getByText("Working · v1")).toBeVisible();
 
   await page
     .getByLabel("Script text")
     .fill("Revised opening.\n\nThe first explanation.");
   await page.getByLabel("Script provenance").selectOption("manual");
-  await page.getByRole("button", { name: "Save new version" }).click();
-  await expect(page.getByText("Current · v2")).toBeVisible();
+  await page.getByRole("button", { name: "Save as version 2" }).click();
+  await expect(page.getByText("Working · v2")).toBeVisible();
   await page.getByRole("link", { name: /Version 1/ }).click();
   await expect(page).toHaveURL(
     /\/projects\/project-election-night\/scripts\/1$/,
@@ -945,6 +954,7 @@ test("creates, opens, renames, and archives a channel project through real route
     "Revised opening.\n\nThe first explanation.",
   );
 
+  await page.getByRole("button", { name: "Voice", exact: true }).click();
   await page.getByLabel("Script version").selectOption("script-1");
   await page.getByRole("button", { name: "Generate timed narration" }).click();
   await expect(
@@ -1008,12 +1018,17 @@ test("creates, opens, renames, and archives a channel project through real route
   await page.getByRole("button", { name: "Save beat timeline" }).click();
   await expect(page.getByText("Beat timeline saved.")).toBeVisible();
   await page.reload();
+  await page.getByRole("button", { name: "Voice", exact: true }).click();
   await expect(page.getByLabel("Beat 1 title")).toHaveValue("Opening hook");
   await expect(page.getByLabel("Beat 1 end seconds")).toHaveValue("1.1");
   await expect(page.getByLabel("Beat 2 title")).toHaveValue(
     "Regional explanation",
   );
 
+  editCompositionReads = 0;
+  editBeatReads = 0;
+  editLibraryReads = 0;
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(
     page.getByRole("heading", {
       name: "Place approved visuals on the story",
@@ -1025,6 +1040,10 @@ test("creates, opens, renames, and archives a channel project through real route
   await expect(page.getByLabel("Exact approved version")).toHaveValue(
     "approved-result-card-v1",
   );
+  await page.waitForTimeout(250);
+  expect(editCompositionReads).toBe(2);
+  expect(editBeatReads).toBe(2);
+  expect(editLibraryReads).toBe(2);
   await page.getByLabel("Component input title").fill("Regional result");
   await page.getByLabel("Component input score").fill("72");
   await page.getByRole("button", { name: "Insert at beat" }).click();
@@ -1036,6 +1055,7 @@ test("creates, opens, renames, and archives a channel project through real route
   await page.getByRole("button", { name: "Save inputs" }).click();
   await expect(page.getByText("Composition version 2 saved.")).toBeVisible();
   await page.reload();
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(page.getByLabel("Segment 1 inputs")).toContainText(
     "Verified regional result",
   );
@@ -1091,6 +1111,7 @@ test("creates, opens, renames, and archives a channel project through real route
     .click();
   await expect(page.getByTitle("Composition rendered frame")).toBeVisible();
 
+  await page.getByRole("button", { name: "Review", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Render a review MP4" }),
   ).toBeVisible();
@@ -1106,6 +1127,7 @@ test("creates, opens, renames, and archives a channel project through real route
     "relay-project-draft.mp4",
   );
 
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Editing request").fill("put the chart on beat 9");
   await page.getByRole("button", { name: "Ask Relay for proposal" }).click();
   await expect(page.getByText("invalid", { exact: true })).toBeVisible();
@@ -1122,12 +1144,14 @@ test("creates, opens, renames, and archives a channel project through real route
     page.getByText("4 immutable composition versions"),
   ).toBeVisible();
 
+  await page.getByRole("button", { name: "Review", exact: true }).click();
   await page.getByRole("button", { name: "Render draft MP4" }).click();
   await expect(page.getByText("succeeded", { exact: true })).toHaveCount(2);
   await expect(
     page.getByRole("link", { name: "Download draft MP4" }),
   ).toHaveCount(2);
 
+  await page.getByRole("button", { name: "Sources", exact: true }).click();
   await expect(page.getByText("No sources added yet")).toBeVisible();
   await page.getByLabel("Source title").fill("National results");
   await page.getByLabel("URL").fill("https://example.com/results");
@@ -1161,6 +1185,7 @@ test("creates, opens, renames, and archives a channel project through real route
   await expect(page.getByText("National results")).toHaveCount(0);
   await expect(page.getByText("briefing.txt").first()).toBeVisible();
 
+  await page.getByRole("button", { name: /Project settings/ }).click();
   await page.getByLabel("Project name").fill("Election results explained");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(
@@ -1176,6 +1201,121 @@ test("creates, opens, renames, and archives a channel project through real route
   await page.getByRole("link", { name: "All projects" }).click();
   await expect(page.getByRole("heading", { name: "Archive" })).toBeVisible();
   await expect(page.getByText("Election results explained")).toBeVisible();
+});
+
+test("keeps a long-form script navigable at desktop and narrow widths", async ({
+  page,
+}) => {
+  const headings = [
+    "COLD OPEN",
+    "PART ONE: WHAT VICTORY MEANS",
+    "PART TWO: THE MAP",
+    "PART THREE: THE CHOKEPOINT",
+    "PART FOUR: THE ALLIANCES",
+    "PART FIVE: THE COST",
+    "PART SIX: THE EXCHANGE",
+    "PART SEVEN: THE FINANCIAL CLOCK",
+    "PART EIGHT: THE SECURITY DILEMMA",
+    "PART NINE: THE COUNTERARGUMENT",
+    "PART TEN: THE REGIME",
+    "PART ELEVEN: THE NUCLEAR PROBLEM",
+    "PART TWELVE: THREE ENDINGS",
+    "CONCLUSION: WHAT CANNOT BE WON",
+  ];
+  const paragraph =
+    "Narration follows the evidence, explains the consequence, and keeps the visual direction connected to the argument. ";
+  const script = headings
+    .map(
+      (heading, index) =>
+        `${heading}\n\n[VISUAL: Production direction ${index + 1}.]\n\n${paragraph.repeat(22)}`,
+    )
+    .join("\n\n");
+
+  expect(script.length).toBeGreaterThan(30_000);
+
+  await page
+    .context()
+    .route("**/api/projects/project-long-script**", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/scripts")) {
+        await route.fulfill({
+          status: 200,
+          json: {
+            current: {
+              _id: "script-long-v1",
+              version: 1,
+              content: script,
+              provenance: "manual",
+              createdAt: 100,
+            },
+            versions: [
+              {
+                _id: "script-long-v1",
+                version: 1,
+                provenance: "manual",
+                createdAt: 100,
+                characterCount: script.length,
+                excerpt: script.slice(0, 140),
+              },
+            ],
+            maximumCharacters: 100_000,
+          },
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        json: {
+          channel: {
+            id: "channel-relay",
+            slug: "relay-studio",
+            name: "Relay Studio",
+          },
+          project: {
+            _id: "project-long-script",
+            name: "A long-form production",
+            description: "A narration-led documentary.",
+            status: "active",
+            createdAt: 100,
+            updatedAt: 100,
+          },
+        },
+      });
+    });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/projects/project-long-script");
+  await expect(page.getByLabel("Script text")).toHaveValue(script);
+  await expect(
+    page.getByText(`${script.length.toLocaleString()} / 100,000 chars`, {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "PART TWELVE: THREE ENDINGS" })
+    .click();
+  await expect
+    .poll(() =>
+      page
+        .getByLabel("Script text")
+        .evaluate((element) => (element as HTMLTextAreaElement).selectionStart),
+    )
+    .toBeGreaterThan(script.indexOf("PART ELEVEN"));
+
+  await page.getByLabel("Script text").press("End");
+  await page.getByLabel("Script text").press("Enter");
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save as version 2" }),
+  ).toBeEnabled();
+
+  await page.setViewportSize({ width: 760, height: 900 });
+  await expect(page.getByRole("button", { name: "COLD OPEN" })).toBeHidden();
+  await expect(page.getByLabel("Script text")).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Production stages" }),
+  ).toBeVisible();
 });
 
 function silentWavDataUrl(durationMs: number): string {

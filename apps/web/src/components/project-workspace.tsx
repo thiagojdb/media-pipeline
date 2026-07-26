@@ -9,14 +9,16 @@ import {
   ArrowRight,
   ArrowUp,
   AudioLines,
+  BookOpenText,
   Boxes,
   Check,
+  ChevronDown,
   CircleStop,
   Clapperboard,
   Download,
   ExternalLink,
+  Film,
   FileText,
-  FolderKanban,
   Globe2,
   Link2,
   LoaderCircle,
@@ -27,12 +29,14 @@ import {
   Plus,
   Save,
   Scissors,
+  Settings2,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { RelayShell } from "@/components/relay-shell";
 
 type Project = {
   _id: string;
@@ -291,7 +295,7 @@ export function ProjectListWorkspace() {
   );
 
   return (
-    <ProjectShell channelName={data?.channel.name}>
+    <RelayShell active="projects" channelName={data?.channel.name}>
       <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
         <div>
           <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
@@ -383,7 +387,7 @@ export function ProjectListWorkspace() {
           </div>
         </form>
       </div>
-    </ProjectShell>
+    </RelayShell>
   );
 }
 
@@ -393,6 +397,9 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [stage, setStage] = useState<ProjectStage>("script");
+  const [scriptVersion, setScriptVersion] = useState<number>();
 
   const load = async () => {
     const value = await request<{ channel: Channel; project: Project }>(
@@ -458,157 +465,254 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
   };
 
   return (
-    <ProjectShell channelName={data?.channel.name}>
-      <a
-        className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-950"
-        href="/projects"
-      >
-        <ArrowLeft className="size-4" /> All projects
-      </a>
+    <RelayShell active="projects" channelName={data?.channel.name} fluid>
       {error ? <ProjectError message={error} /> : null}
       {!data && !error ? <ProjectLoading label="Opening project…" /> : null}
       {data ? (
-        <>
-          <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
-            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div
-                className={`h-2 ${
-                  data.project.status === "active"
-                    ? "bg-blue-600"
-                    : "bg-slate-300"
-                }`}
-              />
-              <div className="p-6 sm:p-8">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
-                      {data.project.status === "active"
-                        ? "In production"
-                        : "Archived production"}
-                    </p>
-                    <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-                      {data.project.name}
-                    </h1>
-                  </div>
+        <div className="min-w-0">
+          <header className="border-b border-[#dfe4e6] bg-white px-5 pt-5 lg:px-8 lg:pt-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <a
+                  className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[#68747d] hover:text-[#171b1f]"
+                  href="/projects"
+                >
+                  <ArrowLeft className="size-3.5" /> All projects
+                </a>
+                <div className="flex items-start gap-3">
+                  <h1 className="max-w-4xl min-w-0 font-[family-name:var(--font-display)] text-2xl leading-tight font-semibold tracking-[-0.025em] text-[#171b1f] lg:text-3xl">
+                    {data.project.name}
+                  </h1>
                   <StatusPill status={data.project.status} />
                 </div>
-
-                {data.project.status === "active" ? (
-                  <form className="mt-10 max-w-2xl space-y-5" onSubmit={update}>
-                    <label
-                      className="block text-sm font-medium"
-                      htmlFor="edit-name"
-                    >
-                      Project name
-                    </label>
-                    <input
-                      className="mt-[-0.75rem] h-11 w-full rounded-lg border bg-white px-3 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                      id="edit-name"
-                      maxLength={120}
-                      onChange={(event) => setName(event.target.value)}
-                      required
-                      value={name}
-                    />
-                    <label
-                      className="block text-sm font-medium"
-                      htmlFor="edit-description"
-                    >
-                      Production note
-                    </label>
-                    <textarea
-                      className="mt-[-0.75rem] min-h-32 w-full resize-y rounded-lg border bg-white px-3 py-3 text-sm leading-6 outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                      id="edit-description"
-                      maxLength={2000}
-                      onChange={(event) => setDescription(event.target.value)}
-                      value={description}
-                    />
-                    <Button disabled={saving || !name.trim()} type="submit">
-                      {saving ? (
-                        <LoaderCircle className="animate-spin" />
-                      ) : (
-                        <PencilLine />
-                      )}
-                      Save changes
-                    </Button>
-                  </form>
-                ) : (
-                  <div className="mt-10 max-w-2xl rounded-xl bg-slate-100 p-5">
-                    <p className="text-sm font-medium">
-                      This project is read-only.
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                      {data.project.description ||
-                        "No production note was saved."}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <aside className="space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                <p className="text-xs font-medium tracking-[0.16em] text-slate-500 uppercase">
-                  Production record
+                <p className="mt-2 max-w-3xl text-sm leading-5 text-[#68747d]">
+                  {data.project.description || "No production note"}
                 </p>
-                <dl className="mt-4 space-y-4 text-sm">
-                  <div>
-                    <dt className="text-slate-500">Created</dt>
-                    <dd className="mt-1 font-medium">
-                      {formatDate(data.project.createdAt)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-slate-500">Last updated</dt>
-                    <dd className="mt-1 font-medium">
-                      {formatDate(data.project.updatedAt)}
-                    </dd>
-                  </div>
-                </dl>
               </div>
-              {data.project.status === "active" ? (
+              <div className="flex items-center gap-2">
+                {scriptVersion ? (
+                  <span className="hidden rounded-md border border-[#dfe4e6] bg-[#f7f8f5] px-2.5 py-1.5 font-mono text-[11px] text-[#68747d] sm:inline-flex">
+                    SCRIPT V{scriptVersion}
+                  </span>
+                ) : null}
                 <Button
-                  className="w-full"
-                  disabled={saving}
-                  onClick={archive}
+                  aria-expanded={showSettings}
+                  onClick={() => setShowSettings((value) => !value)}
+                  size="sm"
                   variant="outline"
                 >
-                  <Archive /> Archive project
+                  <Settings2 />
+                  Project settings
+                  <ChevronDown
+                    className={`transition-transform ${
+                      showSettings ? "rotate-180" : ""
+                    }`}
+                  />
                 </Button>
-              ) : null}
-            </aside>
+              </div>
+            </div>
+
+            <ProjectStageNavigation onChange={setStage} stage={stage} />
+          </header>
+
+          {showSettings ? (
+            <ProjectSettingsPanel
+              archive={archive}
+              description={description}
+              name={name}
+              onDescriptionChange={setDescription}
+              onNameChange={setName}
+              project={data.project}
+              saving={saving}
+              update={update}
+            />
+          ) : null}
+
+          <div className="min-w-0 px-4 py-4 sm:px-5 lg:px-8 lg:py-6">
+            {stage === "sources" ? (
+              <SourceWorkspace
+                editable={data.project.status === "active"}
+                projectId={projectId}
+              />
+            ) : null}
+            {stage === "script" ? (
+              <ScriptWorkspace
+                editable={data.project.status === "active"}
+                onVersionChange={setScriptVersion}
+                projectId={projectId}
+              />
+            ) : null}
+            {stage === "voice" ? (
+              <>
+                <NarrationWorkspace
+                  editable={data.project.status === "active"}
+                  projectId={projectId}
+                />
+                <BeatWorkspace
+                  editable={data.project.status === "active"}
+                  projectId={projectId}
+                />
+              </>
+            ) : null}
+            {stage === "edit" ? (
+              <>
+                <CompositionWorkspace
+                  editable={data.project.status === "active"}
+                  projectId={projectId}
+                />
+                <ProjectEditingAgentWorkspace
+                  editable={data.project.status === "active"}
+                  projectId={projectId}
+                />
+                <ProjectCompositionPreview projectId={projectId} />
+              </>
+            ) : null}
+            {stage === "review" ? (
+              <ProjectDraftRenderWorkspace
+                editable={data.project.status === "active"}
+                projectId={projectId}
+              />
+            ) : null}
           </div>
-          <ScriptWorkspace
-            editable={data.project.status === "active"}
-            projectId={projectId}
-          />
-          <NarrationWorkspace
-            editable={data.project.status === "active"}
-            projectId={projectId}
-          />
-          <BeatWorkspace
-            editable={data.project.status === "active"}
-            projectId={projectId}
-          />
-          <CompositionWorkspace
-            editable={data.project.status === "active"}
-            projectId={projectId}
-          />
-          <ProjectEditingAgentWorkspace
-            editable={data.project.status === "active"}
-            projectId={projectId}
-          />
-          <ProjectCompositionPreview projectId={projectId} />
-          <ProjectDraftRenderWorkspace
-            editable={data.project.status === "active"}
-            projectId={projectId}
-          />
-          <SourceWorkspace
-            editable={data.project.status === "active"}
-            projectId={projectId}
-          />
-        </>
+        </div>
       ) : null}
-    </ProjectShell>
+    </RelayShell>
+  );
+}
+
+type ProjectStage = "sources" | "script" | "voice" | "edit" | "review";
+
+const projectStages: Array<{
+  id: ProjectStage;
+  label: string;
+  icon: typeof FileText;
+}> = [
+  { id: "sources", label: "Sources", icon: Link2 },
+  { id: "script", label: "Script", icon: BookOpenText },
+  { id: "voice", label: "Voice", icon: AudioLines },
+  { id: "edit", label: "Edit", icon: Film },
+  { id: "review", label: "Review", icon: MessageSquareText },
+];
+
+function ProjectStageNavigation({
+  onChange,
+  stage,
+}: {
+  onChange: (stage: ProjectStage) => void;
+  stage: ProjectStage;
+}) {
+  return (
+    <nav
+      aria-label="Production stages"
+      className="mt-5 flex gap-1 overflow-x-auto"
+    >
+      {projectStages.map((item) => {
+        const Icon = item.icon;
+        const active = item.id === stage;
+        return (
+          <button
+            aria-current={active ? "page" : undefined}
+            className={`relative flex h-11 shrink-0 items-center gap-2 px-3 text-sm font-medium transition ${
+              active ? "text-[#171b1f]" : "text-[#68747d] hover:text-[#171b1f]"
+            }`}
+            key={item.id}
+            onClick={() => onChange(item.id)}
+            type="button"
+          >
+            <Icon className="size-4" />
+            {item.label}
+            {active ? (
+              <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#355ce8]" />
+            ) : null}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function ProjectSettingsPanel({
+  archive,
+  description,
+  name,
+  onDescriptionChange,
+  onNameChange,
+  project,
+  saving,
+  update,
+}: {
+  archive: () => Promise<void>;
+  description: string;
+  name: string;
+  onDescriptionChange: (value: string) => void;
+  onNameChange: (value: string) => void;
+  project: Project;
+  saving: boolean;
+  update: (event: FormEvent) => Promise<void>;
+}) {
+  return (
+    <section className="border-b border-[#dfe4e6] bg-[#f7f8f5] px-5 py-5 lg:px-8">
+      {project.status === "active" ? (
+        <form
+          className="grid max-w-5xl gap-4 lg:grid-cols-[minmax(15rem,0.8fr)_minmax(20rem,1.2fr)_auto]"
+          onSubmit={update}
+        >
+          <label className="text-xs font-medium text-[#68747d]">
+            Project name
+            <input
+              className="mt-1.5 h-10 w-full rounded-lg border border-[#cfd6d9] bg-white px-3 text-sm text-[#171b1f] outline-none focus:border-[#355ce8] focus:ring-2 focus:ring-[#355ce8]/15"
+              id="edit-name"
+              maxLength={120}
+              onChange={(event) => onNameChange(event.target.value)}
+              required
+              value={name}
+            />
+          </label>
+          <label className="text-xs font-medium text-[#68747d]">
+            Production note
+            <input
+              className="mt-1.5 h-10 w-full rounded-lg border border-[#cfd6d9] bg-white px-3 text-sm text-[#171b1f] outline-none focus:border-[#355ce8] focus:ring-2 focus:ring-[#355ce8]/15"
+              id="edit-description"
+              maxLength={2000}
+              onChange={(event) => onDescriptionChange(event.target.value)}
+              value={description}
+            />
+          </label>
+          <div className="flex items-end gap-2">
+            <Button disabled={saving || !name.trim()} type="submit">
+              {saving ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <PencilLine />
+              )}
+              Save changes
+            </Button>
+            <Button
+              aria-label="Archive project"
+              disabled={saving}
+              onClick={() => void archive()}
+              size="icon"
+              type="button"
+              variant="outline"
+            >
+              <Archive />
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-4 text-sm">
+          <p>
+            <strong>This project is read-only.</strong>{" "}
+            <span className="text-[#68747d]">
+              Restore support can be added when archived work becomes editable.
+            </span>
+          </p>
+          <span className="font-mono text-xs text-[#68747d]">
+            Archived {formatDate(project.archivedAt ?? project.updatedAt)}
+          </span>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1328,6 +1432,8 @@ function CompositionWorkspace({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [savedVersion, setSavedVersion] = useState<number>();
+  const componentIdRef = useRef("");
+  const versionIdRef = useRef("");
 
   const load = useCallback(async () => {
     const [compositionData, beats, items] = await Promise.all([
@@ -1346,7 +1452,13 @@ function CompositionWorkspace({
         ]),
       ),
     );
-    const nextComponentId = componentId || items[0]?.componentId || "";
+    const preferredComponentId = componentIdRef.current;
+    const nextComponentId = items.some(
+      (item) => item.componentId === preferredComponentId,
+    )
+      ? preferredComponentId
+      : items[0]?.componentId || "";
+    componentIdRef.current = nextComponentId;
     setComponentId(nextComponentId);
     setBeatId(
       (current) =>
@@ -1361,7 +1473,13 @@ function CompositionWorkspace({
         `/api/component-loop/library/${encodeURIComponent(nextComponentId)}`,
       );
       setDetail(nextDetail);
-      const nextVersionId = versionId || nextDetail.latestApprovedVersionId;
+      const preferredVersionId = versionIdRef.current;
+      const nextVersionId = nextDetail.versions.some(
+        (version) => version.id === preferredVersionId,
+      )
+        ? preferredVersionId
+        : nextDetail.latestApprovedVersionId;
+      versionIdRef.current = nextVersionId;
       setVersionId(nextVersionId);
       const selected = nextDetail.versions.find(
         (version) => version.id === nextVersionId,
@@ -1370,13 +1488,15 @@ function CompositionWorkspace({
         selected?.fixtures[0]?.input ?? defaultInput(inputSchema(selected)),
       );
     }
-  }, [componentId, projectId, versionId]);
+  }, [projectId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void load().catch((cause) => setError(errorMessage(cause)));
     }, 0);
-    const onCompositionSaved = () => void load();
+    const onCompositionSaved = () => {
+      void load().catch((cause) => setError(errorMessage(cause)));
+    };
     window.addEventListener("relay-composition-saved", onCompositionSaved);
     return () => {
       window.clearTimeout(timer);
@@ -1385,6 +1505,7 @@ function CompositionWorkspace({
   }, [load]);
 
   const chooseComponent = async (nextComponentId: string) => {
+    componentIdRef.current = nextComponentId;
     setComponentId(nextComponentId);
     setError(undefined);
     try {
@@ -1392,6 +1513,7 @@ function CompositionWorkspace({
         `/api/component-loop/library/${encodeURIComponent(nextComponentId)}`,
       );
       setDetail(nextDetail);
+      versionIdRef.current = nextDetail.latestApprovedVersionId;
       setVersionId(nextDetail.latestApprovedVersionId);
       const version = nextDetail.versions.find(
         (item) => item.id === nextDetail.latestApprovedVersionId,
@@ -1405,6 +1527,7 @@ function CompositionWorkspace({
   };
 
   const chooseVersion = (nextVersionId: string) => {
+    versionIdRef.current = nextVersionId;
     setVersionId(nextVersionId);
     const version = detail?.versions.find((item) => item.id === nextVersionId);
     setInput(version?.fixtures[0]?.input ?? defaultInput(inputSchema(version)));
@@ -1424,7 +1547,6 @@ function CompositionWorkspace({
         },
       );
       setSavedVersion(result.version);
-      await load();
       window.dispatchEvent(new Event("relay-composition-saved"));
     } catch (cause) {
       setError(errorMessage(cause));
@@ -2750,9 +2872,11 @@ function NarrationWorkspace({
 
 function ScriptWorkspace({
   editable,
+  onVersionChange,
   projectId,
 }: {
   editable: boolean;
+  onVersionChange?: (version: number | undefined) => void;
   projectId: string;
 }) {
   const [data, setData] = useState<{
@@ -2764,6 +2888,8 @@ function ScriptWorkspace({
   const [provenance, setProvenance] = useState<"manual" | "import">("manual");
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const [activeOutlineIndex, setActiveOutlineIndex] = useState(0);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
 
   const refresh = useCallback(async () => {
     const value = await request<{
@@ -2773,7 +2899,9 @@ function ScriptWorkspace({
     }>(`/api/projects/${projectId}/scripts`);
     setData(value);
     setContent(value.current?.content ?? "");
-  }, [projectId]);
+    setProvenance(value.current?.provenance ?? "manual");
+    onVersionChange?.(value.current?.version);
+  }, [onVersionChange, projectId]);
 
   useEffect(() => {
     let active = true;
@@ -2786,6 +2914,8 @@ function ScriptWorkspace({
         if (!active) return;
         setData(value);
         setContent(value.current?.content ?? "");
+        setProvenance(value.current?.provenance ?? "manual");
+        onVersionChange?.(value.current?.version);
       })
       .catch((cause) => {
         if (active) setError(errorMessage(cause));
@@ -2793,7 +2923,7 @@ function ScriptWorkspace({
     return () => {
       active = false;
     };
-  }, [projectId]);
+  }, [onVersionChange, projectId]);
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -2814,119 +2944,263 @@ function ScriptWorkspace({
     }
   };
 
+  const outline = scriptOutline(content);
+  const dirty = content !== (data?.current?.content ?? "");
+  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
+  const nextVersion = (data?.current?.version ?? 0) + 1;
+
+  const jumpToOutlineItem = (item: ScriptOutlineItem, index: number) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    editor.setSelectionRange(item.offset, item.offset);
+    const maximumScroll = Math.max(
+      0,
+      editor.scrollHeight - editor.clientHeight,
+    );
+    editor.scrollTop =
+      content.length > 0 ? maximumScroll * (item.offset / content.length) : 0;
+    setActiveOutlineIndex(index);
+  };
+
+  const updateOutlineFromScroll = () => {
+    const editor = editorRef.current;
+    if (!editor || outline.length === 0) return;
+    const maximumScroll = Math.max(
+      1,
+      editor.scrollHeight - editor.clientHeight,
+    );
+    const approximateOffset =
+      (editor.scrollTop / maximumScroll) * content.length;
+    const index = outline.findLastIndex(
+      (item) => item.offset <= approximateOffset,
+    );
+    setActiveOutlineIndex(Math.max(0, index));
+  };
+
   return (
-    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 px-6 py-5 sm:px-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <section className="overflow-hidden rounded-xl border border-[#dfe4e6] bg-white shadow-[0_16px_40px_rgba(24,34,39,0.06)]">
+      <div className="border-b border-[#dfe4e6] px-4 py-3.5 sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
-              Project script
-            </p>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight">
-              Versioned narration copy
+            <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold tracking-[-0.015em] text-[#171b1f]">
+              Script
             </h2>
+            <p className="mt-0.5 text-xs text-[#68747d]">
+              The narration copy that drives voice, timing, and the edit.
+            </p>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 font-mono text-xs text-slate-600">
-            {data?.current
-              ? `Current · v${data.current.version}`
-              : "No script yet"}
-          </span>
+          <div className="flex items-center gap-2">
+            {dirty ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fff0ec] px-2.5 py-1 font-mono text-[10px] font-medium text-[#b53d2b] uppercase">
+                <span className="size-1.5 rounded-full bg-[#f45d48]" />
+                Unsaved changes
+              </span>
+            ) : null}
+            <span className="rounded-md bg-[#f1f3f1] px-2.5 py-1 font-mono text-[10px] text-[#68747d] uppercase">
+              {data?.current
+                ? `Working · v${data.current.version}`
+                : "No script yet"}
+            </span>
+          </div>
         </div>
       </div>
-      <div className="grid lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="p-6 sm:p-8">
+      <div className="grid min-h-[calc(100dvh-15.5rem)] lg:grid-cols-[13.5rem_minmax(0,1fr)] xl:grid-cols-[14.5rem_minmax(0,1fr)_17rem]">
+        <aside className="hidden border-r border-[#e5e8e6] bg-[#f7f8f5] lg:block">
+          <div className="sticky top-0 p-4">
+            <p className="px-2 font-mono text-[10px] tracking-[0.12em] text-[#7b858c] uppercase">
+              Narrative outline
+            </p>
+            {outline.length ? (
+              <ol className="mt-3 space-y-0.5">
+                {outline.map((item, index) => (
+                  <li key={`${item.offset}-${item.label}`}>
+                    <button
+                      className={`relative w-full rounded-md py-2 pr-2 pl-5 text-left text-xs leading-4 transition ${
+                        activeOutlineIndex === index
+                          ? "bg-white font-medium text-[#171b1f] shadow-sm"
+                          : "text-[#68747d] hover:bg-white/70 hover:text-[#171b1f]"
+                      }`}
+                      onClick={() => jumpToOutlineItem(item, index)}
+                      title={item.label}
+                      type="button"
+                    >
+                      <span
+                        className={`absolute top-1/2 left-2 h-[calc(100%+0.125rem)] w-px -translate-y-1/2 ${
+                          activeOutlineIndex === index
+                            ? "bg-[#f45d48]"
+                            : "bg-[#d8dddb]"
+                        }`}
+                      />
+                      <span className="line-clamp-2">{item.label}</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="mt-3 px-2 text-xs leading-5 text-[#7b858c]">
+                Add section headings such as “Part one” or “Conclusion” to
+                create an outline.
+              </p>
+            )}
+          </div>
+        </aside>
+
+        <div className="min-w-0 bg-white">
           {error ? <ProjectError message={error} /> : null}
           {!data && !error ? <ProjectLoading label="Opening script…" /> : null}
           {data ? (
             editable ? (
-              <form onSubmit={save}>
-                <label className="block text-sm font-medium" htmlFor="script">
+              <form className="flex h-full min-h-0 flex-col" onSubmit={save}>
+                <label className="sr-only" htmlFor="script">
                   Script text
                 </label>
                 <textarea
-                  className="mt-2 min-h-80 w-full resize-y rounded-xl border bg-white px-4 py-4 font-mono text-sm leading-7 outline-none placeholder:font-sans placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                  className="min-h-[34rem] flex-1 resize-none border-0 bg-white px-5 py-7 font-[family-name:var(--font-script)] text-[15px] leading-8 text-[#20262a] outline-none placeholder:font-sans placeholder:text-[#9aa2a6] focus:ring-0 sm:px-8 lg:min-h-[calc(100dvh-19.5rem)] lg:px-10"
                   id="script"
                   maxLength={data.maximumCharacters}
                   onChange={(event) => setContent(event.target.value)}
+                  onScroll={updateOutlineFromScroll}
                   placeholder="Paste or write the narration script here…"
+                  ref={editorRef}
+                  spellCheck
                   value={content}
                 />
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                  <p className="font-mono text-xs text-slate-500">
-                    {content.length.toLocaleString()} /{" "}
-                    {data.maximumCharacters.toLocaleString()} characters
-                  </p>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="text-sm text-slate-600">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e5e8e6] bg-white px-4 py-3 sm:px-5">
+                  <div className="flex flex-wrap items-center gap-3 font-mono text-[10px] text-[#7b858c] uppercase">
+                    <span>{wordCount.toLocaleString()} words</span>
+                    <span aria-hidden="true">·</span>
+                    <span>~{Math.max(1, Math.ceil(wordCount / 145))} min</span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      {content.length.toLocaleString()} /{" "}
+                      {data.maximumCharacters.toLocaleString()} chars
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="sr-only" htmlFor="script-provenance">
                       Script provenance
-                      <select
-                        className="ml-2 h-9 rounded-lg border bg-white px-3 text-sm text-slate-950"
-                        onChange={(event) =>
-                          setProvenance(
-                            event.target.value as "manual" | "import",
-                          )
-                        }
-                        value={provenance}
-                      >
-                        <option value="manual">Written here</option>
-                        <option value="import">Imported</option>
-                      </select>
                     </label>
-                    <Button disabled={saving || !content.trim()} type="submit">
+                    <select
+                      aria-label="Script provenance"
+                      className="h-9 rounded-md border border-[#cfd6d9] bg-white px-3 text-xs text-[#4e5960] outline-none focus:border-[#355ce8] focus:ring-2 focus:ring-[#355ce8]/15"
+                      id="script-provenance"
+                      onChange={(event) =>
+                        setProvenance(event.target.value as "manual" | "import")
+                      }
+                      value={provenance}
+                    >
+                      <option value="manual">Written here</option>
+                      <option value="import">Imported</option>
+                    </select>
+                    <Button
+                      className="bg-[#355ce8] text-white hover:bg-[#294cc8]"
+                      disabled={saving || !content.trim() || !dirty}
+                      type="submit"
+                    >
                       {saving ? (
                         <LoaderCircle className="animate-spin" />
                       ) : (
                         <Save />
                       )}
-                      Save new version
+                      Save as version {nextVersion}
                     </Button>
                   </div>
                 </div>
               </form>
             ) : (
-              <pre className="min-h-40 rounded-xl bg-slate-50 p-5 font-mono text-sm leading-7 whitespace-pre-wrap text-slate-700">
+              <pre className="min-h-[34rem] px-6 py-8 font-[family-name:var(--font-script)] text-[15px] leading-8 whitespace-pre-wrap text-[#20262a] sm:px-10">
                 {data.current?.content ?? "No script was saved."}
               </pre>
             )
           ) : null}
         </div>
-        <aside className="border-t border-slate-200 bg-slate-50 p-6 lg:border-t-0 lg:border-l">
-          <h3 className="text-sm font-semibold">Version history</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
-            Every save is immutable and directly addressable.
-          </p>
-          {data?.versions.length ? (
-            <ol className="mt-5 space-y-3">
-              {data.versions.map((version) => (
-                <li key={version._id}>
-                  <a
-                    className="group block rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-400"
-                    href={`/projects/${projectId}/scripts/${version.version}`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <strong className="text-sm">
-                        Version {version.version}
-                      </strong>
-                      <ArrowRight className="size-3.5 text-slate-400 transition group-hover:translate-x-0.5" />
-                    </div>
-                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
-                      {version.excerpt}
-                    </p>
-                    <p className="mt-3 font-mono text-[10px] text-slate-400 uppercase">
-                      {version.provenance} ·{" "}
-                      {version.characterCount.toLocaleString()} chars
-                    </p>
-                  </a>
-                </li>
-              ))}
-            </ol>
-          ) : data ? (
-            <p className="mt-5 text-sm text-slate-500">No versions saved.</p>
-          ) : null}
+
+        <aside className="hidden border-l border-[#e5e8e6] bg-[#fbfcfa] xl:block">
+          <div className="p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold text-[#343c41]">
+                Version history
+              </h3>
+              <span className="font-mono text-[10px] text-[#7b858c]">
+                {data?.versions.length ?? 0}
+              </span>
+            </div>
+            <p className="mt-1 text-[11px] leading-4 text-[#7b858c]">
+              Every save creates an immutable production record.
+            </p>
+            {data?.versions.length ? (
+              <ol className="mt-4 space-y-2">
+                {data.versions.map((version, index) => (
+                  <li key={version._id}>
+                    <a
+                      className={`group block rounded-lg border p-3 transition ${
+                        index === 0
+                          ? "border-[#cfd8ff] bg-[#f4f6ff]"
+                          : "border-[#e1e5e3] bg-white hover:border-[#b9c1c4]"
+                      }`}
+                      href={`/projects/${projectId}/scripts/${version.version}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <strong className="text-xs text-[#343c41]">
+                          Version {version.version}
+                        </strong>
+                        {index === 0 ? (
+                          <span className="font-mono text-[9px] text-[#355ce8] uppercase">
+                            Current
+                          </span>
+                        ) : (
+                          <ArrowRight className="size-3 text-[#9aa2a6] transition group-hover:translate-x-0.5" />
+                        )}
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-[11px] leading-4 text-[#68747d]">
+                        {version.excerpt}
+                      </p>
+                      <p className="mt-2 font-mono text-[9px] text-[#8a9398] uppercase">
+                        {version.provenance} ·{" "}
+                        {version.characterCount.toLocaleString()} chars
+                      </p>
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            ) : data ? (
+              <p className="mt-4 text-xs text-[#7b858c]">
+                Your first saved version will appear here.
+              </p>
+            ) : null}
+          </div>
         </aside>
       </div>
     </section>
   );
+}
+
+type ScriptOutlineItem = {
+  label: string;
+  offset: number;
+};
+
+function scriptOutline(content: string): ScriptOutlineItem[] {
+  const headingPattern =
+    /^(COLD OPEN|INTRO(?:DUCTION)?|ACT\b|PART\b|CHAPTER\b|SECTION\b|CONCLUSION|OUTRO|EPILOGUE)/i;
+  const items: ScriptOutlineItem[] = [];
+  let offset = 0;
+
+  for (const line of content.split("\n")) {
+    const label = line.trim();
+    if (
+      label &&
+      label.length <= 140 &&
+      headingPattern.test(label) &&
+      !items.some((item) => item.offset === offset)
+    ) {
+      items.push({ label, offset: offset + line.indexOf(label) });
+    }
+    offset += line.length + 1;
+  }
+
+  return items;
 }
 
 export function ProjectScriptVersionWorkspace({
@@ -2962,7 +3236,7 @@ export function ProjectScriptVersionWorkspace({
   }, [projectId, version]);
 
   return (
-    <ProjectShell channelName={data?.channel.name}>
+    <RelayShell active="projects" channelName={data?.channel.name}>
       <a
         className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-950"
         href={`/projects/${projectId}`}
@@ -2993,7 +3267,7 @@ export function ProjectScriptVersionWorkspace({
           </pre>
         </article>
       ) : null}
-    </ProjectShell>
+    </RelayShell>
   );
 }
 
@@ -3484,51 +3758,6 @@ function ProjectSection({
         ))}
       </div>
     </section>
-  );
-}
-
-function ProjectShell({
-  children,
-  channelName,
-}: {
-  children: React.ReactNode;
-  channelName?: string | undefined;
-}) {
-  return (
-    <main className="min-h-screen bg-[#f6f7f9]">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8">
-          <a className="flex items-center gap-3" href="/projects">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-blue-600 text-white">
-              <FolderKanban className="size-4" />
-            </div>
-            <div>
-              <strong className="block text-sm">
-                {channelName ?? "Relay Studio"}
-              </strong>
-              <span className="text-xs text-slate-500">Video projects</span>
-            </div>
-          </a>
-          <nav className="flex items-center gap-1 text-sm" aria-label="Channel">
-            <a
-              className="rounded-lg px-3 py-2 font-medium text-slate-950"
-              href="/projects"
-            >
-              Projects
-            </a>
-            <a
-              className="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100 hover:text-slate-950"
-              href="/components"
-            >
-              Components
-            </a>
-          </nav>
-        </div>
-      </header>
-      <div className="mx-auto max-w-7xl px-5 py-8 lg:px-8 lg:py-12">
-        {children}
-      </div>
-    </main>
   );
 }
 

@@ -17,6 +17,7 @@ import {
 } from "@relay/component-sdk";
 import { VideoComponentFrame } from "@relay/rendering";
 import {
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { RelayShell } from "@/components/relay-shell";
 import { getPreviewComponent } from "@/lib/preview-components";
 import {
   checkpointFrame,
@@ -430,29 +432,34 @@ function ResolvedPreviewWorkspace({
   const seconds = durationInFrames / definition.fps;
 
   return (
-    <main className="mx-auto min-h-screen max-w-[1600px] px-4 py-6 sm:px-8 sm:py-10">
-      <header className="mb-8 flex flex-wrap items-end justify-between gap-5">
-        <div>
-          <p className="text-muted-foreground text-xs font-semibold tracking-[0.2em] uppercase">
-            Component preview
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            {humanize(definition.id)}
-          </h1>
-          <p
-            className="text-muted-foreground mt-2 font-mono text-sm"
-            data-testid="component-identity"
-          >
-            {definition.id}@{definition.version}
-          </p>
-        </div>
-        <div className="rounded-full border bg-white px-4 py-2 text-sm shadow-sm">
-          {selectedDimensions.width} × {selectedDimensions.height} ·{" "}
-          {definition.fps} fps · scaled to fit
+    <RelayShell active="components" fluid>
+      <header className="border-b border-[#dfe4e6] bg-white px-5 py-5 lg:px-8">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-end justify-between gap-5">
+          <div>
+            <a
+              className="inline-flex items-center gap-1.5 text-xs text-[#68747d] hover:text-[#171b1f]"
+              href={`/components/${encodeURIComponent(definition.id)}`}
+            >
+              <ArrowLeft className="size-3.5" /> Component
+            </a>
+            <h1 className="mt-3 font-[family-name:var(--font-display)] text-2xl font-semibold tracking-[-0.025em] sm:text-3xl">
+              {humanize(definition.id)}
+            </h1>
+            <p
+              className="text-muted-foreground mt-2 font-mono text-sm"
+              data-testid="component-identity"
+            >
+              {definition.id}@{definition.version}
+            </p>
+          </div>
+          <div className="rounded-full border bg-white px-4 py-2 text-sm shadow-sm">
+            {selectedDimensions.width} × {selectedDimensions.height} ·{" "}
+            {definition.fps} fps · scaled to fit
+          </div>
         </div>
       </header>
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="mx-auto grid max-w-[1600px] items-start gap-6 px-4 py-6 sm:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <section className="overflow-hidden rounded-2xl border bg-[#050914] shadow-xl shadow-slate-950/10">
           <div
             className="relative h-[clamp(320px,56vw,820px)] w-full overflow-hidden"
@@ -932,7 +939,7 @@ function ResolvedPreviewWorkspace({
           </section>
         </aside>
       </div>
-    </main>
+    </RelayShell>
   );
 }
 

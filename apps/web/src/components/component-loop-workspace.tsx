@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { type ChannelTheme } from "@relay/component-sdk";
 import {
   AlertTriangle,
-  Boxes,
+  ArrowLeft,
   Check,
   ChevronDown,
   LoaderCircle,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { RelayShell } from "@/components/relay-shell";
 
 type Activity = {
   turnId: string;
@@ -122,7 +123,11 @@ const inputClass =
   "w-full rounded-lg border bg-white px-3 py-2 text-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100";
 const threadStorageKey = "relay.component-loop.thread-id";
 
-export function ComponentLoopWorkspace() {
+export function ComponentLoopWorkspace({
+  initialThreadId,
+}: {
+  initialThreadId?: string | undefined;
+}) {
   const [draft, setDraft] = useState("");
   const [accent, setAccent] = useState("#ef4444");
   const [background, setBackground] = useState("#07111f");
@@ -140,8 +145,7 @@ export function ComponentLoopWorkspace() {
       if (!active) return;
       const url = new URL(window.location.href);
       const requested = url.searchParams.get("thread");
-      const stored = window.localStorage.getItem(threadStorageKey);
-      const restored = validThreadId(requested) ? requested : stored;
+      const restored = initialThreadId ?? requested;
       if (validThreadId(restored)) {
         rememberThread(restored);
         setThreadId(restored);
@@ -155,7 +159,7 @@ export function ComponentLoopWorkspace() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [initialThreadId]);
 
   const theme = useMemo<ChannelTheme>(
     () => ({
@@ -292,29 +296,55 @@ export function ComponentLoopWorkspace() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f7f7f8]">
-      <header className="border-b bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-slate-950 text-white">
-              <Sparkles className="size-4" />
-            </div>
-            <div>
-              <h1 className="font-semibold">Relay component builder</h1>
-              <p className="text-xs text-slate-500">
-                Create, validate, preview, and revise in one conversation
-              </p>
+    <RelayShell active="components" fluid>
+      <header className="border-b border-[#dfe4e6] bg-white px-5 py-5 lg:px-8">
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-start justify-between gap-4">
+          <div>
+            <nav
+              aria-label="Breadcrumb"
+              className="flex items-center gap-2 text-xs text-[#68747d]"
+            >
+              <a
+                className="inline-flex items-center gap-1.5 hover:text-[#171b1f]"
+                href="/components"
+              >
+                <ArrowLeft className="size-3.5" /> Components
+              </a>
+              <span aria-hidden="true">/</span>
+              <span>
+                {status?.selectedBaseVersion
+                  ? "Revision chat"
+                  : threadId
+                    ? "Build conversation"
+                    : "New component"}
+              </span>
+            </nav>
+            <div className="mt-3 flex items-center gap-3">
+              <div className="flex size-9 items-center justify-center rounded-lg bg-[#171b1f] text-white">
+                <Sparkles className="size-4" />
+              </div>
+              <div>
+                <h1 className="font-[family-name:var(--font-display)] text-xl font-semibold tracking-[-0.02em] text-[#171b1f]">
+                  {status?.selectedBaseVersion
+                    ? `Revise ${componentName(status.selectedBaseVersion.componentId)}`
+                    : threadId
+                      ? "Component build conversation"
+                      : "Build a component"}
+                </h1>
+                <p className="mt-0.5 text-xs text-[#68747d]">
+                  {status?.selectedBaseVersion
+                    ? `Exact base · v${status.selectedBaseVersion.version} remains protected`
+                    : threadId
+                      ? "The complete discussion, build activity, candidates, and approvals"
+                      : "Discuss, build, validate, and approve in one conversation"}
+                </p>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <Button asChild size="sm" variant="ghost">
-              <a href="/components">
-                <Boxes /> Library
-              </a>
-            </Button>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-[#68747d]">
             {threadId && (
               <Button onClick={newChat} size="sm" variant="outline">
-                New chat
+                New component
               </Button>
             )}
             <span
@@ -341,8 +371,8 @@ export function ComponentLoopWorkspace() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:px-8">
-        <section className="flex min-h-[calc(100vh-8rem)] flex-col overflow-hidden rounded-2xl border bg-white shadow-sm">
+      <div className="mx-auto grid max-w-[1500px] gap-5 px-4 py-5 sm:px-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:px-8">
+        <section className="flex min-h-[calc(100vh-10rem)] flex-col overflow-hidden rounded-xl border border-[#dfe4e6] bg-white shadow-[0_16px_40px_rgba(24,34,39,0.06)]">
           <div className="flex-1 px-5 py-7 sm:px-8">
             {restoring ? (
               <AgentLoading label="Restoring your Relay conversation…" />
@@ -443,7 +473,7 @@ export function ComponentLoopWorkspace() {
           <VersionHistory versions={visibleVersions} />
         </aside>
       </div>
-    </main>
+    </RelayShell>
   );
 }
 
@@ -1201,16 +1231,16 @@ function validThreadId(value: string | null): value is string {
 
 function rememberThread(threadId: string): void {
   window.localStorage.setItem(threadStorageKey, threadId);
-  const url = new URL(window.location.href);
-  url.searchParams.set("thread", threadId);
-  window.history.replaceState({}, "", url);
+  window.history.replaceState(
+    {},
+    "",
+    `/components/conversations/${encodeURIComponent(threadId)}`,
+  );
 }
 
 function forgetThread(): void {
   window.localStorage.removeItem(threadStorageKey);
-  const url = new URL(window.location.href);
-  url.searchParams.delete("thread");
-  window.history.replaceState({}, "", url);
+  window.history.replaceState({}, "", "/components/build");
 }
 
 function browserBase64Url(value: string): string {

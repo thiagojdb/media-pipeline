@@ -72,8 +72,13 @@ test("opens the approved channel library and starts a fresh exact-version revisi
   await page.goto("/components");
 
   await expect(
-    page.getByRole("heading", { name: "Reusable components" }),
+    page.getByRole("heading", { name: "Channel library" }),
   ).toBeVisible();
+  await expect(
+    page
+      .getByRole("navigation", { name: "Channel" })
+      .getByRole("link", { name: "Components" }),
+  ).toHaveAttribute("aria-current", "page");
   await expect(
     page.getByRole("heading", { name: "Animated Bar Graph" }),
   ).toBeVisible();
@@ -99,11 +104,14 @@ test("opens the approved channel library and starts a fresh exact-version revisi
     page.getByTitle("Approved preview of animated-bar-graph 1.0.0"),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: /Open original conversation/ }),
-  ).toHaveAttribute("href", "/component-loop?thread=thread-origin-v1");
+    page.getByRole("link", { name: /Open build conversation/ }),
+  ).toHaveAttribute("href", "/components/conversations/thread-origin-v1");
 
   await page.getByRole("button", { name: /Start revision chat/ }).click();
-  await expect(page).toHaveURL(/\/component-loop\?thread=thread-fresh$/);
+  await expect(page).toHaveURL(/\/components\/conversations\/thread-fresh$/);
+  await expect(
+    page.getByRole("heading", { name: "Revise Animated Bar Graph" }),
+  ).toBeVisible();
   await expect(
     page.getByText("Fresh revision chat", { exact: true }),
   ).toBeVisible();
