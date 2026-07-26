@@ -1,5 +1,6 @@
 node_modules/
 .next/
+.open-next/
 dist/
 coverage/
 playwright-report/
@@ -14,3 +15,4 @@ blob-report/
 .convex/
 .DS_Store
 *.tsbuildinfo
+**/.open-next/

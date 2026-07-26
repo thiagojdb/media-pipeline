@@ -12,6 +12,7 @@ export default defineConfig([
   },
   globalIgnores([
     "**/.next/**",
+    "**/.open-next/**",
     "**/dist/**",
     "**/coverage/**",
     "**/node_modules/**",
