@@ -175,6 +175,25 @@ export type ProjectCompositionWorkspace = {
   }>;
 };
 
+export type ProjectCompositionProposal = {
+  _id: string;
+  request: string;
+  state: "reviewable" | "invalid" | "accepted" | "rejected";
+  rationale: string;
+  patchJson?: string;
+  validationEvidenceJson: string;
+  toolActivityJson: string;
+  provider: string;
+  model: string;
+  attempt: number;
+  maxAttempts: number;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCostUsd: number;
+  acceptedCompositionVersionId?: string;
+  createdAt: number;
+};
+
 type Workspace = {
   user: { id: string; name: string };
   channel: { id: string; slug: string; name: string };
@@ -403,6 +422,46 @@ export async function saveProjectComposition(
     composition,
     provenance,
   })) as { compositionVersionId: string; version: number };
+}
+
+export async function listProjectCompositionProposals(
+  projectId: string,
+): Promise<ProjectCompositionProposal[]> {
+  const workspace = await developmentWorkspace();
+  return (await convex().query(anyApi.projectEditingAgent!.list!, {
+    ...access(workspace),
+    projectId,
+  })) as ProjectCompositionProposal[];
+}
+
+export async function proposeProjectCompositionChange(
+  projectId: string,
+  request: string,
+): Promise<{ proposalId: string }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(anyApi.projectEditingAgent!.propose!, {
+    ...access(workspace),
+    projectId,
+    request,
+  })) as { proposalId: string };
+}
+
+export async function decideProjectCompositionProposal(
+  projectId: string,
+  proposalId: string,
+  decision: "accept" | "reject",
+): Promise<{ compositionVersionId?: string; version?: number }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(
+    decision === "accept"
+      ? anyApi.projectEditingAgent!.accept!
+      : anyApi.projectEditingAgent!.reject!,
+    {
+      ...access(workspace),
+      projectId,
+      proposalId,
+    },
+  )) as { compositionVersionId?: string; version?: number };
 }
 
 export async function listProjectSources(

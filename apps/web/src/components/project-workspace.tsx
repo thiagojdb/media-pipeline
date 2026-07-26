@@ -10,6 +10,7 @@ import {
   ArrowUp,
   AudioLines,
   Boxes,
+  Check,
   CircleStop,
   Clapperboard,
   ExternalLink,
@@ -18,6 +19,7 @@ import {
   Globe2,
   Link2,
   LoaderCircle,
+  MessageSquareText,
   PencilLine,
   Pause,
   Play,
@@ -26,6 +28,7 @@ import {
   Scissors,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -196,6 +199,24 @@ type LibraryDetail = {
     inputSchemaJson: string;
     fixtures: Array<{ input?: Record<string, unknown> }>;
   }>;
+};
+
+type CompositionProposal = {
+  _id: string;
+  request: string;
+  state: "reviewable" | "invalid" | "accepted" | "rejected";
+  rationale: string;
+  patchJson?: string;
+  validationEvidenceJson: string;
+  toolActivityJson: string;
+  provider: string;
+  model: string;
+  attempt: number;
+  maxAttempts: number;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCostUsd: number;
+  createdAt: number;
 };
 
 export function ProjectListWorkspace() {
@@ -546,6 +567,10 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
             editable={data.project.status === "active"}
             projectId={projectId}
           />
+          <ProjectEditingAgentWorkspace
+            editable={data.project.status === "active"}
+            projectId={projectId}
+          />
           <ProjectCompositionPreview projectId={projectId} />
           <SourceWorkspace
             editable={data.project.status === "active"}
@@ -554,6 +579,240 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
         </>
       ) : null}
     </ProjectShell>
+  );
+}
+
+function ProjectEditingAgentWorkspace({
+  editable,
+  projectId,
+}: {
+  editable: boolean;
+  projectId: string;
+}) {
+  const [proposals, setProposals] = useState<CompositionProposal[]>();
+  const [prompt, setPrompt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const load = useCallback(async () => {
+    setProposals(
+      await request<CompositionProposal[]>(
+        `/api/projects/${projectId}/composition-proposals`,
+      ),
+    );
+  }, [projectId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void load().catch((cause) => setError(errorMessage(cause)));
+    }, 0);
+    const onCompositionSaved = () => void load();
+    window.addEventListener("relay-composition-saved", onCompositionSaved);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("relay-composition-saved", onCompositionSaved);
+    };
+  }, [load]);
+
+  const propose = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}/composition-proposals`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "propose", request: prompt }),
+      });
+      setPrompt("");
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const decide = async (proposalId: string, decision: "accept" | "reject") => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}/composition-proposals`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: decision,
+          proposalId,
+        }),
+      });
+      await load();
+      if (decision === "accept") {
+        window.dispatchEvent(new Event("relay-composition-saved"));
+      }
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="grid lg:grid-cols-[22rem_minmax(0,1fr)]">
+        <div className="border-b border-slate-200 bg-blue-50 p-6 sm:p-8 lg:border-r lg:border-b-0">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white">
+            <MessageSquareText className="size-5" />
+          </div>
+          <p className="mt-5 text-xs font-medium tracking-[0.18em] text-blue-700 uppercase">
+            Relay editor
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+            Ask for a beat-scoped revision
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            Relay reads the pinned composition, beats, and approved library.
+            Every result stays a proposal until you accept it.
+          </p>
+          {editable ? (
+            <form className="mt-5" onSubmit={propose}>
+              <label
+                className="block text-sm font-medium"
+                htmlFor="project-edit-prompt"
+              >
+                Editing request
+              </label>
+              <textarea
+                className="mt-2 min-h-28 w-full rounded-xl border bg-white p-3 text-sm leading-6"
+                id="project-edit-prompt"
+                maxLength={4_000}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="Put the line chart on beat 2"
+                value={prompt}
+              />
+              <Button
+                className="mt-3 w-full"
+                disabled={busy || !prompt.trim()}
+                type="submit"
+              >
+                {busy ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <MessageSquareText />
+                )}
+                Ask Relay for proposal
+              </Button>
+            </form>
+          ) : null}
+        </div>
+        <div className="p-6 sm:p-8">
+          {error ? <ProjectError message={error} /> : null}
+          {!proposals && !error ? (
+            <ProjectLoading label="Opening editing proposals…" />
+          ) : null}
+          {proposals?.length ? (
+            <ol className="space-y-4">
+              {proposals.map((proposal) => {
+                const patch = safeJson<Record<string, unknown>>(
+                  proposal.patchJson,
+                  {},
+                );
+                const evidence = safeJson<
+                  Array<{ attempt: number; valid: boolean; message: string }>
+                >(proposal.validationEvidenceJson, []);
+                return (
+                  <li
+                    className="rounded-xl border border-slate-200 p-5"
+                    key={proposal._id}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs text-slate-500 uppercase">
+                          {proposal.request}
+                        </p>
+                        <h3 className="mt-2 font-semibold">
+                          {proposal.rationale}
+                        </h3>
+                      </div>
+                      <span
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                          proposal.state === "reviewable"
+                            ? "bg-blue-100 text-blue-800"
+                            : proposal.state === "accepted"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : proposal.state === "invalid"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {proposal.state}
+                      </span>
+                    </div>
+                    {proposal.patchJson ? (
+                      <dl className="mt-4 grid gap-3 rounded-lg bg-slate-50 p-4 text-sm sm:grid-cols-2">
+                        <div>
+                          <dt className="text-xs text-slate-500 uppercase">
+                            Operation
+                          </dt>
+                          <dd className="mt-1 font-medium">
+                            {String(patch.operation ?? "change")}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs text-slate-500 uppercase">
+                            Component
+                          </dt>
+                          <dd className="mt-1 font-medium">
+                            {String(patch.component ?? "approved version")}
+                          </dd>
+                        </div>
+                      </dl>
+                    ) : null}
+                    <ul className="mt-3 space-y-1 text-xs text-slate-500">
+                      {evidence.map((item) => (
+                        <li key={`${item.attempt}-${item.message}`}>
+                          Attempt {item.attempt}:{" "}
+                          {item.valid ? "validated" : item.message}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-3 font-mono text-[11px] text-slate-400">
+                      {proposal.provider}/{proposal.model} · attempt{" "}
+                      {proposal.attempt}/{proposal.maxAttempts} ·{" "}
+                      {proposal.inputTokens + proposal.outputTokens} tokens · $
+                      {proposal.estimatedCostUsd.toFixed(4)}
+                    </p>
+                    {proposal.state === "reviewable" && editable ? (
+                      <div className="mt-4 flex gap-2">
+                        <Button
+                          disabled={busy}
+                          onClick={() => void decide(proposal._id, "accept")}
+                        >
+                          <Check /> Accept proposal
+                        </Button>
+                        <Button
+                          disabled={busy}
+                          onClick={() => void decide(proposal._id, "reject")}
+                          variant="outline"
+                        >
+                          <X /> Reject
+                        </Button>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ol>
+          ) : proposals ? (
+            <div className="py-10 text-center">
+              <MessageSquareText className="mx-auto size-6 text-slate-400" />
+              <p className="mt-3 text-sm text-slate-500">
+                No editing proposals yet.
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -877,7 +1136,12 @@ function CompositionWorkspace({
     const timer = window.setTimeout(() => {
       void load().catch((cause) => setError(errorMessage(cause)));
     }, 0);
-    return () => window.clearTimeout(timer);
+    const onCompositionSaved = () => void load();
+    window.addEventListener("relay-composition-saved", onCompositionSaved);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("relay-composition-saved", onCompositionSaved);
+    };
   }, [load]);
 
   const chooseComponent = async (nextComponentId: string) => {
@@ -3163,4 +3427,13 @@ function fileMediaType(file: File): string {
 
 function errorMessage(value: unknown): string {
   return value instanceof Error ? value.message : "The request failed.";
+}
+
+function safeJson<T>(value: string | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
 }

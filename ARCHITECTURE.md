@@ -212,6 +212,8 @@ MED-149 exposes that composition boundary as a manual project workflow. The chan
 
 MED-150 evaluates the current composition against its pinned narration clock in the browser. Preview and rendering share the same zero-based millisecond-to-frame functions; the player derives both global and segment-relative frames from the composition FPS and sends the latter to the approved component frame host. Narration audio is the playback clock, seeking and beat jumps update the same frame calculation, and all timeline markers and editing state live outside the rendered viewport.
 
+MED-151 makes editing-agent output a durable proposal rather than a composition mutation. The deterministic development agent reads the current immutable composition, pinned beats, and approved channel library, then records a beat-scoped patch, rationale, tool activity, token and cost telemetry, and per-attempt validation evidence. Proposals pass through the same independent composition validator as manual work, may make at most one bounded repair, and never advance the project pointer automatically. Acceptance rejects stale bases, revalidates the candidate, and publishes a new immutable agent-provenance composition; rejection and invalid proposals preserve every working version.
+
 ## State models
 
 ### Component candidate

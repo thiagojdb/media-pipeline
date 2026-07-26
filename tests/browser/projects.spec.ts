@@ -114,6 +114,26 @@ test("creates, opens, renames, and archives a channel project through real route
         }>;
       }
     | undefined;
+  type MockProposal = {
+    _id: string;
+    request: string;
+    state: "reviewable" | "invalid" | "accepted" | "rejected";
+    rationale: string;
+    patchJson?: string;
+    validationEvidenceJson: string;
+    toolActivityJson: string;
+    provider: string;
+    model: string;
+    attempt: number;
+    maxAttempts: number;
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostUsd: number;
+    acceptedCompositionVersionId?: string;
+    createdAt: number;
+    proposedComposition?: NonNullable<typeof composition>;
+  };
+  let proposals: MockProposal[] = [];
 
   await page
     .context()
@@ -128,6 +148,14 @@ test("creates, opens, renames, and archives a channel project through real route
               componentId: "result-card",
               latestVersion: {
                 id: "approved-result-card-v1",
+                version: "1.0.0",
+              },
+            },
+            {
+              id: "component-line-chart",
+              componentId: "animated-line-chart",
+              latestVersion: {
+                id: "approved-line-chart-v1",
                 version: "1.0.0",
               },
             },
@@ -596,6 +624,119 @@ test("creates, opens, renames, and archives a channel project through real route
         return;
       }
     }
+    if (
+      url.pathname ===
+        "/api/projects/project-election-night/composition-proposals" &&
+      project
+    ) {
+      if (request.method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          json: proposals.map((proposal) => {
+            const publicProposal = { ...proposal };
+            delete publicProposal.proposedComposition;
+            return publicProposal;
+          }),
+        });
+        return;
+      }
+      if (request.method() === "POST") {
+        const input = request.postDataJSON() as {
+          action: "propose" | "accept" | "reject";
+          request?: string;
+          proposalId?: string;
+        };
+        if (input.action === "propose") {
+          const secondBeat = beats[1]!;
+          const proposedComposition = {
+            ...composition!,
+            segments: [
+              ...composition!.segments.filter(
+                (segment) => segment.anchor.beatId !== secondBeat._id,
+              ),
+              {
+                id: "agent-animated-line-chart-beat-2",
+                kind: "component" as const,
+                componentVersionId: "approved-line-chart-v1",
+                input: {
+                  title: "Regional result",
+                  points: [42, 55, 73],
+                },
+                anchor: {
+                  kind: "beat" as const,
+                  beatId: secondBeat._id,
+                  startMs: secondBeat.startMs,
+                  endMs: secondBeat.endMs,
+                },
+              },
+            ],
+          };
+          proposals = [
+            {
+              _id: "proposal-1",
+              request: String(input.request),
+              state: "reviewable",
+              rationale:
+                "Place approved animated-line-chart@1.0.0 on beat 2 (Regional explanation).",
+              patchJson: JSON.stringify({
+                operation: "insert",
+                component: "animated-line-chart@1.0.0",
+              }),
+              validationEvidenceJson: JSON.stringify([
+                {
+                  attempt: 1,
+                  valid: true,
+                  message: "Proposal passed independent validation.",
+                },
+              ]),
+              toolActivityJson: JSON.stringify([
+                "read_current_composition",
+                "read_narration_beats",
+                "read_approved_component_library",
+              ]),
+              provider: "relay-fake-editor",
+              model: "deterministic-composition-v1",
+              attempt: 1,
+              maxAttempts: 2,
+              inputTokens: 9,
+              outputTokens: 42,
+              estimatedCostUsd: 0,
+              createdAt: 600,
+              proposedComposition,
+            },
+            ...proposals,
+          ];
+          await route.fulfill({
+            status: 201,
+            json: { proposalId: "proposal-1" },
+          });
+          return;
+        }
+        const proposal = proposals.find(
+          (candidate) => candidate._id === input.proposalId,
+        )!;
+        if (input.action === "accept") {
+          composition = proposal.proposedComposition;
+          compositionVersion += 1;
+          proposal.state = "accepted";
+          proposal.acceptedCompositionVersionId = `composition-${compositionVersion}`;
+          await route.fulfill({
+            status: 200,
+            json: {
+              compositionVersionId: proposal.acceptedCompositionVersionId,
+              version: compositionVersion,
+            },
+          });
+          return;
+        }
+        proposal.state = "rejected";
+        await route.fulfill({
+          status: 200,
+          json: { proposalId: proposal._id },
+        });
+        return;
+      }
+    }
     if (url.pathname === "/api/projects/project-election-night" && project) {
       if (request.method() === "GET") {
         await route.fulfill({ status: 200, json: { channel, project } });
@@ -802,6 +943,21 @@ test("creates, opens, renames, and archives a channel project through real route
     .poll(async () => page.getByLabel("Composition timeline").inputValue())
     .not.toBe("0");
   await page.getByRole("button", { name: "Pause composition" }).click();
+
+  await page.getByLabel("Editing request").fill("put the line chart on beat 2");
+  await page.getByRole("button", { name: "Ask Relay for proposal" }).click();
+  await expect(page.getByText("reviewable", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("animated-line-chart@1.0.0", { exact: true }),
+  ).toBeVisible();
+  await expect(compositionSection.getByText("Current · v2")).toBeVisible();
+  await page.getByRole("button", { name: "Accept proposal" }).click();
+  await expect(page.getByText("accepted", { exact: true })).toBeVisible();
+  await expect(compositionSection.getByText("Current · v3")).toBeVisible();
+  await page
+    .getByRole("button", { name: /Regional explanation · frame/ })
+    .click();
+  await expect(page.getByTitle("Composition rendered frame")).toBeVisible();
 
   await expect(page.getByText("No sources added yet")).toBeVisible();
   await page.getByLabel("Source title").fill("National results");

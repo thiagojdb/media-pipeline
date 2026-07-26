@@ -16,6 +16,7 @@ import type * as componentReview from "../componentReview.js";
 import type * as projectBeats from "../projectBeats.js";
 import type * as projectCompositionSchema from "../projectCompositionSchema.js";
 import type * as projectCompositions from "../projectCompositions.js";
+import type * as projectEditingAgent from "../projectEditingAgent.js";
 import type * as projectNarrations from "../projectNarrations.js";
 import type * as projects from "../projects.js";
 
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   projectBeats: typeof projectBeats;
   projectCompositionSchema: typeof projectCompositionSchema;
   projectCompositions: typeof projectCompositions;
+  projectEditingAgent: typeof projectEditingAgent;
   projectNarrations: typeof projectNarrations;
   projects: typeof projects;
 }>;

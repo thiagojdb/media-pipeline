@@ -89,54 +89,38 @@ export const save = mutation({
         `Composition is invalid: ${parsed.error.issues[0]?.message ?? "unknown schema error"}`,
       );
     }
-    const narrationVersionId = ctx.db.normalizeId(
-      "narrationVersions",
-      parsed.data.narrationVersionId,
-    );
-    const narration = narrationVersionId
-      ? await ctx.db.get(narrationVersionId)
-      : null;
-    if (!narration || narration.projectId !== project._id) {
-      throw new Error("Composition narration version was not found.");
-    }
-    await validateSegments(
+    await validateCompositionForProject(
       ctx,
       project._id,
       project.channelId,
-      narration._id,
-      narration.durationMs,
       parsed.data,
     );
-    const version = (project.currentCompositionVersionNumber ?? 0) + 1;
-    const compositionJson = JSON.stringify(parsed.data);
-    const compositionVersionId = await ctx.db.insert("compositionVersions", {
-      channelId: project.channelId,
-      projectId: project._id,
-      narrationVersionId: narration._id,
-      createdByMembershipId: project.membership._id,
-      version,
-      schemaVersion: 1,
-      provenance: args.provenance,
-      compositionJson,
-      createdAt: Date.now(),
-    });
-    await ctx.db.patch(project._id, {
-      currentCompositionVersionId: compositionVersionId,
-      currentCompositionVersionNumber: version,
-      updatedAt: Date.now(),
-    });
-    return { compositionVersionId, version };
+    return publishCompositionVersion(
+      ctx,
+      project,
+      parsed.data,
+      args.provenance,
+    );
   },
 });
 
-async function validateSegments(
+export async function validateCompositionForProject(
   ctx: MutationCtx,
   projectId: Id<"projects">,
   channelId: Id<"channels">,
-  narrationVersionId: Id<"narrationVersions">,
-  durationMs: number,
   composition: ProjectComposition,
 ) {
+  const narrationVersionId = ctx.db.normalizeId(
+    "narrationVersions",
+    composition.narrationVersionId,
+  );
+  const narration = narrationVersionId
+    ? await ctx.db.get(narrationVersionId)
+    : null;
+  if (!narration || narration.projectId !== projectId) {
+    throw new Error("Composition narration version was not found.");
+  }
+  const durationMs = narration.durationMs;
   const ids = new Set<string>();
   let previousEnd = 0;
   for (const [index, segment] of composition.segments.entries()) {
@@ -215,6 +199,39 @@ async function validateSegments(
       );
     }
   }
+}
+
+export async function publishCompositionVersion(
+  ctx: MutationCtx,
+  project: Awaited<ReturnType<typeof editableProject>>,
+  composition: ProjectComposition,
+  provenance: "manual" | "agent",
+) {
+  const narrationVersionId = ctx.db.normalizeId(
+    "narrationVersions",
+    composition.narrationVersionId,
+  );
+  if (!narrationVersionId) {
+    throw new Error("Composition narration version was not found.");
+  }
+  const version = (project.currentCompositionVersionNumber ?? 0) + 1;
+  const compositionVersionId = await ctx.db.insert("compositionVersions", {
+    channelId: project.channelId,
+    projectId: project._id,
+    narrationVersionId,
+    createdByMembershipId: project.membership._id,
+    version,
+    schemaVersion: 1,
+    provenance,
+    compositionJson: JSON.stringify(composition),
+    createdAt: Date.now(),
+  });
+  await ctx.db.patch(project._id, {
+    currentCompositionVersionId: compositionVersionId,
+    currentCompositionVersionNumber: version,
+    updatedAt: Date.now(),
+  });
+  return { compositionVersionId, version };
 }
 
 type JsonSchema = {

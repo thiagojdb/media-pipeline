@@ -11,6 +11,7 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 const projectsApi = anyApi.projects!;
 const compositionsApi = anyApi.projectCompositions!;
+const editingApi = anyApi.projectEditingAgent!;
 const serverToken = "projects-test-token";
 
 beforeEach(() => {
@@ -149,6 +150,83 @@ describe("structured project composition versions", () => {
       fixture.t.run((ctx) => ctx.db.query("compositionVersions").collect()),
     ).resolves.toEqual([]);
   });
+
+  it("keeps fake-agent proposals reviewable until explicit acceptance and repairs bounded failures", async () => {
+    const fixture = await setup();
+    const initial = await fixture.t.mutation(compositionsApi.save, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+      provenance: "manual",
+      composition: fixture.composition("Manual baseline"),
+    });
+    const proposed = await fixture.t.mutation(editingApi.propose, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+      request: "Put the line chart on beat 2 [FAKE_INVALID_FIRST]",
+    });
+    const beforeAccept = await fixture.t.query(compositionsApi.list, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+    });
+    expect(beforeAccept.current?._id).toBe(initial.compositionVersionId);
+    const proposals = await fixture.t.query(editingApi.list, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+    });
+    expect(proposals[0]).toMatchObject({
+      _id: proposed.proposalId,
+      state: "reviewable",
+      attempt: 2,
+      maxAttempts: 2,
+      provider: "relay-fake-editor",
+      estimatedCostUsd: 0,
+    });
+    expect(JSON.parse(proposals[0]!.validationEvidenceJson)).toMatchObject([
+      { attempt: 1, valid: false },
+      { attempt: 2, valid: true },
+    ]);
+
+    const accepted = await fixture.t.mutation(editingApi.accept, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+      proposalId: proposed.proposalId,
+    });
+    expect(accepted.version).toBe(2);
+    const afterAccept = await fixture.t.query(compositionsApi.list, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+    });
+    expect(afterAccept.versions).toMatchObject([
+      { version: 2, provenance: "agent" },
+      { version: 1, provenance: "manual" },
+    ]);
+    expect(
+      afterAccept.current?.composition.segments.some(
+        (segment: { anchor: { kind: string; beatId?: string } }) =>
+          segment.anchor.kind === "beat" &&
+          segment.anchor.beatId === fixture.secondBeatId,
+      ),
+    ).toBe(true);
+
+    await fixture.t.mutation(editingApi.propose, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+      request: "Put the line chart on beat 9",
+    });
+    const invalid = await fixture.t.query(editingApi.list, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+    });
+    expect(invalid[0]).toMatchObject({ state: "invalid", attempt: 1 });
+    expect(afterAccept.current?._id).toBe(
+      (
+        await fixture.t.query(compositionsApi.list, {
+          ...fixture.access,
+          projectId: fixture.projectId,
+        })
+      ).current?._id,
+    );
+  });
 });
 
 async function setup() {
@@ -203,6 +281,18 @@ async function setup() {
       createdAt: 20,
       updatedAt: 20,
     });
+    const secondBeatId = await ctx.db.insert("beats", {
+      channelId: workspace.channel.id,
+      projectId,
+      narrationVersionId,
+      createdByMembershipId: workspace.membership.id,
+      order: 1,
+      startMs: 1_000,
+      endMs: 3_000,
+      title: "Explanation",
+      createdAt: 21,
+      updatedAt: 21,
+    });
     const sourceId = await ctx.db.insert("projectSources", {
       channelId: workspace.channel.id,
       projectId,
@@ -243,16 +333,16 @@ async function setup() {
     });
     const candidateId = await ctx.db.insert("componentCandidates", {
       channelId: workspace.channel.id,
-      componentId: "result-card",
+      componentId: "animated-line-chart",
       declaredVersion: "1.0.0",
       buildJobId,
       sourceHash: sha("component"),
-      candidateRef: "candidate://result-card",
+      candidateRef: "candidate://animated-line-chart",
       validationEvidenceJson: "{}",
       inputSchemaJson,
       inputSchemaFingerprint: sha(inputSchemaJson),
       compatibilityJson: '{"mode":"initial"}',
-      fixturesJson: "[]",
+      fixturesJson: JSON.stringify([{ name: "Default" }]),
       dimensionsJson: '[{"width":1920,"height":1080}]',
       status: "approved",
       createdAt: 40,
@@ -260,16 +350,16 @@ async function setup() {
     });
     const componentVersionId = await ctx.db.insert("componentVersions", {
       channelId: workspace.channel.id,
-      componentId: "result-card",
+      componentId: "animated-line-chart",
       version: "1.0.0",
       candidateId,
       buildJobId,
       sourceHash: sha("component"),
-      candidateRef: "candidate://result-card",
+      candidateRef: "candidate://animated-line-chart",
       validationEvidenceJson: "{}",
       inputSchemaJson,
       inputSchemaFingerprint: sha(inputSchemaJson),
-      fixturesJson: "[]",
+      fixturesJson: JSON.stringify([{ name: "Default" }]),
       dimensionsJson: '[{"width":1920,"height":1080}]',
       approvedAt: 50,
     });
@@ -280,6 +370,7 @@ async function setup() {
     return {
       narrationVersionId,
       beatId,
+      secondBeatId,
       sourceId,
       candidateId,
       componentVersionId,
