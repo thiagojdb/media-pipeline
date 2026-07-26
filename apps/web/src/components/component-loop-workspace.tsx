@@ -1143,6 +1143,17 @@ function hasActiveWork(status: LoopStatus): boolean {
   return (
     (status.messages ?? []).some((message) => message.state === "streaming") ||
     status.turns.some((turn) => ["queued", "running"].includes(turn.state)) ||
+    status.turns.some(
+      (turn) =>
+        turn.state === "candidate_submitted" &&
+        !status.builds.some(
+          (build) =>
+            build.turnId === turn.turnId &&
+            ["succeeded", "failed", "canceled", "needs_intervention"].includes(
+              build.state,
+            ),
+        ),
+    ) ||
     status.builds.some((build) =>
       ["queued", "running", "validating"].includes(build.state),
     )
