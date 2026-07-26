@@ -8,6 +8,7 @@ const buildToken = "relay-local-build-worker";
 const authoringToken = "relay-local-authoring-worker";
 const loopToken = "relay-local-component-loop";
 const projectsToken = "relay-local-projects";
+const narrationToken = "relay-local-narration";
 const authoringMode = process.env.AUTHORING_MODE ?? "fake";
 if (!["fake", "real"].includes(authoringMode))
   throw new Error("AUTHORING_MODE must be fake or real.");
@@ -37,6 +38,7 @@ for (const [name, value] of [
   ["AUTHORING_WORKER_TOKEN", authoringToken],
   ["COMPONENT_LOOP_WORKER_TOKEN", loopToken],
   ["PROJECTS_SERVER_TOKEN", projectsToken],
+  ["NARRATION_WORKER_TOKEN", narrationToken],
 ]) {
   await run("npx", [
     "convex",
@@ -62,6 +64,9 @@ const child = spawn("npm", ["run", "dev", "--workspace", "@relay/worker"], {
     AUTHORING_WORKER_TOKEN: authoringToken,
     COMPONENT_LOOP_ENABLED: "true",
     COMPONENT_LOOP_WORKER_TOKEN: loopToken,
+    NARRATION_ENABLED: "true",
+    NARRATION_CONVEX_URL: convexUrl,
+    NARRATION_WORKER_TOKEN: narrationToken,
     ...realAuthoringEnvironment,
   },
 });

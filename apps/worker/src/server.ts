@@ -22,6 +22,7 @@ export const createWorkerServer = ({
   componentBuildsEnabled = false,
   componentBuildStatus,
   authoringStatus,
+  narrationStatus,
   componentLoop,
 }: {
   readonly draftRenders?: DraftRenderService;
@@ -29,6 +30,8 @@ export const createWorkerServer = ({
   readonly componentBuildStatus?: () =>
     "disabled" | "running" | "degraded" | "stopped";
   readonly authoringStatus?: () =>
+    "disabled" | "running" | "degraded" | "stopped";
+  readonly narrationStatus?: () =>
     "disabled" | "running" | "degraded" | "stopped";
   readonly componentLoop?: ComponentLoopService;
 } = {}): Server =>
@@ -43,6 +46,7 @@ export const createWorkerServer = ({
             componentBuildStatus?.() ??
             (componentBuildsEnabled ? "running" : "disabled"),
           authoring: authoringStatus?.() ?? "disabled",
+          narration: narrationStatus?.() ?? "disabled",
           componentLoop: componentLoop ? "ready" : "disabled",
         });
         return;

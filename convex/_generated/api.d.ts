@@ -13,6 +13,7 @@ import type * as componentBuildJobs from "../componentBuildJobs.js";
 import type * as componentConversation from "../componentConversation.js";
 import type * as componentLoop from "../componentLoop.js";
 import type * as componentReview from "../componentReview.js";
+import type * as projectNarrations from "../projectNarrations.js";
 import type * as projects from "../projects.js";
 
 import type {
@@ -27,6 +28,7 @@ declare const fullApi: ApiFromModules<{
   componentConversation: typeof componentConversation;
   componentLoop: typeof componentLoop;
   componentReview: typeof componentReview;
+  projectNarrations: typeof projectNarrations;
   projects: typeof projects;
 }>;
 

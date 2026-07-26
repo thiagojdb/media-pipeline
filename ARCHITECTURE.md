@@ -200,6 +200,8 @@ MED-142 establishes the private-development form of this boundary. Convex stores
 
 MED-144 stores project scripts as append-only `scriptVersions` with monotonic project-local numbers, exact unmodified content, provenance, creator membership, and creation time. The project holds an explicit pointer and number for the current version; no mutation edits an existing version. Historical versions have stable project/version routes, while list responses expose bounded summaries rather than duplicating every full script into the browser.
 
+MED-145 adds durable narration jobs with leases, attempt fencing, heartbeat recovery, creator cancellation, and visible terminal states. A successful worker claim pins one exact immutable script version, generates or receives timestamped audio outside Next.js and Convex, uploads it to Convex storage, then atomically publishes an immutable narration version with duration, timing segments, provider/model identity, usage, cost, and wall-time telemetry. Normal development and CI use a deterministic WAV-generating fake provider with zero external calls; the provider boundary can be replaced without changing narration records or job authority.
+
 ## State models
 
 ### Component candidate

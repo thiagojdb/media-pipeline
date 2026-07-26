@@ -130,7 +130,7 @@ This order separates SDK/rendering defects from agent defects. Pi should not be 
 ## M2 — Source-to-Draft Video
 
 **Linear milestone:** Source-to-Draft Video
-**Next issue:** MED-145 — Generate narration audio with timing from a script version
+**Next issue:** MED-146 — Upload narration audio with the minimum timing path
 
 ### Outcome
 

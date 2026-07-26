@@ -41,6 +41,8 @@ export default defineSchema({
     description: v.optional(v.string()),
     currentScriptVersionId: v.optional(v.id("scriptVersions")),
     currentScriptVersionNumber: v.optional(v.number()),
+    currentNarrationVersionId: v.optional(v.id("narrationVersions")),
+    currentNarrationVersionNumber: v.optional(v.number()),
     status: v.union(v.literal("active"), v.literal("archived")),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -79,6 +81,77 @@ export default defineSchema({
   })
     .index("by_project_version", ["projectId", "version"])
     .index("by_project_created", ["projectId", "createdAt"]),
+  narrationVersions: defineTable({
+    channelId: v.id("channels"),
+    projectId: v.id("projects"),
+    scriptVersionId: v.id("scriptVersions"),
+    createdByMembershipId: v.id("channelMemberships"),
+    version: v.number(),
+    provenance: v.union(v.literal("generated"), v.literal("upload")),
+    storageId: v.id("_storage"),
+    mediaType: v.string(),
+    durationMs: v.number(),
+    timingSegments: v.array(
+      v.object({
+        index: v.number(),
+        startMs: v.number(),
+        endMs: v.number(),
+        text: v.string(),
+      }),
+    ),
+    provider: v.optional(v.string()),
+    model: v.optional(v.string()),
+    usageCharacters: v.optional(v.number()),
+    estimatedCostUsd: v.optional(v.number()),
+    wallTimeMs: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_project_version", ["projectId", "version"])
+    .index("by_script_version", ["scriptVersionId"]),
+  narrationJobs: defineTable({
+    channelId: v.id("channels"),
+    projectId: v.id("projects"),
+    scriptVersionId: v.id("scriptVersions"),
+    createdByMembershipId: v.id("channelMemberships"),
+    provider: v.string(),
+    model: v.string(),
+    state: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("canceled"),
+      v.literal("needs_intervention"),
+    ),
+    attempt: v.number(),
+    maxAttempts: v.number(),
+    cancelRequested: v.boolean(),
+    leaseOwner: v.optional(v.string()),
+    leaseExpiresAt: v.optional(v.number()),
+    heartbeatAt: v.optional(v.number()),
+    narrationVersionId: v.optional(v.id("narrationVersions")),
+    terminalCode: v.optional(v.string()),
+    terminalMessage: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_state_created", ["state", "createdAt"])
+    .index("by_state_lease", ["state", "leaseExpiresAt"])
+    .index("by_project_created", ["projectId", "createdAt"]),
+  narrationJobEvents: defineTable({
+    jobId: v.id("narrationJobs"),
+    state: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("canceled"),
+      v.literal("needs_intervention"),
+    ),
+    kind: v.string(),
+    message: v.string(),
+    createdAt: v.number(),
+  }).index("by_job_created", ["jobId", "createdAt"]),
   componentConversationThreads: defineTable({
     channelId: v.string(),
     threadId: v.string(),

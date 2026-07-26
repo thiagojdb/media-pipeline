@@ -40,6 +40,19 @@ test("creates, opens, renames, and archives a channel project through real route
     provenance: "manual" | "import";
     createdAt: number;
   }> = [];
+  let narrationJob:
+    | {
+        _id: string;
+        scriptVersionId: string;
+        state: "queued" | "succeeded";
+        cancelRequested: false;
+        provider: string;
+        model: string;
+        terminalMessage?: string;
+        createdAt: number;
+      }
+    | undefined;
+  let narrationPolls = 0;
 
   await page.context().route("https://upload.test/source", async (route) => {
     expect(route.request().method()).toBe("POST");
@@ -219,6 +232,88 @@ test("creates, opens, renames, and archives a channel project through real route
       );
       return;
     }
+    if (
+      url.pathname === "/api/projects/project-election-night/narrations" &&
+      project
+    ) {
+      if (request.method() === "POST") {
+        const input = request.postDataJSON() as {
+          action: "generate" | "cancel";
+          scriptVersionId?: string;
+        };
+        if (input.action === "generate") {
+          narrationJob = {
+            _id: "narration-job-1",
+            scriptVersionId: String(input.scriptVersionId),
+            state: "queued",
+            cancelRequested: false,
+            provider: "relay-fake-tts",
+            model: "deterministic-wave-v1",
+            createdAt: 300,
+          };
+          narrationPolls = 0;
+          await route.fulfill({
+            status: 202,
+            json: { jobId: narrationJob._id },
+          });
+          return;
+        }
+      }
+      if (request.method() === "GET") {
+        if (narrationJob) {
+          narrationPolls += 1;
+          if (narrationPolls >= 2) {
+            narrationJob = {
+              ...narrationJob,
+              state: "succeeded",
+              terminalMessage: "Narration generated with timing.",
+            };
+          }
+        }
+        const succeeded = narrationJob?.state === "succeeded";
+        await route.fulfill({
+          status: 200,
+          json: {
+            jobs: narrationJob ? [narrationJob] : [],
+            versions: succeeded
+              ? [
+                  {
+                    _id: "narration-version-1",
+                    projectId: project._id,
+                    scriptVersionId: narrationJob.scriptVersionId,
+                    version: 1,
+                    provenance: "generated",
+                    mediaType: "audio/wav",
+                    audioUrl: "data:audio/wav;base64,UklGRg==",
+                    durationMs: 2_000,
+                    timingSegments: [
+                      {
+                        index: 0,
+                        startMs: 0,
+                        endMs: 800,
+                        text: "Opening line.",
+                      },
+                      {
+                        index: 1,
+                        startMs: 800,
+                        endMs: 2_000,
+                        text: "The first explanation.",
+                      },
+                    ],
+                    provider: "relay-fake-tts",
+                    model: "deterministic-wave-v1",
+                    usageCharacters: 38,
+                    estimatedCostUsd: 0,
+                    wallTimeMs: 10,
+                    createdAt: 310,
+                  },
+                ]
+              : [],
+          },
+        });
+        return;
+      }
+    }
     if (url.pathname === "/api/projects/project-election-night" && project) {
       if (request.method() === "GET") {
         await route.fulfill({ status: 200, json: { channel, project } });
@@ -294,6 +389,24 @@ test("creates, opens, renames, and archives a channel project through real route
   await expect(page.getByLabel("Script text")).toHaveValue(
     "Revised opening.\n\nThe first explanation.",
   );
+
+  await page.getByLabel("Script version").selectOption("script-1");
+  await page.getByRole("button", { name: "Generate timed narration" }).click();
+  await expect(
+    page.getByText("Waiting for the narration worker"),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Narration generated with timing."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("2.0 seconds with 2 timing segments"),
+  ).toBeVisible();
+  await expect(page.locator("audio[controls]")).toHaveAttribute(
+    "src",
+    /^data:audio\/wav/,
+  );
+  await expect(page.getByText("0:00.0–0:00.8")).toBeVisible();
+  await expect(page.getByText("Opening line.", { exact: true })).toBeVisible();
 
   await expect(page.getByText("No sources added yet")).toBeVisible();
   await page.getByLabel("Source title").fill("National results");

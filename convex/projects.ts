@@ -448,7 +448,7 @@ type AccessArgs = {
   channelId: Id<"channels">;
 };
 
-async function requireMembership(
+export async function requireMembership(
   ctx: QueryCtx | MutationCtx,
   args: AccessArgs,
 ) {
@@ -475,7 +475,7 @@ async function requireMembership(
   return membership;
 }
 
-async function editableProject(
+export async function editableProject(
   ctx: MutationCtx,
   args: AccessArgs & { projectId: Id<"projects"> },
 ) {
@@ -490,7 +490,7 @@ async function editableProject(
   return { ...project, membership };
 }
 
-async function readableProject(
+export async function readableProject(
   ctx: QueryCtx | MutationCtx,
   args: AccessArgs & { projectId: Id<"projects"> },
 ) {

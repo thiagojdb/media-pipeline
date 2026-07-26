@@ -24,6 +24,7 @@ import {
   DeterministicFakeDialogueAgent,
   RealPiDialogueAgent,
 } from "./component-dialogue-agent.js";
+import { NarrationLoop } from "./narration-loop.js";
 
 const port = Number.parseInt(process.env.WORKER_PORT ?? "3212", 10);
 const useFakeRenderer = process.env.RELAY_RENDER_MODE === "fake";
@@ -145,11 +146,26 @@ const componentLoop =
       )
     : undefined;
 
+const narrationEnabled = process.env.NARRATION_ENABLED === "true";
+const narrationUrl = process.env.NARRATION_CONVEX_URL;
+const narrationToken = process.env.NARRATION_WORKER_TOKEN;
+if (narrationEnabled && (!narrationUrl || !narrationToken)) {
+  throw new Error(
+    "NARRATION_ENABLED=true requires NARRATION_CONVEX_URL and NARRATION_WORKER_TOKEN.",
+  );
+}
+const narrationLoop =
+  narrationEnabled && narrationUrl && narrationToken
+    ? new NarrationLoop(narrationUrl, narrationToken)
+    : undefined;
+narrationLoop?.start();
+
 const server = createWorkerServer({
   draftRenders,
   componentBuildsEnabled,
   componentBuildStatus: () => componentBuildLoop?.status ?? "disabled",
   authoringStatus: () => authoringLoop?.status ?? "disabled",
+  narrationStatus: () => narrationLoop?.status ?? "disabled",
   ...(componentLoop ? { componentLoop } : {}),
 });
 
@@ -177,6 +193,7 @@ const shutdown = (): void => {
   shuttingDown = true;
   componentBuildLoop?.stop();
   authoringLoop?.stop();
+  narrationLoop?.stop();
   server.close((error) => {
     if (error) {
       console.error(error);

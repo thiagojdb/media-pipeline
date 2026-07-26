@@ -4,6 +4,7 @@ const publicMessages = [
   "Script version was not found.",
   "Script content is required.",
   "Script content must be at most 100,000 characters.",
+  "Narration job was not found.",
   "Archived projects are read-only.",
   "Channel membership is required.",
   "Enter a valid http or https URL.",

@@ -5,6 +5,8 @@ import {
   Archive,
   ArrowLeft,
   ArrowRight,
+  AudioLines,
+  CircleStop,
   Clapperboard,
   ExternalLink,
   FileText,
@@ -57,6 +59,43 @@ type ScriptVersion = {
 type ScriptVersionSummary = Omit<ScriptVersion, "content"> & {
   characterCount: number;
   excerpt: string;
+};
+
+type NarrationVersion = {
+  _id: string;
+  scriptVersionId: string;
+  version: number;
+  audioUrl?: string;
+  durationMs: number;
+  timingSegments: Array<{
+    index: number;
+    startMs: number;
+    endMs: number;
+    text: string;
+  }>;
+  provider?: string;
+  model?: string;
+  usageCharacters?: number;
+  estimatedCostUsd?: number;
+  wallTimeMs?: number;
+  createdAt: number;
+};
+
+type NarrationJob = {
+  _id: string;
+  scriptVersionId: string;
+  state:
+    | "queued"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "canceled"
+    | "needs_intervention";
+  cancelRequested: boolean;
+  provider: string;
+  model: string;
+  terminalMessage?: string;
+  createdAt: number;
 };
 
 export function ProjectListWorkspace() {
@@ -395,6 +434,10 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
             editable={data.project.status === "active"}
             projectId={projectId}
           />
+          <NarrationWorkspace
+            editable={data.project.status === "active"}
+            projectId={projectId}
+          />
           <SourceWorkspace
             editable={data.project.status === "active"}
             projectId={projectId}
@@ -402,6 +445,280 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
         </>
       ) : null}
     </ProjectShell>
+  );
+}
+
+function NarrationWorkspace({
+  editable,
+  projectId,
+}: {
+  editable: boolean;
+  projectId: string;
+}) {
+  const [scripts, setScripts] = useState<ScriptVersionSummary[]>([]);
+  const [selectedScriptId, setSelectedScriptId] = useState("");
+  const [data, setData] = useState<{
+    versions: NarrationVersion[];
+    jobs: NarrationJob[];
+  }>();
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const [scriptData, narrationData] = await Promise.all([
+      request<{ versions: ScriptVersionSummary[] }>(
+        `/api/projects/${projectId}/scripts`,
+      ),
+      request<{ versions: NarrationVersion[]; jobs: NarrationJob[] }>(
+        `/api/projects/${projectId}/narrations`,
+      ),
+    ]);
+    setScripts(scriptData.versions);
+    setSelectedScriptId(
+      (current) => current || scriptData.versions[0]?._id || "",
+    );
+    setData(narrationData);
+  }, [projectId]);
+
+  useEffect(() => {
+    const onScriptSaved = () => void refresh();
+    window.addEventListener("relay-script-saved", onScriptSaved);
+    return () =>
+      window.removeEventListener("relay-script-saved", onScriptSaved);
+  }, [refresh]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      request<{ versions: ScriptVersionSummary[] }>(
+        `/api/projects/${projectId}/scripts`,
+      ),
+      request<{ versions: NarrationVersion[]; jobs: NarrationJob[] }>(
+        `/api/projects/${projectId}/narrations`,
+      ),
+    ])
+      .then(([scriptData, narrationData]) => {
+        if (!active) return;
+        setScripts(scriptData.versions);
+        setSelectedScriptId(scriptData.versions[0]?._id ?? "");
+        setData(narrationData);
+      })
+      .catch((cause) => {
+        if (active) setError(errorMessage(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+
+  const activeJob = data?.jobs.find((job) =>
+    ["queued", "running"].includes(job.state),
+  );
+  useEffect(() => {
+    if (!activeJob) return;
+    const timer = window.setInterval(() => {
+      void request<{ versions: NarrationVersion[]; jobs: NarrationJob[] }>(
+        `/api/projects/${projectId}/narrations`,
+      )
+        .then(setData)
+        .catch((cause) => setError(errorMessage(cause)));
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [activeJob, projectId]);
+
+  const generate = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}/narrations`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "generate",
+          scriptVersionId: selectedScriptId,
+        }),
+      });
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancel = async (jobId: string) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}/narrations`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "cancel", jobId }),
+      });
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const latest = data?.versions[0];
+  const latestJob = data?.jobs[0];
+
+  return (
+    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-sm">
+      <div className="grid lg:grid-cols-[21rem_minmax(0,1fr)]">
+        <div className="border-b border-white/10 p-6 sm:p-8 lg:border-r lg:border-b-0">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-emerald-400 text-slate-950">
+            <AudioLines className="size-5" />
+          </div>
+          <p className="mt-5 text-xs font-medium tracking-[0.18em] text-slate-400 uppercase">
+            Generated narration
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight">
+            Turn a pinned script into timed audio.
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-slate-400">
+            Generation is explicit. Each result keeps the exact script version,
+            provider, timing, usage, and cost.
+          </p>
+          {editable ? (
+            <div className="mt-6 space-y-3">
+              <label
+                className="block text-sm font-medium"
+                htmlFor="narration-script"
+              >
+                Script version
+              </label>
+              <select
+                className="h-11 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm"
+                disabled={!scripts.length || Boolean(activeJob)}
+                id="narration-script"
+                onChange={(event) => setSelectedScriptId(event.target.value)}
+                value={selectedScriptId}
+              >
+                {scripts.map((script) => (
+                  <option
+                    className="text-slate-950"
+                    key={script._id}
+                    value={script._id}
+                  >
+                    Version {script.version} · {script.characterCount} chars
+                  </option>
+                ))}
+              </select>
+              <Button
+                className="w-full bg-emerald-400 text-slate-950 hover:bg-emerald-300"
+                disabled={busy || Boolean(activeJob) || !selectedScriptId}
+                onClick={() => void generate()}
+              >
+                {busy ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <AudioLines />
+                )}
+                Generate timed narration
+              </Button>
+              {activeJob ? (
+                <Button
+                  className="w-full border-white/20 text-white hover:bg-white/10"
+                  disabled={busy || activeJob.cancelRequested}
+                  onClick={() => void cancel(activeJob._id)}
+                  variant="outline"
+                >
+                  <CircleStop />
+                  {activeJob.cancelRequested
+                    ? "Canceling…"
+                    : "Cancel generation"}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        <div className="p-6 sm:p-8">
+          {error ? (
+            <div
+              className="rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-100"
+              role="alert"
+            >
+              {error}
+            </div>
+          ) : null}
+          {!data && !error ? (
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <LoaderCircle className="size-4 animate-spin" /> Opening
+              narration…
+            </div>
+          ) : null}
+          {latestJob ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-5">
+              <div>
+                <p className="text-xs text-slate-400 uppercase">Latest job</p>
+                <p className="mt-1 text-sm font-medium">
+                  {narrationStateLabel(latestJob)}
+                </p>
+              </div>
+              <span
+                className={`rounded-full px-3 py-1.5 text-xs font-medium ${narrationStateClass(latestJob.state)}`}
+              >
+                {latestJob.state.replace("_", " ")}
+              </span>
+            </div>
+          ) : null}
+          {latest ? (
+            <div className="mt-6">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <p className="text-xs text-slate-400 uppercase">
+                    Narration version {latest.version}
+                  </p>
+                  <h3 className="mt-1 text-xl font-semibold">
+                    {formatDuration(latest.durationMs)} with{" "}
+                    {latest.timingSegments.length} timing segments
+                  </h3>
+                </div>
+                <p className="font-mono text-xs text-slate-400">
+                  {latest.provider}/{latest.model} · $
+                  {(latest.estimatedCostUsd ?? 0).toFixed(4)}
+                </p>
+              </div>
+              {latest.audioUrl ? (
+                <audio
+                  className="mt-5 w-full"
+                  controls
+                  preload="metadata"
+                  src={latest.audioUrl}
+                >
+                  <track kind="captions" />
+                </audio>
+              ) : null}
+              <ol className="mt-6 grid gap-2">
+                {latest.timingSegments.map((segment) => (
+                  <li
+                    className="grid gap-2 rounded-lg bg-white/6 px-4 py-3 text-sm sm:grid-cols-[6rem_1fr]"
+                    key={segment.index}
+                  >
+                    <span className="font-mono text-xs text-emerald-300">
+                      {formatTimestamp(segment.startMs)}–
+                      {formatTimestamp(segment.endMs)}
+                    </span>
+                    <span className="text-slate-200">{segment.text}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : data && !latestJob ? (
+            <div className="py-12 text-center">
+              <AudioLines className="mx-auto size-7 text-slate-600" />
+              <p className="mt-3 text-sm text-slate-400">
+                Save a script, then generate the first narration.
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -463,6 +780,7 @@ function ScriptWorkspace({
         body: JSON.stringify({ content, provenance }),
       });
       await refresh();
+      window.dispatchEvent(new Event("relay-script-saved"));
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -1264,6 +1582,44 @@ function formatBytes(value: number): string {
 
 function shortHash(value: string): string {
   return `sha256:${value.slice(0, 10)}`;
+}
+
+function narrationStateLabel(job: NarrationJob): string {
+  if (job.cancelRequested && !["canceled", "failed"].includes(job.state)) {
+    return "Cancellation requested";
+  }
+  return (
+    job.terminalMessage ??
+    (job.state === "queued"
+      ? "Waiting for the narration worker"
+      : job.state === "running"
+        ? "Generating audio and timing"
+        : "Narration job updated")
+  );
+}
+
+function narrationStateClass(state: NarrationJob["state"]): string {
+  if (state === "succeeded") return "bg-emerald-400/15 text-emerald-300";
+  if (state === "queued" || state === "running") {
+    return "bg-blue-400/15 text-blue-300";
+  }
+  return "bg-amber-400/15 text-amber-300";
+}
+
+function formatDuration(value: number): string {
+  const seconds = value / 1_000;
+  return seconds < 60
+    ? `${seconds.toFixed(1)} seconds`
+    : `${Math.floor(seconds / 60)}:${Math.round(seconds % 60)
+        .toString()
+        .padStart(2, "0")}`;
+}
+
+function formatTimestamp(value: number): string {
+  const seconds = value / 1_000;
+  return `${Math.floor(seconds / 60)}:${(seconds % 60)
+    .toFixed(1)
+    .padStart(4, "0")}`;
 }
 
 function fileMediaType(file: File): string {

@@ -8,13 +8,17 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 const api = anyApi.projects!;
+const narrationApi = anyApi.projectNarrations!;
 const serverToken = "projects-test-token";
+const narrationWorkerToken = "narration-test-token";
 
 beforeEach(() => {
   process.env.PROJECTS_SERVER_TOKEN = serverToken;
+  process.env.NARRATION_WORKER_TOKEN = narrationWorkerToken;
 });
 afterEach(() => {
   delete process.env.PROJECTS_SERVER_TOKEN;
+  delete process.env.NARRATION_WORKER_TOKEN;
 });
 
 describe("membership-backed channel projects", () => {
@@ -298,6 +302,124 @@ describe("membership-backed channel projects", () => {
         provenance: "manual",
       }),
     ).rejects.toThrow("read-only");
+  });
+
+  it("runs durable generated narration through timing, playback storage, telemetry, and cancellation", async () => {
+    const t = convexTest(schema, modules);
+    const workspace = await bootstrap(t, "creator");
+    const projectId = await t.mutation(api.create, {
+      ...access(workspace.channel.id, "creator"),
+      name: "Narrated project",
+    });
+    const script = await t.mutation(api.saveScriptVersion, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      content: "Opening line. The evidence follows.",
+      provenance: "manual",
+    });
+    const { jobId } = await t.mutation(narrationApi.enqueue, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      scriptVersionId: script.scriptVersionId,
+    });
+    await expect(
+      t.query(narrationApi.list, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+      }),
+    ).resolves.toMatchObject({
+      versions: [],
+      jobs: [{ _id: jobId, state: "queued", attempt: 0 }],
+    });
+
+    const claim = await t.mutation(narrationApi.claim, {
+      workerToken: narrationWorkerToken,
+      workerId: "narration-worker",
+      leaseMs: 30_000,
+    });
+    expect(claim).toMatchObject({
+      _id: jobId,
+      state: "running",
+      attempt: 1,
+      scriptContent: "Opening line. The evidence follows.",
+    });
+    const storageId = await t.run((ctx) =>
+      ctx.storage.store(
+        new Blob([`RIFF${"0".repeat(124)}`], { type: "audio/wav" }),
+      ),
+    );
+    const completed = await t.mutation(narrationApi.complete, {
+      workerToken: narrationWorkerToken,
+      workerId: "narration-worker",
+      leaseAttempt: 1,
+      jobId,
+      storageId,
+      durationMs: 2_000,
+      timingSegments: [
+        { index: 0, startMs: 0, endMs: 900, text: "Opening line." },
+        {
+          index: 1,
+          startMs: 900,
+          endMs: 2_000,
+          text: "The evidence follows.",
+        },
+      ],
+      usageCharacters: 35,
+      estimatedCostUsd: 0,
+      wallTimeMs: 12,
+    });
+    expect(completed.version).toBe(1);
+    await expect(
+      t.query(narrationApi.list, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+      }),
+    ).resolves.toMatchObject({
+      versions: [
+        {
+          version: 1,
+          scriptVersionId: script.scriptVersionId,
+          provider: "relay-fake-tts",
+          model: "deterministic-wave-v1",
+          durationMs: 2_000,
+          usageCharacters: 35,
+          estimatedCostUsd: 0,
+          audioUrl: expect.any(String),
+        },
+      ],
+      jobs: [{ _id: jobId, state: "succeeded" }],
+    });
+
+    const canceled = await t.mutation(narrationApi.enqueue, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      scriptVersionId: script.scriptVersionId,
+    });
+    await t.mutation(narrationApi.claim, {
+      workerToken: narrationWorkerToken,
+      workerId: "narration-worker",
+      leaseMs: 30_000,
+    });
+    await t.mutation(narrationApi.requestCancel, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      jobId: canceled.jobId,
+    });
+    await t.mutation(narrationApi.fail, {
+      workerToken: narrationWorkerToken,
+      workerId: "narration-worker",
+      leaseAttempt: 1,
+      jobId: canceled.jobId,
+      state: "failed",
+      code: "provider_failed",
+      message: "Provider failed.",
+    });
+    const canceledRecord = await t.run((ctx) => ctx.db.get(canceled.jobId));
+    expect(canceledRecord).toMatchObject({
+      state: "canceled",
+      terminalCode: "provider_failed",
+      cancelRequested: true,
+    });
   });
 
   it("rejects unsafe URLs, invalid files, oversized uploads, and non-member access", async () => {

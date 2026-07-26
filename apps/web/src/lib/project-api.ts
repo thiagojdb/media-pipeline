@@ -51,6 +51,48 @@ export type ProjectScriptVersionSummary = {
   createdAt: number;
 };
 
+export type ProjectNarrationVersion = {
+  _id: string;
+  projectId: string;
+  scriptVersionId: string;
+  version: number;
+  provenance: "generated" | "upload";
+  audioUrl?: string;
+  mediaType: string;
+  durationMs: number;
+  timingSegments: Array<{
+    index: number;
+    startMs: number;
+    endMs: number;
+    text: string;
+  }>;
+  provider?: string;
+  model?: string;
+  usageCharacters?: number;
+  estimatedCostUsd?: number;
+  wallTimeMs?: number;
+  createdAt: number;
+};
+
+export type ProjectNarrationJob = {
+  _id: string;
+  scriptVersionId: string;
+  state:
+    | "queued"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "canceled"
+    | "needs_intervention";
+  provider: string;
+  model: string;
+  cancelRequested: boolean;
+  terminalCode?: string;
+  terminalMessage?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
 type Workspace = {
   user: { id: string; name: string };
   channel: { id: string; slug: string; name: string };
@@ -164,6 +206,44 @@ export async function saveProjectScriptVersion(
     projectId,
     ...input,
   })) as { scriptVersionId: string; version: number };
+}
+
+export async function listProjectNarrations(projectId: string): Promise<{
+  versions: ProjectNarrationVersion[];
+  jobs: ProjectNarrationJob[];
+}> {
+  const workspace = await developmentWorkspace();
+  return (await convex().query(anyApi.projectNarrations!.list!, {
+    ...access(workspace),
+    projectId,
+  })) as {
+    versions: ProjectNarrationVersion[];
+    jobs: ProjectNarrationJob[];
+  };
+}
+
+export async function generateProjectNarration(
+  projectId: string,
+  scriptVersionId: string,
+): Promise<{ jobId: string }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(anyApi.projectNarrations!.enqueue!, {
+    ...access(workspace),
+    projectId,
+    scriptVersionId,
+  })) as { jobId: string };
+}
+
+export async function cancelProjectNarration(
+  projectId: string,
+  jobId: string,
+): Promise<{ jobId: string }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(anyApi.projectNarrations!.requestCancel!, {
+    ...access(workspace),
+    projectId,
+    jobId,
+  })) as { jobId: string };
 }
 
 export async function listProjectSources(
