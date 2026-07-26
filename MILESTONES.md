@@ -130,7 +130,7 @@ This order separates SDK/rendering defects from agent defects. Pi should not be 
 ## M2 — Source-to-Draft Video
 
 **Linear milestone:** Source-to-Draft Video
-**Next issue:** MED-153 — Prove the M2 source-to-draft golden workflow end to end
+**Status:** Complete — MED-142 through MED-153
 
 ### Outcome
 
@@ -161,6 +161,29 @@ MED-142 through MED-153 and proceeds through these dependency layers:
 5. MED-150 through MED-152 add synchronized preview, agent proposals, and draft rendering.
 6. MED-153 proves the complete source-to-draft workflow with a real dogfood run.
 
+### Completion evidence
+
+MED-153 completed the browser workflow with URL and file evidence, immutable
+script and narration versions, timed beats, manual and agent-authored
+composition revisions, synchronized preview seeking, and two reproducible
+H.264/AAC draft renders around an accepted pacing change. A separate explicit
+real-Pi run created, validated, reviewed, and approved a channel component with
+usage, cost, tool, wall-time, and terminal-state telemetry. The evidence and
+measured residual limitations are recorded in `docs/M2_GOLDEN_RUN.md`.
+
+### Definition of done
+
+- [x] The full workflow completes through real application routes.
+- [x] Agent proposals are reviewable and cannot replace a working composition
+      when invalid.
+- [x] Preview and rendering use the same pinned narration and frame semantics.
+- [x] Exact prior compositions and render outputs remain reproducible after an
+      accepted revision.
+- [x] Ordinary CI remains deterministic and model-free.
+- [x] One explicit metered real-model run records context, usage, estimated
+      cost, activity, wall time, and terminal state.
+- [x] Residual limitations are documented before M3 decomposition.
+
 ## M3 — Review-to-Final Video
 
 **Linear milestone:** Review-to-Final Video
@@ -183,6 +206,11 @@ A creator or channel collaborator can render a draft, leave timestamped feedback
 ### Gate before decomposition
 
 Detailed M3 planning waits until a real M2 draft video exposes the actual review and rendering needs. Do not prebuild a professional nonlinear editor.
+
+The M2 golden run now satisfies this gate. M3 should be decomposed from the
+measured constraints in `docs/M2_GOLDEN_RUN.md`, beginning with timestamped
+review and bounded revision of an exact draft rather than expanding the editor
+speculatively.
 
 ## Later product areas
 

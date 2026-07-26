@@ -268,6 +268,7 @@ export class RealPiDialogueAgent implements ComponentDialogueAgent {
     });
     let writes = Promise.resolve();
     let compacted = false;
+    let providerFailure: string | undefined;
     const turnUsage: DialogueUsage = {
       inputTokens: 0,
       outputTokens: 0,
@@ -295,6 +296,10 @@ export class RealPiDialogueAgent implements ComponentDialogueAgent {
         turnUsage.cacheReadTokens += usage.cacheRead;
         turnUsage.cacheWriteTokens += usage.cacheWrite;
         turnUsage.costUsd += usage.cost.total;
+        if (event.message.stopReason === "error")
+          providerFailure =
+            event.message.errorMessage ||
+            "The configured model provider ended the response with an error.";
       }
       if (event.type === "compaction_start")
         enqueue(() => onSafeStatus("Compacting conversation context…"));
@@ -320,6 +325,7 @@ export class RealPiDialogueAgent implements ComponentDialogueAgent {
         { expandPromptTemplates: false },
       );
       await writes;
+      if (providerFailure) throw new Error(providerFailure);
       const stats = session.getSessionStats();
       const context = session.getContextUsage();
       return {

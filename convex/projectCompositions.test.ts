@@ -230,6 +230,42 @@ describe("structured project composition versions", () => {
         })
       ).current?._id,
     );
+
+    const slowed = await fixture.t.mutation(editingApi.propose, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+      request: "slow this chart down",
+    });
+    const slowProposal = (
+      await fixture.t.query(editingApi.list, {
+        ...fixture.access,
+        projectId: fixture.projectId,
+      })
+    )[0]!;
+    expect(slowProposal).toMatchObject({
+      _id: slowed.proposalId,
+      state: "reviewable",
+    });
+    expect(JSON.parse(slowProposal.patchJson!)).toMatchObject({
+      operation: "set_inputs",
+      input: { durationPerBar: 36 },
+    });
+    await fixture.t.mutation(editingApi.accept, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+      proposalId: slowed.proposalId,
+    });
+    const afterSlow = await fixture.t.query(compositionsApi.list, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+    });
+    expect(afterSlow.current?.version).toBe(3);
+    expect(afterSlow.current?.composition.segments[0].input).toMatchObject({
+      durationPerBar: 36,
+    });
+    expect(afterAccept.current?.composition.segments[0].input).toMatchObject({
+      durationPerBar: 24,
+    });
   });
 
   it("runs durable full and selected project render jobs with fenced recovery", async () => {
@@ -446,6 +482,7 @@ async function setup() {
       properties: {
         title: { type: "string", minLength: 1 },
         score: { type: "number", minimum: 0 },
+        durationPerBar: { type: "integer", minimum: 8, maximum: 120 },
       },
       required: ["title", "score"],
       additionalProperties: false,
@@ -512,7 +549,7 @@ async function setup() {
           id: "hook-card",
           kind: "component" as const,
           componentVersionId: records.componentVersionId,
-          input: { title, score: 72 },
+          input: { title, score: 72, durationPerBar: 24 },
           anchor: {
             kind: "beat" as const,
             beatId: records.beatId,

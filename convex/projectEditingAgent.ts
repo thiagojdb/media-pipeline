@@ -79,11 +79,23 @@ export const propose = mutation({
         message: `Beat ${beatNumber} is unavailable.`,
       });
     } else {
-      const component = await latestApprovedComponent(
-        ctx,
-        project.channelId,
-        requestedComponentId(request),
+      const existing = composition.segments.find((segment) =>
+        overlaps(segment.anchor, beat),
       );
+      const speedRevision =
+        /\bslow\b.*\b(?:chart|graph)\b/i.test(request) &&
+        existing?.kind === "component";
+      const pinnedComponentId =
+        speedRevision && existing
+          ? ctx.db.normalizeId("componentVersions", existing.componentVersionId)
+          : null;
+      const component = pinnedComponentId
+        ? await ctx.db.get(pinnedComponentId)
+        : await latestApprovedComponent(
+            ctx,
+            project.channelId,
+            requestedComponentId(request),
+          );
       if (!component) {
         rationale =
           "The requested approved component is unavailable in this channel.";
@@ -96,10 +108,12 @@ export const propose = mutation({
         const fixture = z
           .json()
           .parse(
-            firstFixtureInput(
-              component.fixturesJson,
-              component.inputSchemaJson,
-            ),
+            speedRevision && existing
+              ? slowedInput(existing.input)
+              : firstFixtureInput(
+                  component.fixturesJson,
+                  component.inputSchemaJson,
+                ),
           );
         const removed = composition.segments.filter((segment) =>
           overlaps(segment.anchor, beat),
@@ -172,7 +186,11 @@ export const propose = mutation({
           }
         }
         patch = {
-          operation: removed.length ? "replace" : "insert",
+          operation: speedRevision
+            ? "set_inputs"
+            : removed.length
+              ? "replace"
+              : "insert",
           beatId: beat._id,
           beatTitle: beat.title,
           removeSegmentIds: removed.map((segment) => segment.id),
@@ -180,9 +198,11 @@ export const propose = mutation({
           component: `${component.componentId}@${component.version}`,
           input: fixture,
         };
-        rationale = removed.length
-          ? `Replace the visual on beat ${beatNumber} (${beat.title}) with approved ${component.componentId}@${component.version}.`
-          : `Place approved ${component.componentId}@${component.version} on beat ${beatNumber} (${beat.title}).`;
+        rationale = speedRevision
+          ? `Slow approved ${component.componentId}@${component.version} on beat ${beatNumber} (${beat.title}) by increasing its animation duration input.`
+          : removed.length
+            ? `Replace the visual on beat ${beatNumber} (${beat.title}) with approved ${component.componentId}@${component.version}.`
+            : `Place approved ${component.componentId}@${component.version} on beat ${beatNumber} (${beat.title}).`;
       }
     }
 
@@ -327,6 +347,31 @@ function firstFixtureInput(
   const fixtures = JSON.parse(fixturesJson) as Array<{ input?: unknown }>;
   if (fixtures[0]?.input !== undefined) return fixtures[0].input;
   return schemaExample(JSON.parse(inputSchemaJson), "visual");
+}
+
+function slowedInput(input: unknown): unknown {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("The selected chart has no tunable animation input.");
+  }
+  const candidate = { ...input } as Record<string, unknown>;
+  if (
+    typeof candidate.durationPerBar === "number" &&
+    Number.isFinite(candidate.durationPerBar)
+  ) {
+    candidate.durationPerBar = Math.min(
+      120,
+      Math.max(1, Math.round(candidate.durationPerBar * 1.5)),
+    );
+    return candidate;
+  }
+  if (
+    typeof candidate.durationInFrames === "number" &&
+    Number.isFinite(candidate.durationInFrames)
+  ) {
+    candidate.durationInFrames = Math.round(candidate.durationInFrames * 1.5);
+    return candidate;
+  }
+  throw new Error("The selected chart has no tunable animation input.");
 }
 
 function schemaExample(schema: unknown, key: string): unknown {

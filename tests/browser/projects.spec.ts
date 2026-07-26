@@ -682,46 +682,76 @@ test("creates, opens, renames, and archives a channel project through real route
           proposalId?: string;
         };
         if (input.action === "propose") {
+          const proposalId = `proposal-${proposals.length + 1}`;
+          const requestText = String(input.request);
+          const invalid = /\bbeat 9\b/i.test(requestText);
+          const slow = /\bslow\b.*\bchart\b/i.test(requestText);
           const secondBeat = beats[1]!;
-          const proposedComposition = {
-            ...composition!,
-            segments: [
-              ...composition!.segments.filter(
-                (segment) => segment.anchor.beatId !== secondBeat._id,
-              ),
-              {
-                id: "agent-animated-line-chart-beat-2",
-                kind: "component" as const,
-                componentVersionId: "approved-line-chart-v1",
-                input: {
-                  title: "Regional result",
-                  points: [42, 55, 73],
-                },
-                anchor: {
-                  kind: "beat" as const,
-                  beatId: secondBeat._id,
-                  startMs: secondBeat.startMs,
-                  endMs: secondBeat.endMs,
-                },
-              },
-            ],
-          };
+          const proposedComposition = invalid
+            ? undefined
+            : slow
+              ? {
+                  ...composition!,
+                  segments: composition!.segments.map((segment, index) =>
+                    index === 0
+                      ? {
+                          ...segment,
+                          input: {
+                            ...(segment.input as Record<string, unknown>),
+                            durationPerBar: 36,
+                          },
+                        }
+                      : segment,
+                  ),
+                }
+              : {
+                  ...composition!,
+                  segments: [
+                    ...composition!.segments.filter(
+                      (segment) => segment.anchor.beatId !== secondBeat._id,
+                    ),
+                    {
+                      id: "agent-animated-line-chart-beat-2",
+                      kind: "component" as const,
+                      componentVersionId: "approved-line-chart-v1",
+                      input: {
+                        title: "Regional result",
+                        points: [42, 55, 73],
+                      },
+                      anchor: {
+                        kind: "beat" as const,
+                        beatId: secondBeat._id,
+                        startMs: secondBeat.startMs,
+                        endMs: secondBeat.endMs,
+                      },
+                    },
+                  ],
+                };
           proposals = [
             {
-              _id: "proposal-1",
-              request: String(input.request),
-              state: "reviewable",
-              rationale:
-                "Place approved animated-line-chart@1.0.0 on beat 2 (Regional explanation).",
-              patchJson: JSON.stringify({
-                operation: "insert",
-                component: "animated-line-chart@1.0.0",
-              }),
+              _id: proposalId,
+              request: requestText,
+              state: invalid ? "invalid" : "reviewable",
+              rationale: invalid
+                ? "I could not find beat 9 on the pinned narration version."
+                : slow
+                  ? "Slow approved result-card@1.0.0 on beat 1 by increasing its animation duration input."
+                  : "Place approved animated-line-chart@1.0.0 on beat 2 (Regional explanation).",
+              patchJson: invalid
+                ? undefined
+                : JSON.stringify({
+                    operation: slow ? "set_inputs" : "insert",
+                    component: slow
+                      ? "result-card@1.0.0"
+                      : "animated-line-chart@1.0.0",
+                  }),
               validationEvidenceJson: JSON.stringify([
                 {
                   attempt: 1,
-                  valid: true,
-                  message: "Proposal passed independent validation.",
+                  valid: !invalid,
+                  message: invalid
+                    ? "Beat 9 is unavailable."
+                    : "Proposal passed independent validation.",
                 },
               ]),
               toolActivityJson: JSON.stringify([
@@ -737,13 +767,13 @@ test("creates, opens, renames, and archives a channel project through real route
               outputTokens: 42,
               estimatedCostUsd: 0,
               createdAt: 600,
-              proposedComposition,
+              ...(proposedComposition ? { proposedComposition } : {}),
             },
             ...proposals,
           ];
           await route.fulfill({
             status: 201,
-            json: { proposalId: "proposal-1" },
+            json: { proposalId },
           });
           return;
         }
@@ -1075,6 +1105,28 @@ test("creates, opens, renames, and archives a channel project through real route
   expect((await downloadPromise).suggestedFilename()).toBe(
     "relay-project-draft.mp4",
   );
+
+  await page.getByLabel("Editing request").fill("put the chart on beat 9");
+  await page.getByRole("button", { name: "Ask Relay for proposal" }).click();
+  await expect(page.getByText("invalid", { exact: true })).toBeVisible();
+  await expect(compositionSection.getByText("Current · v3")).toBeVisible();
+
+  await page.getByLabel("Editing request").fill("slow this chart down");
+  await page.getByRole("button", { name: "Ask Relay for proposal" }).click();
+  await expect(
+    page.getByText("result-card@1.0.0", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Accept proposal" }).click();
+  await expect(compositionSection.getByText("Current · v4")).toBeVisible();
+  await expect(
+    page.getByText("4 immutable composition versions"),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Render draft MP4" }).click();
+  await expect(page.getByText("succeeded", { exact: true })).toHaveCount(2);
+  await expect(
+    page.getByRole("link", { name: "Download draft MP4" }),
+  ).toHaveCount(2);
 
   await expect(page.getByText("No sources added yet")).toBeVisible();
   await page.getByLabel("Source title").fill("National results");

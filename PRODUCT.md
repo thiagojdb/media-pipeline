@@ -138,6 +138,15 @@ After the component loop is proven, Relay should support:
 
 The editing agent revises a structured composition. It does not edit an opaque MP4 as its primary model.
 
+M2 proves this path through a low-resolution draft: sources, an immutable
+script revision, generated narration, timed beats, manual component placement,
+reviewable agent proposals, synchronized seeking, and pinned draft rendering
+work together in the real application. The accepted “slow this chart down”
+proposal changes structured component inputs and produces a new immutable
+composition and render while the prior output remains available. Timestamped
+review, broader model-directed editing, subtitles, and final-quality rendering
+remain the next product milestone.
+
 ## Product principles
 
 1. **Channel reuse is foundational.** Visual components and design context belong to a channel and are reused across projects.
