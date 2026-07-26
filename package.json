@@ -8,9 +8,9 @@
   ],
   "scripts": {
     "predev": "npm run build:packages",
-    "dev": "concurrently --kill-others-on-fail --names web,convex,worker --prefix-colors blue,magenta,green \"npm run dev --workspace @relay/web\" \"convex dev\" \"npm run dev --workspace @relay/worker\"",
-    "dev:loop": "npm run build:packages && concurrently --kill-others-on-fail --names web,convex,loop --prefix-colors blue,magenta,green \"PROJECTS_CONVEX_URL=http://127.0.0.1:3210 PROJECTS_SERVER_TOKEN=relay-local-projects npm run dev --workspace @relay/web\" \"convex dev\" \"node scripts/start-local-component-loop-worker.mjs\"",
-    "dev:loop:real": "AUTHORING_MODE=real AUTHORING_PI_MODEL=openai-codex/gpt-5.4-mini npm run dev:loop",
+    "dev": "concurrently --kill-others-on-fail --names web,convex,worker --prefix-colors blue,magenta,green \"node scripts/wait-for-local-worker.mjs && PROJECTS_CONVEX_URL=http://127.0.0.1:3210 PROJECTS_SERVER_TOKEN=relay-local-projects npm run dev --workspace @relay/web\" \"convex dev\" \"node scripts/start-local-worker.mjs\"",
+    "dev:loop": "npm run dev",
+    "dev:loop:real": "AUTHORING_MODE=real AUTHORING_PI_MODEL=openai-codex/gpt-5.4-mini npm run dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

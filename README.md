@@ -20,17 +20,21 @@ npm install
 npm run dev
 ```
 
-To run the deterministic creator component loop (including authoring and build
-workers), use:
+`npm run dev` includes the deterministic creator component loop, project
+workspace, authoring/build queues, narration, and draft-render worker. The
+legacy convenience alias remains available:
 
 ```bash
 npm run dev:loop
 ```
 
-Then open `http://127.0.0.1:3000/component-loop`. This local mode uses fixed
-development-only worker tokens and the deterministic fake authoring agent; it
-does not call a paid model. Generated candidates still pass through the real
-durable Convex queues, independent build validation, and explicit review.
+Both commands start the same complete local environment. Open
+`http://127.0.0.1:3000/projects` for video projects or
+`http://127.0.0.1:3000/component-loop` for component authoring. Local mode uses
+fixed development-only worker tokens and the deterministic fake authoring
+agent; it does not call a paid model. Generated candidates still pass through
+the real durable Convex queues, independent build validation, and explicit
+review.
 
 Current component-loop limits are deliberate: the creator route targets the
 animated line chart, and only trusted compiled versions 1.0.0 and 1.1.0 can be
