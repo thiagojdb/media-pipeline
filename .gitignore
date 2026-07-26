@@ -8,11 +8,10 @@ test-results/
 blob-report/
 .relay/
 .pi-subagents/
-.env
-.env.local
-.env.*.local
+.env*
 !.env.example
 .convex/
 .DS_Store
 *.tsbuildinfo
 **/.open-next/
+.vercel/
