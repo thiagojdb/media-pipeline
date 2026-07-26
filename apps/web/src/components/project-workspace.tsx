@@ -13,6 +13,7 @@ import {
   Check,
   CircleStop,
   Clapperboard,
+  Download,
   ExternalLink,
   FileText,
   FolderKanban,
@@ -216,6 +217,31 @@ type CompositionProposal = {
   inputTokens: number;
   outputTokens: number;
   estimatedCostUsd: number;
+  createdAt: number;
+};
+
+type ProjectDraftRender = {
+  _id: string;
+  rangeKind: "full" | "selection";
+  rangeStartMs: number;
+  rangeEndMs: number;
+  width: number;
+  height: number;
+  fps: number;
+  state:
+    | "queued"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "canceled"
+    | "needs_intervention";
+  progress: number;
+  attempt: number;
+  maxAttempts: number;
+  outputUrl?: string | null;
+  outputSizeBytes?: number;
+  wallTimeMs?: number;
+  terminalMessage?: string;
   createdAt: number;
 };
 
@@ -572,6 +598,10 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
             projectId={projectId}
           />
           <ProjectCompositionPreview projectId={projectId} />
+          <ProjectDraftRenderWorkspace
+            editable={data.project.status === "active"}
+            projectId={projectId}
+          />
           <SourceWorkspace
             editable={data.project.status === "active"}
             projectId={projectId}
@@ -1064,6 +1094,216 @@ function ProjectCompositionPreview({ projectId }: { projectId: string }) {
             Save a composition version to open the synchronized preview.
           </p>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+function ProjectDraftRenderWorkspace({
+  editable,
+  projectId,
+}: {
+  editable: boolean;
+  projectId: string;
+}) {
+  const [renders, setRenders] = useState<ProjectDraftRender[]>();
+  const [beatData, setBeatData] = useState<BeatData>();
+  const [range, setRange] = useState("full");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const load = useCallback(async () => {
+    const [jobs, beats] = await Promise.all([
+      request<ProjectDraftRender[]>(`/api/projects/${projectId}/draft-renders`),
+      request<BeatData>(`/api/projects/${projectId}/beats`),
+    ]);
+    setRenders(jobs);
+    setBeatData(beats);
+  }, [projectId]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void load().catch((cause) => setError(errorMessage(cause)));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  const active = renders?.find((job) =>
+    ["queued", "running"].includes(job.state),
+  );
+  useEffect(() => {
+    if (!active) return;
+    const timer = window.setInterval(() => {
+      void load().catch((cause) => setError(errorMessage(cause)));
+    }, 700);
+    return () => window.clearInterval(timer);
+  }, [active, load]);
+
+  const start = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const beat = beatData?.beats.find((item) => item._id === range);
+      await request(`/api/projects/${projectId}/draft-renders`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "render",
+          ...(beat
+            ? { range: { startMs: beat.startMs, endMs: beat.endMs } }
+            : {}),
+        }),
+      });
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cancel = async (jobId: string) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}/draft-renders`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "cancel", jobId }),
+      });
+      await load();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 px-6 py-5 sm:px-8">
+        <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
+          Draft output
+        </p>
+        <h2 className="mt-1 text-xl font-semibold tracking-tight">
+          Render a review MP4
+        </h2>
+        <p className="mt-2 text-sm text-slate-500">
+          The worker pins the current composition and narration, renders at low
+          resolution, and keeps the job recoverable.
+        </p>
+      </div>
+      <div className="grid lg:grid-cols-[20rem_minmax(0,1fr)]">
+        <div className="border-b border-slate-200 bg-slate-50 p-6 lg:border-r lg:border-b-0">
+          {editable ? (
+            <>
+              <label className="block text-sm font-medium">
+                Draft range
+                <select
+                  className="mt-2 h-10 w-full rounded-lg border bg-white px-3 text-sm"
+                  onChange={(event) => setRange(event.target.value)}
+                  value={range}
+                >
+                  <option value="full">Full composition</option>
+                  {beatData?.beats.map((beat) => (
+                    <option key={beat._id} value={beat._id}>
+                      Beat {beat.order + 1} · {beat.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                className="mt-4 w-full"
+                disabled={busy || Boolean(active)}
+                onClick={() => void start()}
+              >
+                {busy ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <Clapperboard />
+                )}
+                Render draft MP4
+              </Button>
+              {active ? (
+                <Button
+                  className="mt-2 w-full"
+                  disabled={busy}
+                  onClick={() => void cancel(active._id)}
+                  variant="outline"
+                >
+                  <CircleStop /> Cancel render
+                </Button>
+              ) : null}
+            </>
+          ) : null}
+          <p className="mt-4 text-xs leading-5 text-slate-500">
+            640×360 maximum · H.264/AAC · one serial worker job
+          </p>
+        </div>
+        <div className="p-6 sm:p-8">
+          {error ? <ProjectError message={error} /> : null}
+          {!renders && !error ? (
+            <ProjectLoading label="Opening project renders…" />
+          ) : null}
+          {renders?.length ? (
+            <ol className="space-y-3">
+              {renders.map((render) => (
+                <li
+                  className="rounded-xl border border-slate-200 p-4"
+                  key={render._id}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <strong className="text-sm">
+                        {render.rangeKind === "full"
+                          ? "Full composition"
+                          : `${formatTimestamp(render.rangeStartMs)}–${formatTimestamp(render.rangeEndMs)}`}
+                      </strong>
+                      <p className="mt-1 font-mono text-[11px] text-slate-500">
+                        {render.width}×{render.height} · {render.fps} fps ·
+                        attempt {render.attempt}/{render.maxAttempts}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium">
+                      {render.state}
+                    </span>
+                  </div>
+                  <div
+                    aria-label="Draft render progress"
+                    aria-valuemax={100}
+                    aria-valuemin={0}
+                    aria-valuenow={Math.round(render.progress * 100)}
+                    className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"
+                    role="progressbar"
+                  >
+                    <div
+                      className="h-full bg-blue-600 transition-all"
+                      style={{ width: `${render.progress * 100}%` }}
+                    />
+                  </div>
+                  {render.terminalMessage ? (
+                    <p className="mt-3 text-xs text-slate-500">
+                      {render.terminalMessage}
+                    </p>
+                  ) : null}
+                  {render.state === "succeeded" && render.outputUrl ? (
+                    <a
+                      className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-blue-700 hover:text-blue-900"
+                      download={`relay-project-draft-${render._id}.mp4`}
+                      href={render.outputUrl}
+                    >
+                      <Download className="size-4" /> Download draft MP4
+                    </a>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          ) : renders ? (
+            <p className="text-sm text-slate-500">
+              No project drafts rendered yet.
+            </p>
+          ) : null}
+        </div>
       </div>
     </section>
   );

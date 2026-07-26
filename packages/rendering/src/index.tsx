@@ -28,6 +28,87 @@ export function segmentFrameAtTime(
   return compositionFrameAtTime(Math.max(0, timeMs - segmentStartMs), fps);
 }
 
+export type ProjectTimelineSegment = {
+  readonly id: string;
+  readonly anchor: { readonly startMs: number; readonly endMs: number };
+};
+
+export type ProjectDraftRange = {
+  readonly startMs: number;
+  readonly endMs: number;
+};
+
+export type ProjectDraftFrame = {
+  readonly outputFrame: number;
+  readonly compositionTimeMs: number;
+  readonly compositionFrame: number;
+  readonly segment?: ProjectTimelineSegment;
+  readonly segmentFrame?: number;
+};
+
+/**
+ * Pins the exact frame plan shared by project preview and draft output. A
+ * selected range only changes the output origin; component-local frames remain
+ * anchored to their original composition segment.
+ */
+export function projectDraftFramePlan(
+  segments: readonly ProjectTimelineSegment[],
+  fps: number,
+  range: ProjectDraftRange,
+): {
+  readonly durationInFrames: number;
+  readonly frame: (outputFrame: number) => ProjectDraftFrame;
+} {
+  if (
+    !Number.isSafeInteger(range.startMs) ||
+    !Number.isSafeInteger(range.endMs) ||
+    range.startMs < 0 ||
+    range.endMs <= range.startMs
+  ) {
+    throw new Error("Project draft range must have valid millisecond bounds.");
+  }
+  const durationInFrames = Math.ceil(
+    ((range.endMs - range.startMs) * fps) / 1_000,
+  );
+  compositionFrameAtTime(range.startMs, fps);
+  return {
+    durationInFrames,
+    frame(outputFrame) {
+      if (
+        !Number.isSafeInteger(outputFrame) ||
+        outputFrame < 0 ||
+        outputFrame >= durationInFrames
+      ) {
+        throw new Error("Project draft frame is outside the selected range.");
+      }
+      const compositionTimeMs = Math.min(
+        range.endMs - 1,
+        range.startMs + (outputFrame * 1_000) / fps,
+      );
+      const segment = segments.find(
+        ({ anchor }) =>
+          anchor.startMs <= compositionTimeMs &&
+          compositionTimeMs < anchor.endMs,
+      );
+      return {
+        outputFrame,
+        compositionTimeMs,
+        compositionFrame: compositionFrameAtTime(compositionTimeMs, fps),
+        ...(segment
+          ? {
+              segment,
+              segmentFrame: segmentFrameAtTime(
+                compositionTimeMs,
+                segment.anchor.startMs,
+                fps,
+              ),
+            }
+          : {}),
+      };
+    },
+  };
+}
+
 export interface VideoComponentFrameProps<Schema extends z.ZodObject> {
   readonly definition: DefinedVideoComponent<Schema>;
   readonly input: z.output<Schema>;

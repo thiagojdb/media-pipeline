@@ -134,6 +134,28 @@ test("creates, opens, renames, and archives a channel project through real route
     proposedComposition?: NonNullable<typeof composition>;
   };
   let proposals: MockProposal[] = [];
+  type MockProjectRender = {
+    _id: string;
+    rangeKind: "full" | "selection";
+    rangeStartMs: number;
+    rangeEndMs: number;
+    width: number;
+    height: number;
+    fps: number;
+    state: "queued" | "running" | "succeeded" | "canceled";
+    progress: number;
+    attempt: number;
+    maxAttempts: number;
+    cancelRequested: boolean;
+    outputUrl?: string;
+    outputSizeBytes?: number;
+    wallTimeMs?: number;
+    terminalMessage?: string;
+    createdAt: number;
+    updatedAt: number;
+  };
+  let projectRenders: MockProjectRender[] = [];
+  let projectRenderPolls = 0;
 
   await page
     .context()
@@ -225,6 +247,19 @@ test("creates, opens, renames, and archives a channel project through real route
       json: { storageId: `narration-storage-${narrationUploadCount}` },
     });
   });
+  await page
+    .context()
+    .route("https://download.test/project-draft.mp4", async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: {
+          "content-disposition":
+            'attachment; filename="relay-project-draft.mp4"',
+        },
+        contentType: "video/mp4",
+        body: Buffer.from("mock-project-mp4"),
+      });
+    });
 
   await page.context().route("**/api/projects**", async (route) => {
     const request = route.request();
@@ -737,6 +772,73 @@ test("creates, opens, renames, and archives a channel project through real route
         return;
       }
     }
+    if (
+      url.pathname === "/api/projects/project-election-night/draft-renders" &&
+      project
+    ) {
+      if (request.method() === "GET") {
+        const active = projectRenders.find((job) =>
+          ["queued", "running"].includes(job.state),
+        );
+        if (active) {
+          projectRenderPolls += 1;
+          if (projectRenderPolls >= 2) {
+            active.state = "running";
+            active.progress = 0.48;
+            active.attempt = 1;
+          }
+          if (projectRenderPolls >= 3) {
+            active.state = "succeeded";
+            active.progress = 1;
+            active.outputUrl = "https://download.test/project-draft.mp4";
+            active.outputSizeBytes = 16;
+            active.wallTimeMs = 320;
+            active.terminalMessage =
+              "Draft MP4 rendered with pinned narration.";
+          }
+        }
+        await route.fulfill({ status: 200, json: projectRenders });
+        return;
+      }
+      const input = request.postDataJSON() as {
+        action: "render" | "cancel";
+        range?: { startMs: number; endMs: number };
+        jobId?: string;
+      };
+      if (input.action === "render") {
+        const latestNarration = narrationVersions[0]!;
+        const job: MockProjectRender = {
+          _id: `project-render-${projectRenders.length + 1}`,
+          rangeKind: input.range ? "selection" : "full",
+          rangeStartMs: input.range?.startMs ?? 0,
+          rangeEndMs: input.range?.endMs ?? latestNarration.durationMs,
+          width: 640,
+          height: 360,
+          fps: 30,
+          state: "queued",
+          progress: 0,
+          attempt: 0,
+          maxAttempts: 2,
+          cancelRequested: false,
+          createdAt: 700 + projectRenders.length,
+          updatedAt: 700 + projectRenders.length,
+        };
+        projectRenders = [job, ...projectRenders];
+        projectRenderPolls = 0;
+        await route.fulfill({
+          status: 202,
+          json: { jobId: job._id },
+        });
+        return;
+      }
+      const job = projectRenders.find(
+        (candidate) => candidate._id === input.jobId,
+      )!;
+      job.state = "canceled";
+      job.cancelRequested = true;
+      await route.fulfill({ status: 200, json: { jobId: job._id } });
+      return;
+    }
     if (url.pathname === "/api/projects/project-election-night" && project) {
       if (request.method() === "GET") {
         await route.fulfill({ status: 200, json: { channel, project } });
@@ -958,6 +1060,21 @@ test("creates, opens, renames, and archives a channel project through real route
     .getByRole("button", { name: /Regional explanation · frame/ })
     .click();
   await expect(page.getByTitle("Composition rendered frame")).toBeVisible();
+
+  await expect(
+    page.getByRole("heading", { name: "Render a review MP4" }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Draft range")).toHaveValue("full");
+  await page.getByRole("button", { name: "Render draft MP4" }).click();
+  await expect(
+    page.getByRole("progressbar", { name: "Draft render progress" }),
+  ).toBeVisible();
+  await expect(page.getByText("succeeded", { exact: true })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("link", { name: "Download draft MP4" }).click();
+  expect((await downloadPromise).suggestedFilename()).toBe(
+    "relay-project-draft.mp4",
+  );
 
   await expect(page.getByText("No sources added yet")).toBeVisible();
   await page.getByLabel("Source title").fill("National results");

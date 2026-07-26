@@ -194,6 +194,38 @@ export type ProjectCompositionProposal = {
   createdAt: number;
 };
 
+export type ProjectDraftRender = {
+  _id: string;
+  compositionVersionId: string;
+  narrationVersionId: string;
+  rangeKind: "full" | "selection";
+  rangeStartMs: number;
+  rangeEndMs: number;
+  width: number;
+  height: number;
+  fps: number;
+  state:
+    | "queued"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "canceled"
+    | "needs_intervention";
+  progress: number;
+  attempt: number;
+  maxAttempts: number;
+  cancelRequested: boolean;
+  outputUrl?: string | null;
+  outputSizeBytes?: number;
+  outputContentHash?: string;
+  visualFingerprint?: string;
+  wallTimeMs?: number;
+  terminalCode?: string;
+  terminalMessage?: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
 type Workspace = {
   user: { id: string; name: string };
   channel: { id: string; slug: string; name: string };
@@ -462,6 +494,40 @@ export async function decideProjectCompositionProposal(
       proposalId,
     },
   )) as { compositionVersionId?: string; version?: number };
+}
+
+export async function listProjectDraftRenders(
+  projectId: string,
+): Promise<ProjectDraftRender[]> {
+  const workspace = await developmentWorkspace();
+  return (await convex().query(anyApi.projectDraftRenders!.list!, {
+    ...access(workspace),
+    projectId,
+  })) as ProjectDraftRender[];
+}
+
+export async function enqueueProjectDraftRender(
+  projectId: string,
+  range?: { startMs: number; endMs: number },
+): Promise<{ jobId: string }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(anyApi.projectDraftRenders!.enqueue!, {
+    ...access(workspace),
+    projectId,
+    ...(range ? { range } : {}),
+  })) as { jobId: string };
+}
+
+export async function cancelProjectDraftRender(
+  projectId: string,
+  jobId: string,
+): Promise<{ jobId: string }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(anyApi.projectDraftRenders!.requestCancel!, {
+    ...access(workspace),
+    projectId,
+    jobId,
+  })) as { jobId: string };
 }
 
 export async function listProjectSources(

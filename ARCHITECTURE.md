@@ -214,6 +214,8 @@ MED-150 evaluates the current composition against its pinned narration clock in 
 
 MED-151 makes editing-agent output a durable proposal rather than a composition mutation. The deterministic development agent reads the current immutable composition, pinned beats, and approved channel library, then records a beat-scoped patch, rationale, tool activity, token and cost telemetry, and per-attempt validation evidence. Proposals pass through the same independent composition validator as manual work, may make at most one bounded repair, and never advance the project pointer automatically. Acceptance rejects stale bases, revalidates the candidate, and publishes a new immutable agent-provenance composition; rejection and invalid proposals preserve every working version.
 
+MED-152 promotes project drafts to durable Convex render jobs. Every job pins one immutable composition version, its narration version, and either the complete narration range or exact selected millisecond bounds. The shared rendering package maps each output frame back to the same composition and component-local frame used by browser preview. A single reduced-priority worker claims fenced leases, heartbeats progress and cancellation, recovers expired jobs within a two-attempt budget, captures approved component frames at a 640×360 maximum, and serially muxes the trimmed narration into H.264/AAC. Only a verified MP4 uploaded to storage can become successful; partial files, stale workers, cancellation, and failures cannot publish an output.
+
 ## State models
 
 ### Component candidate

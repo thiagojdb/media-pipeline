@@ -25,6 +25,11 @@ import {
   RealPiDialogueAgent,
 } from "./component-dialogue-agent.js";
 import { NarrationLoop } from "./narration-loop.js";
+import {
+  BrowserProjectRenderExecutor,
+  createFakeProjectRenderExecutor,
+  ProjectRenderLoop,
+} from "./project-render-loop.js";
 
 const port = Number.parseInt(process.env.WORKER_PORT ?? "3212", 10);
 const useFakeRenderer = process.env.RELAY_RENDER_MODE === "fake";
@@ -160,12 +165,28 @@ const narrationLoop =
     : undefined;
 narrationLoop?.start();
 
+const projectRenderLoop =
+  narrationEnabled && narrationUrl && narrationToken
+    ? new ProjectRenderLoop(
+        narrationUrl,
+        narrationToken,
+        process.env.RELAY_PROJECT_RENDER_MODE === "fake"
+          ? createFakeProjectRenderExecutor()
+          : new BrowserProjectRenderExecutor(
+              process.env.RELAY_COMPONENT_PREVIEW_ORIGIN ??
+                `http://127.0.0.1:${port}`,
+            ),
+      )
+    : undefined;
+projectRenderLoop?.start();
+
 const server = createWorkerServer({
   draftRenders,
   componentBuildsEnabled,
   componentBuildStatus: () => componentBuildLoop?.status ?? "disabled",
   authoringStatus: () => authoringLoop?.status ?? "disabled",
   narrationStatus: () => narrationLoop?.status ?? "disabled",
+  projectRenderStatus: () => projectRenderLoop?.status ?? "disabled",
   ...(componentLoop ? { componentLoop } : {}),
 });
 
@@ -194,6 +215,7 @@ const shutdown = (): void => {
   componentBuildLoop?.stop();
   authoringLoop?.stop();
   narrationLoop?.stop();
+  projectRenderLoop?.stop();
   server.close((error) => {
     if (error) {
       console.error(error);

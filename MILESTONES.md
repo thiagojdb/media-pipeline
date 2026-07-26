@@ -130,7 +130,7 @@ This order separates SDK/rendering defects from agent defects. Pi should not be 
 ## M2 — Source-to-Draft Video
 
 **Linear milestone:** Source-to-Draft Video
-**Next issue:** MED-152 — Render a low-resolution draft MP4
+**Next issue:** MED-153 — Prove the M2 source-to-draft golden workflow end to end
 
 ### Outcome
 

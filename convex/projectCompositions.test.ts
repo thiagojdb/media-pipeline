@@ -12,13 +12,17 @@ const modules = import.meta.glob("./**/*.ts");
 const projectsApi = anyApi.projects!;
 const compositionsApi = anyApi.projectCompositions!;
 const editingApi = anyApi.projectEditingAgent!;
+const rendersApi = anyApi.projectDraftRenders!;
 const serverToken = "projects-test-token";
+const workerToken = "render-worker-token";
 
 beforeEach(() => {
   process.env.PROJECTS_SERVER_TOKEN = serverToken;
+  process.env.NARRATION_WORKER_TOKEN = workerToken;
 });
 afterEach(() => {
   delete process.env.PROJECTS_SERVER_TOKEN;
+  delete process.env.NARRATION_WORKER_TOKEN;
 });
 
 describe("structured project composition versions", () => {
@@ -226,6 +230,121 @@ describe("structured project composition versions", () => {
         })
       ).current?._id,
     );
+  });
+
+  it("runs durable full and selected project render jobs with fenced recovery", async () => {
+    const fixture = await setup();
+    const saved = await fixture.t.mutation(compositionsApi.save, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+      provenance: "manual",
+      composition: fixture.composition("Render baseline"),
+    });
+    const full = await fixture.t.mutation(rendersApi.enqueue, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+    });
+    const claimed = await fixture.t.mutation(rendersApi.claim, {
+      workerToken,
+      workerId: "worker-a",
+      leaseMs: 30_000,
+    });
+    expect(claimed).toMatchObject({
+      _id: full.jobId,
+      compositionVersionId: saved.compositionVersionId,
+      rangeKind: "full",
+      rangeStartMs: 0,
+      rangeEndMs: 3_000,
+      width: 640,
+      height: 360,
+      fps: 30,
+      attempt: 1,
+    });
+    expect(claimed.composition.segments[0]).toMatchObject({
+      componentId: "animated-line-chart",
+      componentVersion: "1.0.0",
+    });
+    await expect(
+      fixture.t.mutation(rendersApi.heartbeat, {
+        workerToken,
+        jobId: full.jobId,
+        workerId: "worker-a",
+        leaseAttempt: 1,
+        leaseMs: 30_000,
+        progress: 0.55,
+      }),
+    ).resolves.toEqual({ owned: true, cancelRequested: false });
+    const outputStorageId = await fixture.t.run((ctx) =>
+      ctx.storage.store(new Blob(["mp4"], { type: "video/mp4" })),
+    );
+    await fixture.t.mutation(rendersApi.complete, {
+      workerToken,
+      jobId: full.jobId,
+      workerId: "worker-a",
+      leaseAttempt: 1,
+      storageId: outputStorageId,
+      sizeBytes: 3,
+      contentHash: sha("mp4"),
+      visualFingerprint: sha("frames"),
+      wallTimeMs: 120,
+    });
+
+    const selected = await fixture.t.mutation(rendersApi.enqueue, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+      range: { startMs: 1_000, endMs: 3_000 },
+    });
+    await fixture.t.mutation(rendersApi.requestCancel, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+      jobId: selected.jobId,
+    });
+    const recoverable = await fixture.t.mutation(rendersApi.enqueue, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+      range: { startMs: 1_000, endMs: 3_000 },
+    });
+    await fixture.t.mutation(rendersApi.claim, {
+      workerToken,
+      workerId: "worker-a",
+      leaseMs: 5_000,
+    });
+    await fixture.t.run((ctx) =>
+      ctx.db.patch(recoverable.jobId, { leaseExpiresAt: 1 }),
+    );
+    await fixture.t.mutation(rendersApi.recoverExpired, { workerToken });
+    await fixture.t.mutation(rendersApi.claim, {
+      workerToken,
+      workerId: "worker-b",
+      leaseMs: 5_000,
+    });
+    await fixture.t.run((ctx) =>
+      ctx.db.patch(recoverable.jobId, { leaseExpiresAt: 1 }),
+    );
+    await fixture.t.mutation(rendersApi.recoverExpired, { workerToken });
+
+    const jobs = await fixture.t.query(rendersApi.list, {
+      ...fixture.access,
+      projectId: fixture.projectId,
+    });
+    expect(jobs).toMatchObject([
+      {
+        _id: recoverable.jobId,
+        state: "needs_intervention",
+        attempt: 2,
+      },
+      {
+        _id: selected.jobId,
+        state: "canceled",
+        rangeKind: "selection",
+      },
+      {
+        _id: full.jobId,
+        state: "succeeded",
+        progress: 1,
+        outputSizeBytes: 3,
+      },
+    ]);
   });
 });
 
