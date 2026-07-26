@@ -1,4 +1,5 @@
 const workerBaseUrl = process.env.RELAY_WORKER_URL ?? "http://127.0.0.1:3212";
+const workerAuthToken = process.env.RELAY_WORKER_AUTH_TOKEN;
 export const MAX_WORKER_REQUEST_BYTES = 1_000_000;
 
 export async function readBoundedRequestBody(
@@ -49,6 +50,9 @@ export async function forwardWorkerRequest(
       cache: "no-store",
       headers: {
         ...(init?.body ? { "content-type": "application/json" } : {}),
+        ...(workerAuthToken
+          ? { authorization: `Bearer ${workerAuthToken}` }
+          : {}),
         ...init?.headers,
       },
     });

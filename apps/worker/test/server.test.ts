@@ -76,6 +76,38 @@ describe("worker HTTP boundary", () => {
     });
   });
 
+  it("protects worker operations while keeping health observable", async () => {
+    const server = createWorkerServer({
+      authToken: "relay-worker-test-token",
+    }).listen(0, "127.0.0.1");
+    servers.add(server);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    expect((await fetch(`${baseUrl}/health`)).status).toBe(200);
+
+    const missing = await fetch(`${baseUrl}/component-loop/library`);
+    expect(missing.status).toBe(401);
+    await expect(missing.json()).resolves.toEqual({
+      error: "worker_unauthorized",
+      message: "The worker request is unauthorized.",
+    });
+
+    const incorrect = await fetch(`${baseUrl}/component-loop/library`, {
+      headers: { authorization: "Bearer incorrect" },
+    });
+    expect(incorrect.status).toBe(401);
+
+    const authorized = await fetch(`${baseUrl}/component-loop/library`, {
+      headers: { authorization: "Bearer relay-worker-test-token" },
+    });
+    expect(authorized.status).toBe(503);
+    await expect(authorized.json()).resolves.toMatchObject({
+      error: "component_loop_unavailable",
+    });
+  });
+
   it("creates, observes, and downloads a successful worker render", async () => {
     const directory = await mkdtemp(
       path.join(os.tmpdir(), "relay-worker-http-"),

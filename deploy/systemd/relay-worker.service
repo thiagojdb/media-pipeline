@@ -1,0 +1,18 @@
+[Unit]
+Description=Relay production worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/services/relay-worker/current
+EnvironmentFile=%h/.config/relay-worker/production.env
+ExecStart=/usr/bin/npm run start --workspace @relay/worker
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

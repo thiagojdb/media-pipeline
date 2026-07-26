@@ -1,4 +1,5 @@
 import { createReadStream } from "node:fs";
+import { timingSafeEqual } from "node:crypto";
 import {
   createServer,
   type IncomingMessage,
@@ -18,6 +19,7 @@ import {
 const MAX_REQUEST_BYTES = 1_000_000;
 
 export const createWorkerServer = ({
+  authToken,
   draftRenders,
   componentBuildsEnabled = false,
   componentBuildStatus,
@@ -26,6 +28,7 @@ export const createWorkerServer = ({
   projectRenderStatus,
   componentLoop,
 }: {
+  readonly authToken?: string;
   readonly draftRenders?: DraftRenderService;
   readonly componentBuildsEnabled?: boolean;
   readonly componentBuildStatus?: () =>
@@ -52,6 +55,14 @@ export const createWorkerServer = ({
           narration: narrationStatus?.() ?? "disabled",
           projectRendering: projectRenderStatus?.() ?? "disabled",
           componentLoop: componentLoop ? "ready" : "disabled",
+        });
+        return;
+      }
+
+      if (authToken && !isAuthorized(request, authToken)) {
+        sendJson(response, 401, {
+          error: "worker_unauthorized",
+          message: "The worker request is unauthorized.",
         });
         return;
       }
@@ -135,6 +146,20 @@ export const createWorkerServer = ({
       });
     }
   });
+
+function isAuthorized(
+  request: IncomingMessage,
+  expectedToken: string,
+): boolean {
+  const authorization = request.headers.authorization;
+  if (!authorization?.startsWith("Bearer ")) return false;
+  const provided = Buffer.from(authorization.slice("Bearer ".length));
+  const expected = Buffer.from(expectedToken);
+  return (
+    provided.byteLength === expected.byteLength &&
+    timingSafeEqual(provided, expected)
+  );
+}
 
 async function handleComponentLoop(
   request: IncomingMessage,

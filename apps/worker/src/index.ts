@@ -181,6 +181,9 @@ const projectRenderLoop =
 projectRenderLoop?.start();
 
 const server = createWorkerServer({
+  ...(process.env.RELAY_WORKER_AUTH_TOKEN
+    ? { authToken: process.env.RELAY_WORKER_AUTH_TOKEN }
+    : {}),
   draftRenders,
   componentBuildsEnabled,
   componentBuildStatus: () => componentBuildLoop?.status ?? "disabled",
