@@ -33,6 +33,24 @@ export type ProjectSource = {
   downloadUrl?: string;
 };
 
+export type ProjectScriptVersion = {
+  _id: string;
+  projectId: string;
+  version: number;
+  content: string;
+  provenance: "manual" | "import";
+  createdAt: number;
+};
+
+export type ProjectScriptVersionSummary = {
+  _id: string;
+  version: number;
+  provenance: "manual" | "import";
+  characterCount: number;
+  excerpt: string;
+  createdAt: number;
+};
+
 type Workspace = {
   user: { id: string; name: string };
   channel: { id: string; slug: string; name: string };
@@ -94,6 +112,58 @@ export async function archiveProject(projectId: string): Promise<void> {
     ...access(workspace),
     projectId,
   });
+}
+
+export async function listProjectScriptVersions(projectId: string): Promise<{
+  current: ProjectScriptVersion | null;
+  versions: ProjectScriptVersionSummary[];
+  maximumCharacters: number;
+}> {
+  const workspace = await developmentWorkspace();
+  return (await convex().query(api.listScriptVersions!, {
+    ...access(workspace),
+    projectId,
+  })) as {
+    current: ProjectScriptVersion | null;
+    versions: ProjectScriptVersionSummary[];
+    maximumCharacters: number;
+  };
+}
+
+export async function getProjectScriptVersion(
+  projectId: string,
+  version: number,
+): Promise<{
+  channel: Workspace["channel"];
+  project: ChannelProject;
+  script: ProjectScriptVersion;
+}> {
+  const workspace = await developmentWorkspace();
+  const [project, script] = await Promise.all([
+    convex().query(api.get!, { ...access(workspace), projectId }),
+    convex().query(api.getScriptVersion!, {
+      ...access(workspace),
+      projectId,
+      version,
+    }),
+  ]);
+  return {
+    channel: workspace.channel,
+    project: project as ChannelProject,
+    script: script as ProjectScriptVersion,
+  };
+}
+
+export async function saveProjectScriptVersion(
+  projectId: string,
+  input: { content: string; provenance: "manual" | "import" },
+): Promise<{ scriptVersionId: string; version: number }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(api.saveScriptVersion!, {
+    ...access(workspace),
+    projectId,
+    ...input,
+  })) as { scriptVersionId: string; version: number };
 }
 
 export async function listProjectSources(

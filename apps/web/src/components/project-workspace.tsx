@@ -14,6 +14,7 @@ import {
   LoaderCircle,
   PencilLine,
   Plus,
+  Save,
   Trash2,
   Upload,
 } from "lucide-react";
@@ -43,6 +44,19 @@ type Source = {
   contentHash: string;
   createdAt: number;
   downloadUrl?: string;
+};
+
+type ScriptVersion = {
+  _id: string;
+  version: number;
+  content: string;
+  provenance: "manual" | "import";
+  createdAt: number;
+};
+
+type ScriptVersionSummary = Omit<ScriptVersion, "content"> & {
+  characterCount: number;
+  excerpt: string;
 };
 
 export function ProjectListWorkspace() {
@@ -377,11 +391,263 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
               ) : null}
             </aside>
           </div>
+          <ScriptWorkspace
+            editable={data.project.status === "active"}
+            projectId={projectId}
+          />
           <SourceWorkspace
             editable={data.project.status === "active"}
             projectId={projectId}
           />
         </>
+      ) : null}
+    </ProjectShell>
+  );
+}
+
+function ScriptWorkspace({
+  editable,
+  projectId,
+}: {
+  editable: boolean;
+  projectId: string;
+}) {
+  const [data, setData] = useState<{
+    current: ScriptVersion | null;
+    versions: ScriptVersionSummary[];
+    maximumCharacters: number;
+  }>();
+  const [content, setContent] = useState("");
+  const [provenance, setProvenance] = useState<"manual" | "import">("manual");
+  const [error, setError] = useState<string>();
+  const [saving, setSaving] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const value = await request<{
+      current: ScriptVersion | null;
+      versions: ScriptVersionSummary[];
+      maximumCharacters: number;
+    }>(`/api/projects/${projectId}/scripts`);
+    setData(value);
+    setContent(value.current?.content ?? "");
+  }, [projectId]);
+
+  useEffect(() => {
+    let active = true;
+    void request<{
+      current: ScriptVersion | null;
+      versions: ScriptVersionSummary[];
+      maximumCharacters: number;
+    }>(`/api/projects/${projectId}/scripts`)
+      .then((value) => {
+        if (!active) return;
+        setData(value);
+        setContent(value.current?.content ?? "");
+      })
+      .catch((cause) => {
+        if (active) setError(errorMessage(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId]);
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}/scripts`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content, provenance }),
+      });
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 px-6 py-5 sm:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
+              Project script
+            </p>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight">
+              Versioned narration copy
+            </h2>
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 font-mono text-xs text-slate-600">
+            {data?.current
+              ? `Current · v${data.current.version}`
+              : "No script yet"}
+          </span>
+        </div>
+      </div>
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="p-6 sm:p-8">
+          {error ? <ProjectError message={error} /> : null}
+          {!data && !error ? <ProjectLoading label="Opening script…" /> : null}
+          {data ? (
+            editable ? (
+              <form onSubmit={save}>
+                <label className="block text-sm font-medium" htmlFor="script">
+                  Script text
+                </label>
+                <textarea
+                  className="mt-2 min-h-80 w-full resize-y rounded-xl border bg-white px-4 py-4 font-mono text-sm leading-7 outline-none placeholder:font-sans placeholder:text-slate-400 focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                  id="script"
+                  maxLength={data.maximumCharacters}
+                  onChange={(event) => setContent(event.target.value)}
+                  placeholder="Paste or write the narration script here…"
+                  value={content}
+                />
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <p className="font-mono text-xs text-slate-500">
+                    {content.length.toLocaleString()} /{" "}
+                    {data.maximumCharacters.toLocaleString()} characters
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="text-sm text-slate-600">
+                      Script provenance
+                      <select
+                        className="ml-2 h-9 rounded-lg border bg-white px-3 text-sm text-slate-950"
+                        onChange={(event) =>
+                          setProvenance(
+                            event.target.value as "manual" | "import",
+                          )
+                        }
+                        value={provenance}
+                      >
+                        <option value="manual">Written here</option>
+                        <option value="import">Imported</option>
+                      </select>
+                    </label>
+                    <Button disabled={saving || !content.trim()} type="submit">
+                      {saving ? (
+                        <LoaderCircle className="animate-spin" />
+                      ) : (
+                        <Save />
+                      )}
+                      Save new version
+                    </Button>
+                  </div>
+                </div>
+              </form>
+            ) : (
+              <pre className="min-h-40 rounded-xl bg-slate-50 p-5 font-mono text-sm leading-7 whitespace-pre-wrap text-slate-700">
+                {data.current?.content ?? "No script was saved."}
+              </pre>
+            )
+          ) : null}
+        </div>
+        <aside className="border-t border-slate-200 bg-slate-50 p-6 lg:border-t-0 lg:border-l">
+          <h3 className="text-sm font-semibold">Version history</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Every save is immutable and directly addressable.
+          </p>
+          {data?.versions.length ? (
+            <ol className="mt-5 space-y-3">
+              {data.versions.map((version) => (
+                <li key={version._id}>
+                  <a
+                    className="group block rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-400"
+                    href={`/projects/${projectId}/scripts/${version.version}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <strong className="text-sm">
+                        Version {version.version}
+                      </strong>
+                      <ArrowRight className="size-3.5 text-slate-400 transition group-hover:translate-x-0.5" />
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">
+                      {version.excerpt}
+                    </p>
+                    <p className="mt-3 font-mono text-[10px] text-slate-400 uppercase">
+                      {version.provenance} ·{" "}
+                      {version.characterCount.toLocaleString()} chars
+                    </p>
+                  </a>
+                </li>
+              ))}
+            </ol>
+          ) : data ? (
+            <p className="mt-5 text-sm text-slate-500">No versions saved.</p>
+          ) : null}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+export function ProjectScriptVersionWorkspace({
+  projectId,
+  version,
+}: {
+  projectId: string;
+  version: number;
+}) {
+  const [data, setData] = useState<{
+    channel: Channel;
+    project: Project;
+    script: ScriptVersion;
+  }>();
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    let active = true;
+    void request<{
+      channel: Channel;
+      project: Project;
+      script: ScriptVersion;
+    }>(`/api/projects/${projectId}/scripts/${version}`)
+      .then((value) => {
+        if (active) setData(value);
+      })
+      .catch((cause) => {
+        if (active) setError(errorMessage(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [projectId, version]);
+
+  return (
+    <ProjectShell channelName={data?.channel.name}>
+      <a
+        className="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-950"
+        href={`/projects/${projectId}`}
+      >
+        <ArrowLeft className="size-4" /> Back to project
+      </a>
+      {error ? <ProjectError message={error} /> : null}
+      {!data && !error ? (
+        <ProjectLoading label="Opening script version…" />
+      ) : null}
+      {data ? (
+        <article className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <header className="border-b border-slate-200 px-6 py-6 sm:px-8">
+            <p className="text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
+              {data.project.name} · immutable script
+            </p>
+            <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
+              <h1 className="text-3xl font-semibold tracking-tight">
+                Script version {data.script.version}
+              </h1>
+              <p className="font-mono text-xs text-slate-500">
+                {data.script.provenance} · {formatDate(data.script.createdAt)}
+              </p>
+            </div>
+          </header>
+          <pre className="px-6 py-8 font-mono text-sm leading-7 whitespace-pre-wrap text-slate-800 sm:px-8">
+            {data.script.content}
+          </pre>
+        </article>
       ) : null}
     </ProjectShell>
   );

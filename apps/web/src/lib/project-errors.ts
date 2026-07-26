@@ -1,6 +1,9 @@
 const publicMessages = [
   "Project was not found.",
   "Project source was not found.",
+  "Script version was not found.",
+  "Script content is required.",
+  "Script content must be at most 100,000 characters.",
   "Archived projects are read-only.",
   "Channel membership is required.",
   "Enter a valid http or https URL.",

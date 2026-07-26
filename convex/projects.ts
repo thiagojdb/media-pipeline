@@ -11,6 +11,7 @@ const MAX_SLUG = 80;
 const MAX_SOURCE_TITLE = 200;
 const MAX_SOURCE_URL = 2_048;
 const MAX_FILE_NAME = 255;
+export const MAX_SCRIPT_CHARACTERS = 100_000;
 export const MAX_SOURCE_FILE_BYTES = 25 * 1024 * 1024;
 
 const ALLOWED_SOURCE_MEDIA_TYPES = new Set([
@@ -219,6 +220,84 @@ export const archive = mutation({
       updatedAt: now,
     });
     return project._id;
+  },
+});
+
+export const listScriptVersions = query({
+  args: { ...accessArgs, projectId: v.id("projects") },
+  handler: async (ctx, args) => {
+    const project = await readableProject(ctx, args);
+    const versions = await ctx.db
+      .query("scriptVersions")
+      .withIndex("by_project_version", (q) => q.eq("projectId", project._id))
+      .order("desc")
+      .collect();
+    const current = project.currentScriptVersionId
+      ? await ctx.db.get(project.currentScriptVersionId)
+      : null;
+    return {
+      current,
+      versions: versions.map((version) => ({
+        _id: version._id,
+        version: version.version,
+        provenance: version.provenance,
+        characterCount: version.content.length,
+        excerpt: scriptExcerpt(version.content),
+        createdAt: version.createdAt,
+      })),
+      maximumCharacters: MAX_SCRIPT_CHARACTERS,
+    };
+  },
+});
+
+export const getScriptVersion = query({
+  args: {
+    ...accessArgs,
+    projectId: v.id("projects"),
+    version: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const project = await readableProject(ctx, args);
+    if (!Number.isSafeInteger(args.version) || args.version < 1) {
+      throw new Error("Script version was not found.");
+    }
+    const script = await ctx.db
+      .query("scriptVersions")
+      .withIndex("by_project_version", (q) =>
+        q.eq("projectId", project._id).eq("version", args.version),
+      )
+      .unique();
+    if (!script) throw new Error("Script version was not found.");
+    return script;
+  },
+});
+
+export const saveScriptVersion = mutation({
+  args: {
+    ...accessArgs,
+    projectId: v.id("projects"),
+    content: v.string(),
+    provenance: v.union(v.literal("manual"), v.literal("import")),
+  },
+  handler: async (ctx, args) => {
+    const project = await editableProject(ctx, args);
+    validateScript(args.content);
+    const version = (project.currentScriptVersionNumber ?? 0) + 1;
+    const scriptVersionId = await ctx.db.insert("scriptVersions", {
+      channelId: project.channelId,
+      projectId: project._id,
+      createdByMembershipId: project.membership._id,
+      version,
+      content: args.content,
+      provenance: args.provenance,
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(project._id, {
+      currentScriptVersionId: scriptVersionId,
+      currentScriptVersionNumber: version,
+      updatedAt: Date.now(),
+    });
+    return { scriptVersionId, version };
   },
 });
 
@@ -450,6 +529,20 @@ function optionalText(
     throw new Error(`${label} must be at most ${maximum} characters.`);
   }
   return normalized;
+}
+
+function validateScript(content: string): void {
+  if (!content.trim()) throw new Error("Script content is required.");
+  if (content.length > MAX_SCRIPT_CHARACTERS) {
+    throw new Error(
+      `Script content must be at most ${MAX_SCRIPT_CHARACTERS.toLocaleString("en-US")} characters.`,
+    );
+  }
+}
+
+function scriptExcerpt(content: string): string {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  return normalized.length <= 140 ? normalized : `${normalized.slice(0, 137)}…`;
 }
 
 function normalizeSourceUrl(value: string): string {

@@ -182,6 +182,124 @@ describe("membership-backed channel projects", () => {
     ).resolves.not.toBeNull();
   });
 
+  it("creates immutable monotonic script versions and resolves exact history", async () => {
+    const t = convexTest(schema, modules);
+    const workspace = await bootstrap(t, "creator");
+    const projectId = await t.mutation(api.create, {
+      ...access(workspace.channel.id, "creator"),
+      name: "Versioned script",
+    });
+    const firstContent = "Opening line.\n\nFirst explanation.";
+    const first = await t.mutation(api.saveScriptVersion, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      content: firstContent,
+      provenance: "import",
+    });
+    const second = await t.mutation(api.saveScriptVersion, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      content: "Revised opening.\n\nFirst explanation.",
+      provenance: "manual",
+    });
+
+    expect(first.version).toBe(1);
+    expect(second.version).toBe(2);
+    await expect(
+      t.query(api.getScriptVersion, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+        version: 1,
+      }),
+    ).resolves.toMatchObject({
+      _id: first.scriptVersionId,
+      version: 1,
+      content: firstContent,
+      provenance: "import",
+      createdByMembershipId: workspace.membership.id,
+    });
+    await expect(
+      t.query(api.listScriptVersions, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+      }),
+    ).resolves.toMatchObject({
+      current: {
+        _id: second.scriptVersionId,
+        version: 2,
+        content: "Revised opening.\n\nFirst explanation.",
+      },
+      versions: [
+        { version: 2, provenance: "manual" },
+        { version: 1, provenance: "import" },
+      ],
+      maximumCharacters: 100_000,
+    });
+    const stored = await t.run((ctx) =>
+      ctx.db
+        .query("scriptVersions")
+        .withIndex("by_project_version", (q) => q.eq("projectId", projectId))
+        .collect(),
+    );
+    expect(stored.map((version) => version.content)).toEqual([
+      firstContent,
+      "Revised opening.\n\nFirst explanation.",
+    ]);
+  });
+
+  it("rejects empty, oversized, archived, missing, and non-member script access", async () => {
+    const t = convexTest(schema, modules);
+    const workspace = await bootstrap(t, "creator");
+    const projectId = await t.mutation(api.create, {
+      ...access(workspace.channel.id, "creator"),
+      name: "Protected script",
+    });
+    await bootstrap(t, "outsider", "outsider-studio");
+
+    await expect(
+      t.mutation(api.saveScriptVersion, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+        content: " \n ",
+        provenance: "manual",
+      }),
+    ).rejects.toThrow("Script content is required");
+    await expect(
+      t.mutation(api.saveScriptVersion, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+        content: "x".repeat(100_001),
+        provenance: "manual",
+      }),
+    ).rejects.toThrow("at most 100,000 characters");
+    await expect(
+      t.query(api.listScriptVersions, {
+        ...access(workspace.channel.id, "outsider"),
+        projectId,
+      }),
+    ).rejects.toThrow("membership is required");
+    await expect(
+      t.query(api.getScriptVersion, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+        version: 1,
+      }),
+    ).rejects.toThrow("Script version was not found");
+
+    await t.mutation(api.archive, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+    });
+    await expect(
+      t.mutation(api.saveScriptVersion, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+        content: "Cannot save",
+        provenance: "manual",
+      }),
+    ).rejects.toThrow("read-only");
+  });
+
   it("rejects unsafe URLs, invalid files, oversized uploads, and non-member access", async () => {
     const t = convexTest(schema, modules);
     const workspace = await bootstrap(t, "creator");

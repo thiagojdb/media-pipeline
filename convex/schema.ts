@@ -39,6 +39,8 @@ export default defineSchema({
     creatorMembershipId: v.id("channelMemberships"),
     name: v.string(),
     description: v.optional(v.string()),
+    currentScriptVersionId: v.optional(v.id("scriptVersions")),
+    currentScriptVersionNumber: v.optional(v.number()),
     status: v.union(v.literal("active"), v.literal("archived")),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -66,6 +68,17 @@ export default defineSchema({
   })
     .index("by_project_status_created", ["projectId", "status", "createdAt"])
     .index("by_storage_id", ["storageId"]),
+  scriptVersions: defineTable({
+    channelId: v.id("channels"),
+    projectId: v.id("projects"),
+    createdByMembershipId: v.id("channelMemberships"),
+    version: v.number(),
+    content: v.string(),
+    provenance: v.union(v.literal("manual"), v.literal("import")),
+    createdAt: v.number(),
+  })
+    .index("by_project_version", ["projectId", "version"])
+    .index("by_project_created", ["projectId", "createdAt"]),
   componentConversationThreads: defineTable({
     channelId: v.string(),
     threadId: v.string(),

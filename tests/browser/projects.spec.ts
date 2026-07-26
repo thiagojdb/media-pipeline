@@ -32,6 +32,14 @@ test("creates, opens, renames, and archives a channel project through real route
     downloadUrl?: string;
   }> = [];
   let uploadAttempts = 0;
+  const scriptVersions: Array<{
+    _id: string;
+    projectId: string;
+    version: number;
+    content: string;
+    provenance: "manual" | "import";
+    createdAt: number;
+  }> = [];
 
   await page.context().route("https://upload.test/source", async (route) => {
     expect(route.request().method()).toBe("POST");
@@ -150,6 +158,67 @@ test("creates, opens, renames, and archives a channel project through real route
         }
       }
     }
+    if (
+      url.pathname === "/api/projects/project-election-night/scripts" &&
+      project
+    ) {
+      if (request.method() === "GET") {
+        const current = scriptVersions.at(-1) ?? null;
+        await route.fulfill({
+          status: 200,
+          json: {
+            current,
+            versions: scriptVersions
+              .toReversed()
+              .map(({ content, ...version }) => ({
+                ...version,
+                characterCount: content.length,
+                excerpt: content.replace(/\s+/g, " ").slice(0, 140),
+              })),
+            maximumCharacters: 100_000,
+          },
+        });
+        return;
+      }
+      if (request.method() === "POST") {
+        const input = request.postDataJSON() as {
+          content: string;
+          provenance: "manual" | "import";
+        };
+        const version = scriptVersions.length + 1;
+        const script = {
+          _id: `script-${version}`,
+          projectId: project._id,
+          version,
+          content: input.content,
+          provenance: input.provenance,
+          createdAt: 200 + version,
+        };
+        scriptVersions.push(script);
+        await route.fulfill({
+          status: 201,
+          json: { scriptVersionId: script._id, version },
+        });
+        return;
+      }
+    }
+    const scriptMatch = url.pathname.match(
+      /^\/api\/projects\/project-election-night\/scripts\/(\d+)$/,
+    );
+    if (scriptMatch && request.method() === "GET" && project) {
+      const script = scriptVersions.find(
+        (candidate) => candidate.version === Number(scriptMatch[1]),
+      );
+      await route.fulfill(
+        script
+          ? { status: 200, json: { channel, project, script } }
+          : {
+              status: 404,
+              json: { message: "Script version was not found." },
+            },
+      );
+      return;
+    }
     if (url.pathname === "/api/projects/project-election-night" && project) {
       if (request.method() === "GET") {
         await route.fulfill({ status: 200, json: { channel, project } });
@@ -200,6 +269,30 @@ test("creates, opens, renames, and archives a channel project through real route
   await page.reload();
   await expect(page.getByLabel("Project name")).toHaveValue(
     "Election night explained",
+  );
+
+  const firstScript = "Opening line.\n\nThe first explanation.";
+  await page.getByLabel("Script text").fill(firstScript);
+  await page.getByLabel("Script provenance").selectOption("import");
+  await page.getByRole("button", { name: "Save new version" }).click();
+  await expect(page.getByText("Current · v1")).toBeVisible();
+
+  await page
+    .getByLabel("Script text")
+    .fill("Revised opening.\n\nThe first explanation.");
+  await page.getByLabel("Script provenance").selectOption("manual");
+  await page.getByRole("button", { name: "Save new version" }).click();
+  await expect(page.getByText("Current · v2")).toBeVisible();
+  await page.getByRole("link", { name: /Version 1/ }).click();
+  await expect(page).toHaveURL(
+    /\/projects\/project-election-night\/scripts\/1$/,
+  );
+  await expect(page.getByText(firstScript, { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText(firstScript, { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Back to project" }).click();
+  await expect(page.getByLabel("Script text")).toHaveValue(
+    "Revised opening.\n\nThe first explanation.",
   );
 
   await expect(page.getByText("No sources added yet")).toBeVisible();

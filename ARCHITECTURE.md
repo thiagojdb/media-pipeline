@@ -198,6 +198,8 @@ The identity provider and invitation interface are not selected by this foundati
 
 MED-142 establishes the private-development form of this boundary. Convex stores users, channels, memberships, and channel-scoped projects; every project query and mutation resolves a server-supplied development identity to an explicit membership before reading or changing data. A Next.js server adapter holds the dedicated project token and bootstraps the single development user and channel, so the browser cannot select or spoof either identity. This bootstrap is not the future external-auth design; a later identity provider replaces the server-supplied subject while retaining the same membership-backed records and authorization checks.
 
+MED-144 stores project scripts as append-only `scriptVersions` with monotonic project-local numbers, exact unmodified content, provenance, creator membership, and creation time. The project holds an explicit pointer and number for the current version; no mutation edits an existing version. Historical versions have stable project/version routes, while list responses expose bounded summaries rather than duplicating every full script into the browser.
+
 ## State models
 
 ### Component candidate
