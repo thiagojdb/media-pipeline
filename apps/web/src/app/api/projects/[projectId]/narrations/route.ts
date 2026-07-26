@@ -2,8 +2,10 @@ import { z } from "zod";
 
 import {
   cancelProjectNarration,
+  finalizeNarrationUpload,
   generateProjectNarration,
   listProjectNarrations,
+  prepareNarrationUpload,
 } from "@/lib/project-api";
 import { publicProjectError } from "@/lib/project-errors";
 
@@ -17,6 +19,22 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("cancel"),
     jobId: z.string().min(1).max(200),
+  }),
+  z.object({
+    action: z.literal("prepare_upload"),
+    fileName: z.string().trim().min(1).max(255),
+    mediaType: z.string().trim().min(1).max(100),
+    byteSize: z
+      .number()
+      .int()
+      .positive()
+      .max(100 * 1024 * 1024),
+  }),
+  z.object({
+    action: z.literal("finalize_upload"),
+    storageId: z.string().min(1).max(200),
+    fileName: z.string().trim().min(1).max(255),
+    mediaType: z.string().trim().min(1).max(100),
   }),
 ]);
 
@@ -43,10 +61,32 @@ export async function POST(request: Request, context: RouteContext) {
         { status: 400 },
       );
     }
-    const result =
-      parsed.data.action === "generate"
-        ? await generateProjectNarration(projectId, parsed.data.scriptVersionId)
-        : await cancelProjectNarration(projectId, parsed.data.jobId);
+    let result: { jobId: string } | { uploadUrl: string; maximumBytes: number };
+    switch (parsed.data.action) {
+      case "generate":
+        result = await generateProjectNarration(
+          projectId,
+          parsed.data.scriptVersionId,
+        );
+        break;
+      case "cancel":
+        result = await cancelProjectNarration(projectId, parsed.data.jobId);
+        break;
+      case "prepare_upload":
+        result = await prepareNarrationUpload(projectId, {
+          fileName: parsed.data.fileName,
+          mediaType: parsed.data.mediaType,
+          byteSize: parsed.data.byteSize,
+        });
+        break;
+      case "finalize_upload":
+        result = await finalizeNarrationUpload(projectId, {
+          storageId: parsed.data.storageId,
+          fileName: parsed.data.fileName,
+          mediaType: parsed.data.mediaType,
+        });
+        break;
+    }
     return Response.json(result, { status: 202 });
   } catch (error) {
     return narrationError(error);

@@ -202,6 +202,8 @@ MED-144 stores project scripts as append-only `scriptVersions` with monotonic pr
 
 MED-145 adds durable narration jobs with leases, attempt fencing, heartbeat recovery, creator cancellation, and visible terminal states. A successful worker claim pins one exact immutable script version, generates or receives timestamped audio outside Next.js and Convex, uploads it to Convex storage, then atomically publishes an immutable narration version with duration, timing segments, provider/model identity, usage, cost, and wall-time telemetry. Normal development and CI use a deterministic WAV-generating fake provider with zero external calls; the provider boundary can be replaced without changing narration records or job authority.
 
+MED-146 extends that same immutable version boundary to uploaded narration. The browser uploads directly to Convex storage after a server-authorized prepare step; a durable worker then probes the stored file with FFprobe and publishes its exact duration, codec, sample rate, channel count, and source filename. Replacements advance the project narration pointer without changing earlier versions, so compositions can continue to reference the exact audio version they were built against.
+
 ## State models
 
 ### Component candidate

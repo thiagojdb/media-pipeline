@@ -422,6 +422,83 @@ describe("membership-backed channel projects", () => {
     });
   });
 
+  it("probes uploaded narration as immutable replacement versions", async () => {
+    const t = convexTest(schema, modules);
+    const workspace = await bootstrap(t, "creator");
+    const projectId = await t.mutation(api.create, {
+      ...access(workspace.channel.id, "creator"),
+      name: "Uploaded voiceover",
+    });
+
+    for (const [index, fileName] of [
+      "first.wav",
+      "replacement.wav",
+    ].entries()) {
+      const storageId = await t.run((ctx) =>
+        ctx.storage.store(
+          new Blob([`RIFF${String(index).repeat(124)}`], {
+            type: "audio/wav",
+          }),
+        ),
+      );
+      const queued = await t.mutation(narrationApi.enqueueUpload, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+        storageId,
+        fileName,
+        mediaType: "audio/wav",
+      });
+      const claim = await t.mutation(narrationApi.claim, {
+        workerToken: narrationWorkerToken,
+        workerId: "probe-worker",
+        leaseMs: 30_000,
+      });
+      expect(claim).toMatchObject({
+        _id: queued.jobId,
+        kind: "upload",
+        sourceStorageId: storageId,
+        sourceUrl: expect.any(String),
+      });
+      await t.mutation(narrationApi.completeUpload, {
+        workerToken: narrationWorkerToken,
+        workerId: "probe-worker",
+        leaseAttempt: 1,
+        jobId: queued.jobId,
+        durationMs: 2_000 + index * 500,
+        mediaType: "audio/wav",
+        audioCodec: "pcm_s16le",
+        sampleRate: 16_000,
+        channels: 1,
+        wallTimeMs: 8,
+      });
+    }
+
+    const result = await t.query(narrationApi.list, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+    });
+    expect(result.versions).toMatchObject([
+      {
+        version: 2,
+        provenance: "upload",
+        fileName: "replacement.wav",
+        durationMs: 2_500,
+        audioCodec: "pcm_s16le",
+        sampleRate: 16_000,
+        channels: 1,
+        audioUrl: expect.any(String),
+      },
+      {
+        version: 1,
+        provenance: "upload",
+        fileName: "first.wav",
+        durationMs: 2_000,
+        audioUrl: expect.any(String),
+      },
+    ]);
+    expect(result.versions[0]?._id).not.toBe(result.versions[1]?._id);
+  });
+
   it("rejects unsafe URLs, invalid files, oversized uploads, and non-member access", async () => {
     const t = convexTest(schema, modules);
     const workspace = await bootstrap(t, "creator");

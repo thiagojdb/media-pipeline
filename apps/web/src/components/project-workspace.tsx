@@ -63,8 +63,10 @@ type ScriptVersionSummary = Omit<ScriptVersion, "content"> & {
 
 type NarrationVersion = {
   _id: string;
-  scriptVersionId: string;
+  scriptVersionId?: string;
   version: number;
+  provenance?: "generated" | "upload";
+  fileName?: string;
   audioUrl?: string;
   durationMs: number;
   timingSegments: Array<{
@@ -75,6 +77,9 @@ type NarrationVersion = {
   }>;
   provider?: string;
   model?: string;
+  audioCodec?: string;
+  sampleRate?: number;
+  channels?: number;
   usageCharacters?: number;
   estimatedCostUsd?: number;
   wallTimeMs?: number;
@@ -83,7 +88,8 @@ type NarrationVersion = {
 
 type NarrationJob = {
   _id: string;
-  scriptVersionId: string;
+  scriptVersionId?: string;
+  kind?: "generated" | "upload";
   state:
     | "queued"
     | "running"
@@ -463,6 +469,7 @@ function NarrationWorkspace({
   }>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File>();
 
   const refresh = useCallback(async () => {
     const [scriptData, narrationData] = await Promise.all([
@@ -563,6 +570,58 @@ function NarrationWorkspace({
     }
   };
 
+  const upload = async () => {
+    if (!uploadFile) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const mediaType = fileMediaType(uploadFile);
+      const prepared = await request<{
+        uploadUrl: string;
+        maximumBytes: number;
+      }>(`/api/projects/${projectId}/narrations`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "prepare_upload",
+          fileName: uploadFile.name,
+          mediaType,
+          byteSize: uploadFile.size,
+        }),
+      });
+      const response = await fetch(prepared.uploadUrl, {
+        method: "POST",
+        headers: { "content-type": mediaType },
+        body: uploadFile,
+      });
+      const uploaded = (await response.json()) as {
+        storageId?: string;
+        message?: string;
+      };
+      if (!response.ok || !uploaded.storageId) {
+        throw new Error(
+          uploaded.message ?? "The narration upload did not complete.",
+        );
+      }
+      await request(`/api/projects/${projectId}/narrations`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "finalize_upload",
+          storageId: uploaded.storageId,
+          fileName: uploadFile.name,
+          mediaType,
+        }),
+      });
+      setUploadFile(undefined);
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const latest = data?.versions[0];
   const latestJob = data?.jobs[0];
 
@@ -620,6 +679,34 @@ function NarrationWorkspace({
                 )}
                 Generate timed narration
               </Button>
+              <div className="flex items-center gap-3 py-1 text-xs text-slate-500">
+                <span className="h-px flex-1 bg-white/10" />
+                or upload voiceover
+                <span className="h-px flex-1 bg-white/10" />
+              </div>
+              <label
+                className="flex min-h-11 cursor-pointer items-center rounded-lg border border-dashed border-white/20 bg-white/5 px-3 text-sm text-slate-300"
+                htmlFor="narration-upload"
+              >
+                {uploadFile?.name ?? "Choose audio file"}
+                <input
+                  accept="audio/*,.m4a,.mp3,.ogg,.wav,.webm"
+                  aria-label="Narration audio file"
+                  className="sr-only"
+                  id="narration-upload"
+                  onChange={(event) => setUploadFile(event.target.files?.[0])}
+                  type="file"
+                />
+              </label>
+              <Button
+                className="w-full border-white/20 text-white hover:bg-white/10"
+                disabled={busy || Boolean(activeJob) || !uploadFile}
+                onClick={() => void upload()}
+                variant="outline"
+              >
+                {busy ? <LoaderCircle className="animate-spin" /> : <Upload />}
+                Upload and probe narration
+              </Button>
               {activeJob ? (
                 <Button
                   className="w-full border-white/20 text-white hover:bg-white/10"
@@ -674,8 +761,10 @@ function NarrationWorkspace({
                     Narration version {latest.version}
                   </p>
                   <h3 className="mt-1 text-xl font-semibold">
-                    {formatDuration(latest.durationMs)} with{" "}
-                    {latest.timingSegments.length} timing segments
+                    {formatDuration(latest.durationMs)}
+                    {latest.timingSegments.length
+                      ? ` with ${latest.timingSegments.length} timing segments`
+                      : " · ready for manual beat timing"}
                   </h3>
                 </div>
                 <p className="font-mono text-xs text-slate-400">
@@ -683,6 +772,13 @@ function NarrationWorkspace({
                   {(latest.estimatedCostUsd ?? 0).toFixed(4)}
                 </p>
               </div>
+              {latest.provenance === "upload" ? (
+                <p className="mt-3 font-mono text-xs text-slate-400">
+                  {latest.fileName} · {latest.audioCodec} ·{" "}
+                  {latest.sampleRate?.toLocaleString()} Hz · {latest.channels}{" "}
+                  channel{latest.channels === 1 ? "" : "s"}
+                </p>
+              ) : null}
               {latest.audioUrl ? (
                 <audio
                   className="mt-5 w-full"
@@ -707,6 +803,38 @@ function NarrationWorkspace({
                   </li>
                 ))}
               </ol>
+              {data && data.versions.length > 1 ? (
+                <div className="mt-8 border-t border-white/10 pt-5">
+                  <h4 className="text-sm font-semibold">Narration history</h4>
+                  <ol className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {data.versions.map((version, index) => (
+                      <li
+                        className="rounded-lg border border-white/10 bg-white/5 p-3"
+                        key={version._id}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <strong className="text-sm">
+                            Version {version.version}
+                          </strong>
+                          <span
+                            className={`text-xs ${
+                              index === 0
+                                ? "text-emerald-300"
+                                : "text-amber-300"
+                            }`}
+                          >
+                            {index === 0 ? "Current" : "Superseded"}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-400">
+                          {version.provenance} ·{" "}
+                          {formatDuration(version.durationMs)}
+                        </p>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              ) : null}
             </div>
           ) : data && !latestJob ? (
             <div className="py-12 text-center">
@@ -1628,8 +1756,13 @@ function fileMediaType(file: File): string {
   const fallback: Record<string, string> = {
     csv: "text/csv",
     json: "application/json",
+    m4a: "audio/mp4",
     md: "text/markdown",
+    mp3: "audio/mpeg",
+    ogg: "audio/ogg",
     txt: "text/plain",
+    wav: "audio/wav",
+    webm: "audio/webm",
   };
   return extension ? (fallback[extension] ?? "") : "";
 }

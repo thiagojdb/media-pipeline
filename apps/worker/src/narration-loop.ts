@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
+import path from "node:path";
 
 import { ConvexHttpClient } from "convex/browser";
 import { anyApi } from "convex/server";
@@ -10,7 +13,10 @@ const MAX_DURATION_MS = 120_000;
 
 type NarrationJob = {
   _id: string;
-  scriptContent: string;
+  kind?: "generated" | "upload";
+  scriptContent?: string;
+  sourceUrl?: string;
+  sourceMediaType?: string;
   attempt: number;
   cancelRequested: boolean;
 };
@@ -101,6 +107,13 @@ export class NarrationLoop {
         );
         return;
       }
+      if (job.kind === "upload") {
+        await this.#probeUpload(job, lease, startedAt);
+        return;
+      }
+      if (!job.scriptContent) {
+        throw new Error("Generated narration job has no script content.");
+      }
       const generated = generateDeterministicNarration(job.scriptContent);
       const current = (await this.#client.query(api.getForWorker!, {
         workerToken: this.workerToken,
@@ -149,6 +162,54 @@ export class NarrationLoop {
         `Narration job ${job._id} failed safely: ${safeMessage(error)}`,
       );
     }
+  }
+
+  async #probeUpload(
+    job: NarrationJob,
+    lease: {
+      workerToken: string;
+      jobId: string;
+      workerId: string;
+      leaseAttempt: number;
+    },
+    startedAt: number,
+  ): Promise<void> {
+    if (!job.sourceUrl || !job.sourceMediaType) {
+      throw new Error("Uploaded narration job has no source audio.");
+    }
+    const response = await fetch(job.sourceUrl);
+    if (!response.ok) {
+      throw new Error(
+        `Narration download failed with status ${response.status}.`,
+      );
+    }
+    const audio = Buffer.from(await response.arrayBuffer());
+    if (audio.length > 100 * 1024 * 1024) {
+      throw new Error("Narration upload exceeds the worker probe limit.");
+    }
+    const metadata = await probeAudio(audio);
+    const current = (await this.#client.query(api.getForWorker!, {
+      workerToken: this.workerToken,
+      jobId: job._id,
+    })) as { cancelRequested?: boolean } | null;
+    if (!current || current.cancelRequested) {
+      await this.#fail(
+        lease,
+        "canceled",
+        "narration_canceled",
+        "Narration upload probing canceled.",
+      );
+      return;
+    }
+    await this.#client.mutation(api.completeUpload!, {
+      ...lease,
+      durationMs: metadata.durationMs,
+      mediaType: job.sourceMediaType,
+      audioCodec: metadata.audioCodec,
+      sampleRate: metadata.sampleRate,
+      channels: metadata.channels,
+      wallTimeMs: Date.now() - startedAt,
+    });
   }
 
   #fail(
@@ -200,6 +261,105 @@ export function generateDeterministicNarration(content: string): {
     durationMs,
     timingSegments,
   };
+}
+
+export async function probeAudio(audio: Buffer): Promise<{
+  durationMs: number;
+  audioCodec: string;
+  sampleRate: number;
+  channels: number;
+}> {
+  const root = path.resolve(
+    process.env.RELAY_NARRATION_TMPDIR ?? ".relay/narration-probes",
+  );
+  await mkdir(root, { recursive: true });
+  const directory = await mkdtemp(path.join(root, "probe-"));
+  const input = path.join(directory, "narration-audio");
+  try {
+    await writeFile(input, audio, { flag: "wx" });
+    return await probeAudioFile(input);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function probeAudioFile(input: string): Promise<{
+  durationMs: number;
+  audioCodec: string;
+  sampleRate: number;
+  channels: number;
+}> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "ffprobe",
+      [
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration:stream=codec_name,sample_rate,channels,duration",
+        "-of",
+        "json",
+        input,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(
+          new Error(
+            `FFprobe rejected narration audio: ${Buffer.concat(stderr)
+              .toString("utf8")
+              .slice(0, 400)}`,
+          ),
+        );
+        return;
+      }
+      try {
+        const result = JSON.parse(Buffer.concat(stdout).toString("utf8")) as {
+          format?: { duration?: string };
+          streams?: Array<{
+            codec_name?: string;
+            sample_rate?: string;
+            channels?: number;
+            duration?: string;
+          }>;
+        };
+        const stream = result.streams?.find(
+          (candidate) => candidate.codec_name && candidate.sample_rate,
+        );
+        const durationMs = Math.round(
+          Number.parseFloat(result.format?.duration ?? stream?.duration ?? "") *
+            1_000,
+        );
+        const sampleRate = Number.parseInt(stream?.sample_rate ?? "", 10);
+        const channels = stream?.channels ?? 0;
+        if (
+          !Number.isSafeInteger(durationMs) ||
+          durationMs < 100 ||
+          !stream?.codec_name ||
+          !Number.isSafeInteger(sampleRate) ||
+          sampleRate < 1 ||
+          !Number.isSafeInteger(channels) ||
+          channels < 1
+        ) {
+          throw new Error("FFprobe returned incomplete narration metadata.");
+        }
+        resolve({
+          durationMs,
+          audioCodec: stream.codec_name,
+          sampleRate,
+          channels,
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
 }
 
 function splitSegments(content: string): string[] {

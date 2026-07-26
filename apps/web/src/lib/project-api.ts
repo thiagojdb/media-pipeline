@@ -54,7 +54,7 @@ export type ProjectScriptVersionSummary = {
 export type ProjectNarrationVersion = {
   _id: string;
   projectId: string;
-  scriptVersionId: string;
+  scriptVersionId?: string;
   version: number;
   provenance: "generated" | "upload";
   audioUrl?: string;
@@ -68,6 +68,10 @@ export type ProjectNarrationVersion = {
   }>;
   provider?: string;
   model?: string;
+  fileName?: string;
+  audioCodec?: string;
+  sampleRate?: number;
+  channels?: number;
   usageCharacters?: number;
   estimatedCostUsd?: number;
   wallTimeMs?: number;
@@ -76,7 +80,8 @@ export type ProjectNarrationVersion = {
 
 export type ProjectNarrationJob = {
   _id: string;
-  scriptVersionId: string;
+  scriptVersionId?: string;
+  kind?: "generated" | "upload";
   state:
     | "queued"
     | "running"
@@ -243,6 +248,30 @@ export async function cancelProjectNarration(
     ...access(workspace),
     projectId,
     jobId,
+  })) as { jobId: string };
+}
+
+export async function prepareNarrationUpload(
+  projectId: string,
+  input: { fileName: string; mediaType: string; byteSize: number },
+): Promise<{ uploadUrl: string; maximumBytes: number }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(anyApi.projectNarrations!.prepareUpload!, {
+    ...access(workspace),
+    projectId,
+    ...input,
+  })) as { uploadUrl: string; maximumBytes: number };
+}
+
+export async function finalizeNarrationUpload(
+  projectId: string,
+  input: { storageId: string; fileName: string; mediaType: string },
+): Promise<{ jobId: string }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(anyApi.projectNarrations!.enqueueUpload!, {
+    ...access(workspace),
+    projectId,
+    ...input,
   })) as { jobId: string };
 }
 

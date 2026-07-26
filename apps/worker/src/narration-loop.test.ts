@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { generateDeterministicNarration } from "./narration-loop.js";
+import {
+  generateDeterministicNarration,
+  probeAudio,
+} from "./narration-loop.js";
 
 describe("deterministic fake narration", () => {
   it("generates playable PCM WAV bytes and stable sentence timing", () => {
@@ -32,5 +35,16 @@ describe("deterministic fake narration", () => {
     expect(generated.durationMs).toBeLessThanOrEqual(120_000);
     expect(generated.timingSegments.length).toBeLessThanOrEqual(200);
     expect(generated.audio.length).toBeLessThanOrEqual(3_840_044);
+  });
+
+  it("probes uploaded audio through FFprobe", async () => {
+    const generated = generateDeterministicNarration("Probe this audio.");
+
+    await expect(probeAudio(generated.audio)).resolves.toEqual({
+      durationMs: generated.durationMs,
+      audioCodec: "pcm_s16le",
+      sampleRate: 16_000,
+      channels: 1,
+    });
   });
 });

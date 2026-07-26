@@ -40,10 +40,38 @@ test("creates, opens, renames, and archives a channel project through real route
     provenance: "manual" | "import";
     createdAt: number;
   }> = [];
+  type MockNarrationVersion = {
+    _id: string;
+    projectId: string;
+    scriptVersionId?: string;
+    version: number;
+    provenance: "generated" | "upload";
+    mediaType: string;
+    audioUrl: string;
+    durationMs: number;
+    timingSegments: Array<{
+      index: number;
+      startMs: number;
+      endMs: number;
+      text: string;
+    }>;
+    provider: string;
+    model: string;
+    fileName?: string;
+    audioCodec?: string;
+    sampleRate?: number;
+    channels?: number;
+    usageCharacters?: number;
+    estimatedCostUsd?: number;
+    wallTimeMs: number;
+    createdAt: number;
+  };
+  const narrationVersions: MockNarrationVersion[] = [];
   let narrationJob:
     | {
         _id: string;
-        scriptVersionId: string;
+        kind: "generated" | "upload";
+        scriptVersionId?: string;
         state: "queued" | "succeeded";
         cancelRequested: false;
         provider: string;
@@ -53,6 +81,8 @@ test("creates, opens, renames, and archives a channel project through real route
       }
     | undefined;
   let narrationPolls = 0;
+  let narrationUploadCount = 0;
+  let pendingNarrationFileName = "";
 
   await page.context().route("https://upload.test/source", async (route) => {
     expect(route.request().method()).toBe("POST");
@@ -67,6 +97,14 @@ test("creates, opens, renames, and archives a channel project through real route
     await route.fulfill({
       status: 200,
       json: { storageId: "storage-briefing" },
+    });
+  });
+  await page.context().route("https://upload.test/narration", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    narrationUploadCount += 1;
+    await route.fulfill({
+      status: 200,
+      json: { storageId: `narration-storage-${narrationUploadCount}` },
     });
   });
 
@@ -238,18 +276,48 @@ test("creates, opens, renames, and archives a channel project through real route
     ) {
       if (request.method() === "POST") {
         const input = request.postDataJSON() as {
-          action: "generate" | "cancel";
+          action: "generate" | "cancel" | "prepare_upload" | "finalize_upload";
           scriptVersionId?: string;
+          fileName?: string;
         };
         if (input.action === "generate") {
           narrationJob = {
             _id: "narration-job-1",
+            kind: "generated",
             scriptVersionId: String(input.scriptVersionId),
             state: "queued",
             cancelRequested: false,
             provider: "relay-fake-tts",
             model: "deterministic-wave-v1",
             createdAt: 300,
+          };
+          narrationPolls = 0;
+          await route.fulfill({
+            status: 202,
+            json: { jobId: narrationJob._id },
+          });
+          return;
+        }
+        if (input.action === "prepare_upload") {
+          pendingNarrationFileName = String(input.fileName);
+          await route.fulfill({
+            status: 202,
+            json: {
+              uploadUrl: "https://upload.test/narration",
+              maximumBytes: 100 * 1024 * 1024,
+            },
+          });
+          return;
+        }
+        if (input.action === "finalize_upload") {
+          narrationJob = {
+            _id: `narration-job-${narrationUploadCount + 1}`,
+            kind: "upload",
+            state: "queued",
+            cancelRequested: false,
+            provider: "relay-upload",
+            model: "ffprobe",
+            createdAt: 400 + narrationUploadCount,
           };
           narrationPolls = 0;
           await route.fulfill({
@@ -266,49 +334,79 @@ test("creates, opens, renames, and archives a channel project through real route
             narrationJob = {
               ...narrationJob,
               state: "succeeded",
-              terminalMessage: "Narration generated with timing.",
+              terminalMessage:
+                narrationJob.kind === "generated"
+                  ? "Narration generated with timing."
+                  : "Uploaded narration probed and ready.",
             };
+            if (
+              narrationJob.kind === "generated" &&
+              !narrationVersions.some(
+                (version) => version.provenance === "generated",
+              )
+            ) {
+              narrationVersions.unshift({
+                _id: "narration-version-1",
+                projectId: project._id,
+                scriptVersionId: narrationJob.scriptVersionId,
+                version: 1,
+                provenance: "generated",
+                mediaType: "audio/wav",
+                audioUrl: "data:audio/wav;base64,UklGRg==",
+                durationMs: 2_000,
+                timingSegments: [
+                  {
+                    index: 0,
+                    startMs: 0,
+                    endMs: 800,
+                    text: "Opening line.",
+                  },
+                  {
+                    index: 1,
+                    startMs: 800,
+                    endMs: 2_000,
+                    text: "The first explanation.",
+                  },
+                ],
+                provider: "relay-fake-tts",
+                model: "deterministic-wave-v1",
+                usageCharacters: 38,
+                estimatedCostUsd: 0,
+                wallTimeMs: 10,
+                createdAt: 310,
+              });
+            } else if (
+              narrationJob.kind === "upload" &&
+              !narrationVersions.some(
+                (version) => version.fileName === pendingNarrationFileName,
+              )
+            ) {
+              narrationVersions.unshift({
+                _id: `narration-version-${narrationVersions.length + 1}`,
+                projectId: project._id,
+                version: narrationVersions.length + 1,
+                provenance: "upload",
+                mediaType: "audio/wav",
+                audioUrl: "data:audio/wav;base64,UklGRg==",
+                durationMs: 2_500 + narrationUploadCount * 100,
+                timingSegments: [],
+                provider: "relay-upload",
+                model: "ffprobe",
+                fileName: pendingNarrationFileName,
+                audioCodec: "pcm_s16le",
+                sampleRate: 16_000,
+                channels: 1,
+                wallTimeMs: 12,
+                createdAt: 410 + narrationUploadCount,
+              });
+            }
           }
         }
-        const succeeded = narrationJob?.state === "succeeded";
         await route.fulfill({
           status: 200,
           json: {
             jobs: narrationJob ? [narrationJob] : [],
-            versions: succeeded
-              ? [
-                  {
-                    _id: "narration-version-1",
-                    projectId: project._id,
-                    scriptVersionId: narrationJob.scriptVersionId,
-                    version: 1,
-                    provenance: "generated",
-                    mediaType: "audio/wav",
-                    audioUrl: "data:audio/wav;base64,UklGRg==",
-                    durationMs: 2_000,
-                    timingSegments: [
-                      {
-                        index: 0,
-                        startMs: 0,
-                        endMs: 800,
-                        text: "Opening line.",
-                      },
-                      {
-                        index: 1,
-                        startMs: 800,
-                        endMs: 2_000,
-                        text: "The first explanation.",
-                      },
-                    ],
-                    provider: "relay-fake-tts",
-                    model: "deterministic-wave-v1",
-                    usageCharacters: 38,
-                    estimatedCostUsd: 0,
-                    wallTimeMs: 10,
-                    createdAt: 310,
-                  },
-                ]
-              : [],
+            versions: narrationVersions,
           },
         });
         return;
@@ -408,13 +506,45 @@ test("creates, opens, renames, and archives a channel project through real route
   await expect(page.getByText("0:00.0–0:00.8")).toBeVisible();
   await expect(page.getByText("Opening line.", { exact: true })).toBeVisible();
 
+  await page.getByLabel("Narration audio file").setInputFiles({
+    name: "voiceover.wav",
+    mimeType: "audio/wav",
+    buffer: Buffer.from("RIFF uploaded narration"),
+  });
+  await page
+    .getByRole("button", { name: "Upload and probe narration" })
+    .click();
+  await expect(
+    page.getByText("Uploaded narration probed and ready."),
+  ).toBeVisible();
+  await expect(page.getByText(/voiceover\.wav · pcm_s16le/)).toBeVisible();
+  await expect(page.getByText("Superseded")).toBeVisible();
+
+  await page.getByLabel("Narration audio file").setInputFiles({
+    name: "voiceover-final.wav",
+    mimeType: "audio/wav",
+    buffer: Buffer.from("RIFF replacement narration"),
+  });
+  await page
+    .getByRole("button", { name: "Upload and probe narration" })
+    .click();
+  await expect(
+    page.getByText("voiceover-final.wav", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText("Version 3", { exact: true })).toBeVisible();
+  await expect(page.getByText("Superseded")).toHaveCount(2);
+  await expect(page.locator("audio[controls]")).toHaveAttribute(
+    "src",
+    /^data:audio\/wav/,
+  );
+
   await expect(page.getByText("No sources added yet")).toBeVisible();
   await page.getByLabel("Source title").fill("National results");
   await page.getByLabel("URL").fill("https://example.com/results");
   await page.getByRole("button", { name: "Add web source" }).click();
   await expect(page.getByText("National results")).toBeVisible();
 
-  await page.getByRole("button", { name: "File" }).click();
+  await page.getByRole("button", { name: "File", exact: true }).click();
   await page.getByLabel("Choose a source file").setInputFiles({
     name: "briefing.txt",
     mimeType: "text/plain",
