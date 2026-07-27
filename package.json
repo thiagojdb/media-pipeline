@@ -10,7 +10,7 @@
     "predev": "npm run build:packages",
     "dev": "concurrently --kill-others-on-fail --names web,convex,worker --prefix-colors blue,magenta,green \"node scripts/wait-for-local-worker.mjs && PROJECTS_CONVEX_URL=http://127.0.0.1:3210 PROJECTS_SERVER_TOKEN=relay-local-projects npm run dev --workspace @relay/web\" \"convex dev\" \"node scripts/start-local-worker.mjs\"",
     "dev:loop": "npm run dev",
-    "dev:loop:real": "AUTHORING_MODE=real AUTHORING_PI_MODEL=openai-codex/gpt-5.4-mini npm run dev",
+    "dev:loop:real": "AUTHORING_MODE=real AUTHORING_PI_MODEL=openai-codex/gpt-5.6-sol npm run dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
@@ -25,6 +25,7 @@
     "isolation:smoke": "npm run isolation:smoke --workspace @relay/worker",
     "authoring:smoke": "npm run authoring:smoke --workspace @relay/worker",
     "pi:smoke": "npm run pi:smoke --workspace @relay/worker",
+    "script-revision:smoke": "npm run script-revision:smoke --workspace @relay/worker",
     "build": "npm run build:packages && npm run build --workspace @relay/worker && npm run build --workspace @relay/web",
     "build:sites": "npm run build:packages && npm run build:sites --workspace @relay/web",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build"

@@ -31,16 +31,17 @@ npm run dev:loop
 Both commands start the same complete local environment. Open
 `http://127.0.0.1:3000/projects` for video projects or
 `http://127.0.0.1:3000/component-loop` for component authoring. Local mode uses
-fixed development-only worker tokens and the deterministic fake authoring
-agent; it does not call a paid model. Generated candidates still pass through
-the real durable Convex queues, independent build validation, and explicit
-review.
+fixed development-only worker tokens. Component authoring remains
+deterministic by default, while an explicit **Ask for changes** action in the
+script editor uses the server-side Relay model. Automated tests set a fake
+script editor and never call a paid model.
 
 Current component-loop limits are deliberate: the creator route targets the
 animated line chart, and only trusted compiled versions 1.0.0 and 1.1.0 can be
-previewed or rendered. Local `dev:loop` uses deterministic fake authoring. A
-real Pi dogfood requires the explicit provider/model and server-only credential
-configuration documented below; no global or implicit authentication is used.
+previewed or rendered. Local `dev:loop` uses deterministic fake component
+authoring. The local launcher loads the configured Pi credential into the
+worker only for real script revisions; no credential enters Next.js, Convex,
+browser payloads, logs, or model input.
 
 `npm run dev` is the single start path. It runs the Next.js application, Convex development service, and Node worker together. On the first run, the Convex CLI configures a local development deployment and writes `.env.local`; later runs reuse that configuration. Choose a hosted project only when you explicitly want cloud development.
 
@@ -138,6 +139,28 @@ Jobs retain opaque `channelId`, `threadId`, `turnId`, optional parent-candidate,
 ## MED-128 authoring boundary
 
 Component authoring is explicitly opt-in with `AUTHORING_ENABLED=true`; normal development reports `authoring: disabled`. Fake mode is deterministic and follows the same context, workspace, Relay-tool, activity, usage, and MED-133 publication path as real mode without network/model calls. Real mode additionally requires `AUTHORING_MODE=real`, `AUTHORING_REAL_PI_ENABLED=true`, an exact `AUTHORING_PI_MODEL=provider/model`, a server-only `AUTHORING_PI_CREDENTIAL_JSON` containing one Pi `api_key` or OAuth credential, and per-turn budgets below reviewed ceilings. The worker parses that credential into an app-owned in-memory store; it never falls back to Pi's global auth file and never copies credentials into sessions, context, logs, or workspaces.
+
+Script revision generation is a separate provider-selectable worker boundary.
+Local development defaults `SCRIPT_REVISION_MODE=real`; the worker exposes only
+the server-configured provider/model allowlist to the editor. Kimi Code uses its
+OpenAI-compatible Chat Completions endpoint, while OpenAI uses the Responses API
+with strict Structured Outputs. `SCRIPT_REVISION_MODE=fake` is reserved for
+deterministic tests. Provider API keys remain server-only. The worker returns
+bounded Markdown plus provider, model, token, cost, and wall-time telemetry.
+Convex validates and stores that output as a reviewable proposal but never
+invokes the model itself.
+
+An explicit metered Kimi/OpenAI smoke can be run with:
+
+```bash
+SCRIPT_REVISION_SMOKE_CONFIRM=spend-model-tokens \
+KIMI_API_KEY=... \
+SCRIPT_REVISION_PROVIDER=kimi-code \
+SCRIPT_REVISION_MODEL=k3-256k \
+npm run script-revision:smoke
+```
+
+Normal verification never runs this smoke or calls a model provider.
 
 Authoring threads and turns are durable Convex records separate from build jobs. They retain opaque channel/thread/turn lineage, exact base source/hash, optional parent/base references, prior summaries, bounded tool activity, cumulative tokens/cache/cost/wall time, and an opaque Pi session reference. Every paid-capable turn gets exactly one infrastructure attempt; retrying is an explicit new turn rather than a hidden second spend. Candidate submission atomically creates or reuses the idempotent MED-133 validation job; it never validates, approves, promotes, or mutates a prior version.
 

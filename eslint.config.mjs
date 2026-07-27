@@ -12,6 +12,7 @@ export default defineConfig([
   },
   globalIgnores([
     "**/.next/**",
+    "**/.next-dev/**",
     "**/.open-next/**",
     "**/.vercel/**",
     "**/dist/**",

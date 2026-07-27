@@ -19,6 +19,7 @@ import type * as projectCompositions from "../projectCompositions.js";
 import type * as projectDraftRenders from "../projectDraftRenders.js";
 import type * as projectEditingAgent from "../projectEditingAgent.js";
 import type * as projectNarrations from "../projectNarrations.js";
+import type * as projectScriptRevisions from "../projectScriptRevisions.js";
 import type * as projects from "../projects.js";
 
 import type {
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   projectDraftRenders: typeof projectDraftRenders;
   projectEditingAgent: typeof projectEditingAgent;
   projectNarrations: typeof projectNarrations;
+  projectScriptRevisions: typeof projectScriptRevisions;
   projects: typeof projects;
 }>;
 

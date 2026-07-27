@@ -12,7 +12,6 @@ import {
   BookOpenText,
   Boxes,
   Check,
-  ChevronDown,
   CircleStop,
   Clapperboard,
   Download,
@@ -36,6 +35,11 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  MarkdownScriptEditor,
+  type MarkdownScriptEditorHandle,
+  type ScriptSelection,
+} from "@/components/markdown-script-editor";
 import { RelayShell } from "@/components/relay-shell";
 
 type Project = {
@@ -74,6 +78,36 @@ type ScriptVersion = {
 type ScriptVersionSummary = Omit<ScriptVersion, "content"> & {
   characterCount: number;
   excerpt: string;
+};
+
+type ScriptRevisionProposal = {
+  _id: string;
+  baseScriptVersionId: string;
+  baseScriptVersionNumber: number;
+  baseDraftHash: string;
+  scope: "selection" | "document";
+  selectionFrom: number;
+  selectionTo: number;
+  selectedText: string;
+  instruction: string;
+  replacementMarkdown: string;
+  rationale: string;
+  state: "reviewable" | "applied" | "rejected";
+  provider: string;
+  model: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  estimatedCostUsd?: number;
+  wallTimeMs?: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+type ScriptRevisionModel = {
+  provider: string;
+  model: string;
+  label: string;
+  default: boolean;
 };
 
 type NarrationVersion = {
@@ -399,7 +433,6 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
   const [saving, setSaving] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [stage, setStage] = useState<ProjectStage>("script");
-  const [scriptVersion, setScriptVersion] = useState<number>();
 
   const load = async () => {
     const value = await request<{ channel: Channel; project: Project }>(
@@ -457,6 +490,7 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
         body: JSON.stringify({ action: "archive" }),
       });
       await load();
+      setShowSettings(false);
     } catch (cause) {
       setError(errorMessage(cause));
     } finally {
@@ -469,66 +503,51 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
       {error ? <ProjectError message={error} /> : null}
       {!data && !error ? <ProjectLoading label="Opening project…" /> : null}
       {data ? (
-        <div className="min-w-0">
-          <header className="border-b border-[#dfe4e6] bg-white px-5 pt-5 lg:px-8 lg:pt-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <a
-                  className="mb-3 inline-flex items-center gap-1.5 text-xs font-medium text-[#68747d] hover:text-[#171b1f]"
-                  href="/projects"
-                >
-                  <ArrowLeft className="size-3.5" /> All projects
-                </a>
-                <div className="flex items-start gap-3">
-                  <h1 className="max-w-4xl min-w-0 font-[family-name:var(--font-display)] text-2xl leading-tight font-semibold tracking-[-0.025em] text-[#171b1f] lg:text-3xl">
+        <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+          <header className="shrink-0 border-b border-[#dfe4e6] bg-white px-4 pt-3 lg:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <a
+                aria-label="All projects"
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[#68747d] transition hover:bg-[#f0f2f0] hover:text-[#171b1f]"
+                href="/projects"
+                title="All projects"
+              >
+                <ArrowLeft className="size-4" />
+              </a>
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <h1 className="min-w-0 truncate font-[family-name:var(--font-display)] text-xl leading-tight font-semibold tracking-[-0.025em] text-[#171b1f] lg:text-[1.4rem]">
                     {data.project.name}
                   </h1>
                   <StatusPill status={data.project.status} />
                 </div>
-                <p className="mt-2 max-w-3xl text-sm leading-5 text-[#68747d]">
+                <p className="mt-0.5 truncate text-xs text-[#68747d]">
                   {data.project.description || "No production note"}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                {scriptVersion ? (
-                  <span className="hidden rounded-md border border-[#dfe4e6] bg-[#f7f8f5] px-2.5 py-1.5 font-mono text-[11px] text-[#68747d] sm:inline-flex">
-                    SCRIPT V{scriptVersion}
-                  </span>
-                ) : null}
-                <Button
-                  aria-expanded={showSettings}
-                  onClick={() => setShowSettings((value) => !value)}
-                  size="sm"
-                  variant="outline"
-                >
-                  <Settings2 />
-                  Project settings
-                  <ChevronDown
-                    className={`transition-transform ${
-                      showSettings ? "rotate-180" : ""
-                    }`}
-                  />
-                </Button>
-              </div>
+              <Button
+                aria-expanded={showSettings}
+                aria-label="Project settings"
+                className="shrink-0"
+                onClick={() => setShowSettings((value) => !value)}
+                size="icon"
+                title="Project settings"
+                variant="ghost"
+              >
+                <Settings2 />
+              </Button>
             </div>
 
             <ProjectStageNavigation onChange={setStage} stage={stage} />
           </header>
 
-          {showSettings ? (
-            <ProjectSettingsPanel
-              archive={archive}
-              description={description}
-              name={name}
-              onDescriptionChange={setDescription}
-              onNameChange={setName}
-              project={data.project}
-              saving={saving}
-              update={update}
-            />
-          ) : null}
-
-          <div className="min-w-0 px-4 py-4 sm:px-5 lg:px-8 lg:py-6">
+          <div
+            className={`min-h-0 min-w-0 flex-1 ${
+              stage === "script"
+                ? "overflow-hidden"
+                : "overflow-y-auto px-4 py-4 sm:px-5 lg:px-8 lg:py-6"
+            }`}
+          >
             {stage === "sources" ? (
               <SourceWorkspace
                 editable={data.project.status === "active"}
@@ -538,7 +557,6 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
             {stage === "script" ? (
               <ScriptWorkspace
                 editable={data.project.status === "active"}
-                onVersionChange={setScriptVersion}
                 projectId={projectId}
               />
             ) : null}
@@ -574,6 +592,51 @@ export function ProjectDetailWorkspace({ projectId }: { projectId: string }) {
               />
             ) : null}
           </div>
+          {showSettings ? (
+            <div className="absolute inset-0 z-50 flex justify-end">
+              <button
+                aria-label="Close project settings"
+                className="absolute inset-0 bg-[#171b1f]/15 backdrop-blur-[1px]"
+                onClick={() => setShowSettings(false)}
+                type="button"
+              />
+              <aside
+                aria-label="Project details"
+                aria-modal="true"
+                className="relative flex h-full w-full max-w-md flex-col border-l border-[#d8dddb] bg-[#f7f8f5] shadow-[-20px_0_60px_rgba(24,34,39,0.16)]"
+                role="dialog"
+              >
+                <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#dfe4e6] bg-white px-5">
+                  <div>
+                    <h2 className="font-[family-name:var(--font-display)] text-base font-semibold">
+                      Project details
+                    </h2>
+                    <p className="text-xs text-[#68747d]">
+                      Identity, production note, and lifecycle
+                    </p>
+                  </div>
+                  <button
+                    aria-label="Close project settings"
+                    className="flex size-8 items-center justify-center rounded-lg text-[#68747d] hover:bg-[#eef1ef] hover:text-[#171b1f]"
+                    onClick={() => setShowSettings(false)}
+                    type="button"
+                  >
+                    <X className="size-4" />
+                  </button>
+                </header>
+                <ProjectSettingsPanel
+                  archive={archive}
+                  description={description}
+                  name={name}
+                  onDescriptionChange={setDescription}
+                  onNameChange={setName}
+                  project={data.project}
+                  saving={saving}
+                  update={update}
+                />
+              </aside>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </RelayShell>
@@ -604,7 +667,7 @@ function ProjectStageNavigation({
   return (
     <nav
       aria-label="Production stages"
-      className="mt-5 flex gap-1 overflow-x-auto"
+      className="mt-2 flex gap-0.5 overflow-x-auto"
     >
       {projectStages.map((item) => {
         const Icon = item.icon;
@@ -612,7 +675,7 @@ function ProjectStageNavigation({
         return (
           <button
             aria-current={active ? "page" : undefined}
-            className={`relative flex h-11 shrink-0 items-center gap-2 px-3 text-sm font-medium transition ${
+            className={`relative flex h-9 shrink-0 items-center gap-1.5 px-2.5 text-xs font-medium transition ${
               active ? "text-[#171b1f]" : "text-[#68747d] hover:text-[#171b1f]"
             }`}
             key={item.id}
@@ -651,12 +714,9 @@ function ProjectSettingsPanel({
   update: (event: FormEvent) => Promise<void>;
 }) {
   return (
-    <section className="border-b border-[#dfe4e6] bg-[#f7f8f5] px-5 py-5 lg:px-8">
+    <section className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
       {project.status === "active" ? (
-        <form
-          className="grid max-w-5xl gap-4 lg:grid-cols-[minmax(15rem,0.8fr)_minmax(20rem,1.2fr)_auto]"
-          onSubmit={update}
-        >
+        <form className="flex min-h-full flex-col" onSubmit={update}>
           <label className="text-xs font-medium text-[#68747d]">
             Project name
             <input
@@ -668,18 +728,22 @@ function ProjectSettingsPanel({
               value={name}
             />
           </label>
-          <label className="text-xs font-medium text-[#68747d]">
+          <label className="mt-5 text-xs font-medium text-[#68747d]">
             Production note
-            <input
-              className="mt-1.5 h-10 w-full rounded-lg border border-[#cfd6d9] bg-white px-3 text-sm text-[#171b1f] outline-none focus:border-[#355ce8] focus:ring-2 focus:ring-[#355ce8]/15"
+            <textarea
+              className="mt-1.5 min-h-32 w-full resize-y rounded-lg border border-[#cfd6d9] bg-white px-3 py-2.5 text-sm leading-5 text-[#171b1f] outline-none focus:border-[#355ce8] focus:ring-2 focus:ring-[#355ce8]/15"
               id="edit-description"
               maxLength={2000}
               onChange={(event) => onDescriptionChange(event.target.value)}
               value={description}
             />
           </label>
-          <div className="flex items-end gap-2">
-            <Button disabled={saving || !name.trim()} type="submit">
+          <div className="mt-auto flex flex-col gap-3 border-t border-[#dfe4e6] pt-5">
+            <Button
+              className="w-full"
+              disabled={saving || !name.trim()}
+              type="submit"
+            >
               {saving ? (
                 <LoaderCircle className="animate-spin" />
               ) : (
@@ -688,14 +752,14 @@ function ProjectSettingsPanel({
               Save changes
             </Button>
             <Button
-              aria-label="Archive project"
+              className="w-full text-[#a52f21]"
               disabled={saving}
               onClick={() => void archive()}
-              size="icon"
               type="button"
               variant="outline"
             >
               <Archive />
+              Archive project
             </Button>
           </div>
         </form>
@@ -2872,11 +2936,9 @@ function NarrationWorkspace({
 
 function ScriptWorkspace({
   editable,
-  onVersionChange,
   projectId,
 }: {
   editable: boolean;
-  onVersionChange?: (version: number | undefined) => void;
   projectId: string;
 }) {
   const [data, setData] = useState<{
@@ -2885,37 +2947,61 @@ function ScriptWorkspace({
     maximumCharacters: number;
   }>();
   const [content, setContent] = useState("");
-  const [provenance, setProvenance] = useState<"manual" | "import">("manual");
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [activeOutlineIndex, setActiveOutlineIndex] = useState(0);
-  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const [proposals, setProposals] = useState<ScriptRevisionProposal[]>();
+  const [revisionModels, setRevisionModels] = useState<ScriptRevisionModel[]>(
+    [],
+  );
+  const [revisionModelSpec, setRevisionModelSpec] = useState("");
+  const [relayBusy, setRelayBusy] = useState(false);
+  const [reviewingProposal, setReviewingProposal] =
+    useState<ScriptRevisionProposal>();
+  const editorRef = useRef<MarkdownScriptEditorHandle>(null);
 
   const refresh = useCallback(async () => {
-    const value = await request<{
-      current: ScriptVersion | null;
-      versions: ScriptVersionSummary[];
-      maximumCharacters: number;
-    }>(`/api/projects/${projectId}/scripts`);
+    const [value, revisionData] = await Promise.all([
+      request<{
+        current: ScriptVersion | null;
+        versions: ScriptVersionSummary[];
+        maximumCharacters: number;
+      }>(`/api/projects/${projectId}/scripts`),
+      request<ScriptRevisionProposal[]>(
+        `/api/projects/${projectId}/script-revisions`,
+      ),
+    ]);
     setData(value);
+    setProposals(revisionData);
     setContent(value.current?.content ?? "");
-    setProvenance(value.current?.provenance ?? "manual");
-    onVersionChange?.(value.current?.version);
-  }, [onVersionChange, projectId]);
+  }, [projectId]);
 
   useEffect(() => {
     let active = true;
-    void request<{
-      current: ScriptVersion | null;
-      versions: ScriptVersionSummary[];
-      maximumCharacters: number;
-    }>(`/api/projects/${projectId}/scripts`)
-      .then((value) => {
+    void Promise.all([
+      request<{
+        current: ScriptVersion | null;
+        versions: ScriptVersionSummary[];
+        maximumCharacters: number;
+      }>(`/api/projects/${projectId}/scripts`),
+      request<ScriptRevisionProposal[]>(
+        `/api/projects/${projectId}/script-revisions`,
+      ),
+      request<ScriptRevisionModel[]>(
+        `/api/projects/${projectId}/script-revisions?models=1`,
+      ),
+    ])
+      .then(([value, revisionData, modelData]) => {
         if (!active) return;
         setData(value);
+        setProposals(revisionData);
         setContent(value.current?.content ?? "");
-        setProvenance(value.current?.provenance ?? "manual");
-        onVersionChange?.(value.current?.version);
+        setRevisionModels(modelData);
+        setRevisionModelSpec(
+          scriptRevisionModelSpec(
+            modelData.find((model) => model.default) ?? modelData[0],
+          ),
+        );
       })
       .catch((cause) => {
         if (active) setError(errorMessage(cause));
@@ -2923,17 +3009,16 @@ function ScriptWorkspace({
     return () => {
       active = false;
     };
-  }, [onVersionChange, projectId]);
+  }, [projectId]);
 
-  const save = async (event: FormEvent) => {
-    event.preventDefault();
+  const save = async () => {
     setSaving(true);
     setError(undefined);
     try {
       await request(`/api/projects/${projectId}/scripts`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content, provenance }),
+        body: JSON.stringify({ content, provenance: "manual" }),
       });
       await refresh();
       window.dispatchEvent(new Event("relay-script-saved"));
@@ -2947,167 +3032,196 @@ function ScriptWorkspace({
   const outline = scriptOutline(content);
   const dirty = content !== (data?.current?.content ?? "");
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
-  const nextVersion = (data?.current?.version ?? 0) + 1;
 
   const jumpToOutlineItem = (item: ScriptOutlineItem, index: number) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.focus();
-    editor.setSelectionRange(item.offset, item.offset);
-    const maximumScroll = Math.max(
-      0,
-      editor.scrollHeight - editor.clientHeight,
-    );
-    editor.scrollTop =
-      content.length > 0 ? maximumScroll * (item.offset / content.length) : 0;
+    editorRef.current?.jumpToHeading(item.label);
     setActiveOutlineIndex(index);
   };
 
-  const updateOutlineFromScroll = () => {
-    const editor = editorRef.current;
-    if (!editor || outline.length === 0) return;
-    const maximumScroll = Math.max(
-      1,
-      editor.scrollHeight - editor.clientHeight,
+  const updateActiveOutline = (activeHeading: string) => {
+    if (!outline.length) return;
+    const activeIndex = outline.findIndex(
+      (item) => item.label.trim() === activeHeading.trim(),
     );
-    const approximateOffset =
-      (editor.scrollTop / maximumScroll) * content.length;
-    const index = outline.findLastIndex(
-      (item) => item.offset <= approximateOffset,
-    );
-    setActiveOutlineIndex(Math.max(0, index));
+    if (activeIndex >= 0) setActiveOutlineIndex(activeIndex);
   };
 
-  return (
-    <section className="overflow-hidden rounded-xl border border-[#dfe4e6] bg-white shadow-[0_16px_40px_rgba(24,34,39,0.06)]">
-      <div className="border-b border-[#dfe4e6] px-4 py-3.5 sm:px-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold tracking-[-0.015em] text-[#171b1f]">
-              Script
-            </h2>
-            <p className="mt-0.5 text-xs text-[#68747d]">
-              The narration copy that drives voice, timing, and the edit.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {dirty ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fff0ec] px-2.5 py-1 font-mono text-[10px] font-medium text-[#b53d2b] uppercase">
-                <span className="size-1.5 rounded-full bg-[#f45d48]" />
-                Unsaved changes
-              </span>
-            ) : null}
-            <span className="rounded-md bg-[#f1f3f1] px-2.5 py-1 font-mono text-[10px] text-[#68747d] uppercase">
-              {data?.current
-                ? `Working · v${data.current.version}`
-                : "No script yet"}
-            </span>
-          </div>
-        </div>
-      </div>
-      <div className="grid min-h-[calc(100dvh-15.5rem)] lg:grid-cols-[13.5rem_minmax(0,1fr)] xl:grid-cols-[14.5rem_minmax(0,1fr)_17rem]">
-        <aside className="hidden border-r border-[#e5e8e6] bg-[#f7f8f5] lg:block">
-          <div className="sticky top-0 p-4">
-            <p className="px-2 font-mono text-[10px] tracking-[0.12em] text-[#7b858c] uppercase">
-              Narrative outline
-            </p>
-            {outline.length ? (
-              <ol className="mt-3 space-y-0.5">
-                {outline.map((item, index) => (
-                  <li key={`${item.offset}-${item.label}`}>
-                    <button
-                      className={`relative w-full rounded-md py-2 pr-2 pl-5 text-left text-xs leading-4 transition ${
-                        activeOutlineIndex === index
-                          ? "bg-white font-medium text-[#171b1f] shadow-sm"
-                          : "text-[#68747d] hover:bg-white/70 hover:text-[#171b1f]"
-                      }`}
-                      onClick={() => jumpToOutlineItem(item, index)}
-                      title={item.label}
-                      type="button"
-                    >
-                      <span
-                        className={`absolute top-1/2 left-2 h-[calc(100%+0.125rem)] w-px -translate-y-1/2 ${
-                          activeOutlineIndex === index
-                            ? "bg-[#f45d48]"
-                            : "bg-[#d8dddb]"
-                        }`}
-                      />
-                      <span className="line-clamp-2">{item.label}</span>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="mt-3 px-2 text-xs leading-5 text-[#7b858c]">
-                Add section headings such as “Part one” or “Conclusion” to
-                create an outline.
-              </p>
-            )}
-          </div>
-        </aside>
+  const proposeRevision = async (
+    selection: ScriptSelection | null,
+    instruction: string,
+  ): Promise<boolean> => {
+    if (!data?.current) return false;
+    const selectedModel = revisionModels.find(
+      (model) => scriptRevisionModelSpec(model) === revisionModelSpec,
+    );
+    setRelayBusy(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}/script-revisions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "propose",
+          baseScriptVersionId: data.current._id,
+          baseDraft: content,
+          instruction,
+          scope: selection ? "selection" : "document",
+          selectionFrom: selection?.from ?? 0,
+          selectionTo: selection?.to ?? 0,
+          selectedText: selection?.text ?? content,
+          provider: selectedModel?.provider,
+          model: selectedModel?.model,
+        }),
+      });
+      const revisionData = await request<ScriptRevisionProposal[]>(
+        `/api/projects/${projectId}/script-revisions`,
+      );
+      setProposals(revisionData);
+      setReviewingProposal(
+        revisionData.find((proposal) => proposal.state === "reviewable"),
+      );
+      return true;
+    } catch (cause) {
+      setError(errorMessage(cause));
+      return false;
+    } finally {
+      setRelayBusy(false);
+    }
+  };
 
-        <div className="min-w-0 bg-white">
-          {error ? <ProjectError message={error} /> : null}
+  const decideRevision = async (
+    proposal: ScriptRevisionProposal,
+    decision: "apply" | "reject",
+    replacementMarkdown = proposal.replacementMarkdown,
+  ) => {
+    setRelayBusy(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}/script-revisions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: decision,
+          proposalId: proposal._id,
+          ...(decision === "apply"
+            ? { baseDraft: content, selectedText: proposal.selectedText }
+            : {}),
+        }),
+      });
+      if (decision === "apply") {
+        const revisedDraft = editorRef.current?.applyRevision({
+          baseDraft: content,
+          scope: proposal.scope,
+          from: proposal.selectionFrom,
+          to: proposal.selectionTo,
+          selectedText: proposal.selectedText,
+          replacementMarkdown,
+        });
+        if (!revisedDraft) {
+          throw new Error(
+            "The draft selection changed. Ask Relay for a fresh revision.",
+          );
+        }
+        setContent(revisedDraft);
+      }
+      setReviewingProposal(undefined);
+      const revisionData = await request<ScriptRevisionProposal[]>(
+        `/api/projects/${projectId}/script-revisions`,
+      );
+      setProposals(revisionData);
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setRelayBusy(false);
+    }
+  };
+
+  const relayPanelOpen =
+    !reviewingProposal &&
+    proposals?.some((proposal) => proposal.state === "reviewable");
+
+  return (
+    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-white">
+      <div
+        className={`grid min-h-0 flex-1 ${
+          relayPanelOpen ? "xl:grid-cols-[minmax(0,1fr)_19rem]" : ""
+        }`}
+      >
+        <div className="relative min-h-0 min-w-0 overflow-hidden bg-white">
+          {error ? (
+            <div
+              className="absolute top-11 right-3 left-3 z-30 flex items-center gap-3 rounded-lg border border-[#efc6c0] bg-[#fff5f3] px-3 py-2 text-xs text-[#a52f21] shadow-lg"
+              role="alert"
+            >
+              <span className="size-1.5 shrink-0 rounded-full bg-[#d94835]" />
+              <p className="min-w-0 flex-1">
+                <strong>Relay edit failed.</strong> {error}
+              </p>
+              <button
+                aria-label="Dismiss error"
+                className="flex size-6 shrink-0 items-center justify-center rounded-md hover:bg-[#f8ddd8]"
+                onClick={() => setError(undefined)}
+                type="button"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ) : null}
           {!data && !error ? <ProjectLoading label="Opening script…" /> : null}
           {data ? (
             editable ? (
-              <form className="flex h-full min-h-0 flex-col" onSubmit={save}>
-                <label className="sr-only" htmlFor="script">
-                  Script text
-                </label>
-                <textarea
-                  className="min-h-[34rem] flex-1 resize-none border-0 bg-white px-5 py-7 font-[family-name:var(--font-script)] text-[15px] leading-8 text-[#20262a] outline-none placeholder:font-sans placeholder:text-[#9aa2a6] focus:ring-0 sm:px-8 lg:min-h-[calc(100dvh-19.5rem)] lg:px-10"
-                  id="script"
-                  maxLength={data.maximumCharacters}
-                  onChange={(event) => setContent(event.target.value)}
-                  onScroll={updateOutlineFromScroll}
-                  placeholder="Paste or write the narration script here…"
-                  ref={editorRef}
-                  spellCheck
-                  value={content}
-                />
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e5e8e6] bg-white px-4 py-3 sm:px-5">
-                  <div className="flex flex-wrap items-center gap-3 font-mono text-[10px] text-[#7b858c] uppercase">
-                    <span>{wordCount.toLocaleString()} words</span>
-                    <span aria-hidden="true">·</span>
-                    <span>~{Math.max(1, Math.ceil(wordCount / 145))} min</span>
-                    <span aria-hidden="true">·</span>
-                    <span>
-                      {content.length.toLocaleString()} /{" "}
-                      {data.maximumCharacters.toLocaleString()} chars
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <label className="sr-only" htmlFor="script-provenance">
-                      Script provenance
-                    </label>
-                    <select
-                      aria-label="Script provenance"
-                      className="h-9 rounded-md border border-[#cfd6d9] bg-white px-3 text-xs text-[#4e5960] outline-none focus:border-[#355ce8] focus:ring-2 focus:ring-[#355ce8]/15"
-                      id="script-provenance"
-                      onChange={(event) =>
-                        setProvenance(event.target.value as "manual" | "import")
-                      }
-                      value={provenance}
-                    >
-                      <option value="manual">Written here</option>
-                      <option value="import">Imported</option>
-                    </select>
-                    <Button
-                      className="bg-[#355ce8] text-white hover:bg-[#294cc8]"
-                      disabled={saving || !content.trim() || !dirty}
-                      type="submit"
-                    >
-                      {saving ? (
-                        <LoaderCircle className="animate-spin" />
-                      ) : (
-                        <Save />
-                      )}
-                      Save as version {nextVersion}
-                    </Button>
-                  </div>
+              <>
+                <div className="flex h-full min-h-0 flex-col">
+                  <MarkdownScriptEditor
+                    asking={relayBusy}
+                    dirty={dirty}
+                    editable={editable}
+                    maximumCharacters={data.maximumCharacters}
+                    onActiveHeadingChange={updateActiveOutline}
+                    onAskRelay={(selection, instruction) =>
+                      proposeRevision(selection, instruction)
+                    }
+                    onChange={setContent}
+                    onSave={() => void save()}
+                    onRevisionModelChange={setRevisionModelSpec}
+                    ref={editorRef}
+                    revisionModels={revisionModels}
+                    revisionModelSpec={revisionModelSpec}
+                    revisionReview={
+                      reviewingProposal
+                        ? {
+                            instruction: reviewingProposal.instruction,
+                            onApply: (replacementMarkdown) =>
+                              void decideRevision(
+                                reviewingProposal,
+                                "apply",
+                                replacementMarkdown,
+                              ),
+                            onClose: () => setReviewingProposal(undefined),
+                            original: reviewingProposal.selectedText,
+                            rationale: reviewingProposal.rationale,
+                            onReject: () =>
+                              void decideRevision(reviewingProposal, "reject"),
+                            revised: reviewingProposal.replacementMarkdown,
+                            scope: reviewingProposal.scope,
+                            selectionFrom: reviewingProposal.selectionFrom,
+                            selectionTo: reviewingProposal.selectionTo,
+                          }
+                        : undefined
+                    }
+                    saving={saving}
+                    value={content}
+                    wordCount={wordCount}
+                  />
                 </div>
-              </form>
+                {!reviewingProposal && outline.length ? (
+                  <ScriptMarkerRail
+                    activeIndex={activeOutlineIndex}
+                    items={outline}
+                    onJump={jumpToOutlineItem}
+                  />
+                ) : null}
+              </>
             ) : (
               <pre className="min-h-[34rem] px-6 py-8 font-[family-name:var(--font-script)] text-[15px] leading-8 whitespace-pre-wrap text-[#20262a] sm:px-10">
                 {data.current?.content ?? "No script was saved."}
@@ -3116,59 +3230,82 @@ function ScriptWorkspace({
           ) : null}
         </div>
 
-        <aside className="hidden border-l border-[#e5e8e6] bg-[#fbfcfa] xl:block">
+        <aside
+          className={`border-l border-[#e5e8e6] bg-[#fbfcfa] ${
+            relayPanelOpen
+              ? "fixed inset-x-3 bottom-3 z-50 block max-h-[min(38rem,calc(100dvh-1.5rem))] overflow-y-auto rounded-xl border shadow-[0_20px_60px_rgba(24,34,39,0.24)]"
+              : "hidden"
+          } xl:static xl:z-auto xl:max-h-none xl:overflow-visible xl:rounded-none xl:border-y-0 xl:border-r-0 xl:shadow-none`}
+        >
           <div className="p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-[#343c41]">
-                Version history
-              </h3>
-              <span className="font-mono text-[10px] text-[#7b858c]">
-                {data?.versions.length ?? 0}
-              </span>
+            <div className="mb-5 border-b border-[#e1e5e3] pb-5">
+              <div className="flex items-center gap-2">
+                <span className="flex size-7 items-center justify-center rounded-lg bg-[#171b1f] text-white">
+                  <MessageSquareText className="size-3.5" />
+                </span>
+                <div>
+                  <h3 className="text-xs font-semibold text-[#343c41]">
+                    Relay revisions
+                  </h3>
+                  <p className="text-[10px] text-[#7b858c]">
+                    Proposed, never silently applied
+                  </p>
+                </div>
+              </div>
+              {proposals?.find(
+                (proposal) => proposal.state === "reviewable",
+              ) ? (
+                <ol className="mt-4 space-y-2">
+                  {proposals
+                    .filter((proposal) => proposal.state === "reviewable")
+                    .map((proposal) => (
+                      <li
+                        className="rounded-lg border border-[#cfd8ff] bg-[#f4f6ff] p-3"
+                        key={proposal._id}
+                      >
+                        <p className="font-mono text-[9px] text-[#355ce8] uppercase">
+                          {proposal.scope} revision
+                        </p>
+                        <p className="mt-2 text-xs leading-4 font-medium text-[#343c41]">
+                          {proposal.instruction}
+                        </p>
+                        <div className="mt-2 rounded-md bg-white p-2">
+                          <p className="line-clamp-4 text-[11px] leading-4 text-[#4e5960]">
+                            {proposal.replacementMarkdown}
+                          </p>
+                        </div>
+                        <div className="mt-2 flex gap-1.5">
+                          <Button
+                            className="h-7 flex-1 text-[10px]"
+                            disabled={relayBusy}
+                            onClick={() => setReviewingProposal(proposal)}
+                            type="button"
+                          >
+                            <PencilLine />
+                            Review changes
+                          </Button>
+                          <Button
+                            aria-label="Reject script revision"
+                            className="size-7"
+                            disabled={relayBusy}
+                            onClick={() =>
+                              void decideRevision(proposal, "reject")
+                            }
+                            size="icon"
+                            type="button"
+                            variant="outline"
+                          >
+                            <X />
+                          </Button>
+                        </div>
+                        <p className="mt-2 font-mono text-[8px] text-[#8a9398]">
+                          {proposal.provider}/{proposal.model}
+                        </p>
+                      </li>
+                    ))}
+                </ol>
+              ) : null}
             </div>
-            <p className="mt-1 text-[11px] leading-4 text-[#7b858c]">
-              Every save creates an immutable production record.
-            </p>
-            {data?.versions.length ? (
-              <ol className="mt-4 space-y-2">
-                {data.versions.map((version, index) => (
-                  <li key={version._id}>
-                    <a
-                      className={`group block rounded-lg border p-3 transition ${
-                        index === 0
-                          ? "border-[#cfd8ff] bg-[#f4f6ff]"
-                          : "border-[#e1e5e3] bg-white hover:border-[#b9c1c4]"
-                      }`}
-                      href={`/projects/${projectId}/scripts/${version.version}`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <strong className="text-xs text-[#343c41]">
-                          Version {version.version}
-                        </strong>
-                        {index === 0 ? (
-                          <span className="font-mono text-[9px] text-[#355ce8] uppercase">
-                            Current
-                          </span>
-                        ) : (
-                          <ArrowRight className="size-3 text-[#9aa2a6] transition group-hover:translate-x-0.5" />
-                        )}
-                      </div>
-                      <p className="mt-2 line-clamp-2 text-[11px] leading-4 text-[#68747d]">
-                        {version.excerpt}
-                      </p>
-                      <p className="mt-2 font-mono text-[9px] text-[#8a9398] uppercase">
-                        {version.provenance} ·{" "}
-                        {version.characterCount.toLocaleString()} chars
-                      </p>
-                    </a>
-                  </li>
-                ))}
-              </ol>
-            ) : data ? (
-              <p className="mt-4 text-xs text-[#7b858c]">
-                Your first saved version will appear here.
-              </p>
-            ) : null}
           </div>
         </aside>
       </div>
@@ -3176,10 +3313,66 @@ function ScriptWorkspace({
   );
 }
 
+function scriptRevisionModelSpec(
+  model: ScriptRevisionModel | undefined,
+): string {
+  return model ? `${model.provider}/${model.model}` : "";
+}
+
 type ScriptOutlineItem = {
   label: string;
   offset: number;
 };
+
+function ScriptMarkerRail({
+  activeIndex,
+  items,
+  onJump,
+}: {
+  activeIndex: number;
+  items: ScriptOutlineItem[];
+  onJump: (item: ScriptOutlineItem, index: number) => void;
+}) {
+  return (
+    <nav
+      aria-label="Script sections"
+      className="pointer-events-none absolute top-1/2 right-3 z-20 hidden -translate-y-1/2 lg:flex lg:flex-col lg:items-end lg:gap-1"
+    >
+      {items.map((item, index) => {
+        const active = activeIndex === index;
+        const restingWidth =
+          index === 0 || index === items.length - 1
+            ? "w-5"
+            : index % 4 === 0
+              ? "w-4"
+              : "w-3";
+        return (
+          <button
+            aria-current={active ? "location" : undefined}
+            aria-label={`Jump to ${item.label}`}
+            className="group pointer-events-auto relative flex h-1.5 w-8 items-center justify-end focus-visible:outline-none"
+            key={`${item.offset}-${item.label}`}
+            onClick={() => onJump(item, index)}
+            type="button"
+          >
+            <span
+              aria-label={item.label}
+              className="pointer-events-none absolute right-10 max-w-72 translate-x-1 rounded-xl border border-white/10 bg-[#171b1f] px-3 py-2 text-left text-xs leading-4 font-medium whitespace-nowrap text-white opacity-0 shadow-[0_14px_34px_rgba(24,34,39,0.24)] transition group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100"
+              role="tooltip"
+            >
+              {item.label}
+            </span>
+            <span
+              className={`block h-[3px] rounded-full transition-all duration-150 group-hover:w-8 group-focus-visible:w-8 ${
+                active ? "w-8 bg-[#343c41]" : `${restingWidth} bg-[#c5cbc8]`
+              }`}
+            />
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
 
 function scriptOutline(content: string): ScriptOutlineItem[] {
   const headingPattern =
@@ -3188,11 +3381,13 @@ function scriptOutline(content: string): ScriptOutlineItem[] {
   let offset = 0;
 
   for (const line of content.split("\n")) {
-    const label = line.trim();
+    const rawLabel = line.trim();
+    const markdownHeading = rawLabel.match(/^#{1,3}\s+(.+?)\s*#*$/);
+    const label = markdownHeading?.[1]?.trim() ?? rawLabel;
     if (
       label &&
       label.length <= 140 &&
-      headingPattern.test(label) &&
+      (Boolean(markdownHeading) || headingPattern.test(label)) &&
       !items.some((item) => item.offset === offset)
     ) {
       items.push({ label, offset: offset + line.indexOf(label) });

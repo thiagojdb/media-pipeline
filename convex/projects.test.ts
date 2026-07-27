@@ -8,6 +8,7 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 const api = anyApi.projects!;
+const scriptRevisionApi = anyApi.projectScriptRevisions!;
 const narrationApi = anyApi.projectNarrations!;
 const beatsApi = anyApi.projectBeats!;
 const serverToken = "projects-test-token";
@@ -303,6 +304,157 @@ describe("membership-backed channel projects", () => {
         provenance: "manual",
       }),
     ).rejects.toThrow("read-only");
+  });
+
+  it("keeps script-agent revisions pinned, reviewable, and separate from immutable saves", async () => {
+    const t = convexTest(schema, modules);
+    const workspace = await bootstrap(t, "creator");
+    const projectId = await t.mutation(api.create, {
+      ...access(workspace.channel.id, "creator"),
+      name: "Agent-assisted script",
+    });
+    const baseDraft =
+      "# Cold open\n\nThis is really very important, in order to understand the result.";
+    const script = await t.mutation(api.saveScriptVersion, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      content: baseDraft,
+      provenance: "manual",
+    });
+    const selectedText =
+      "This is really very important, in order to understand the result.";
+    const { proposalId } = await t.mutation(scriptRevisionApi.propose, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      baseScriptVersionId: script.scriptVersionId,
+      baseDraft,
+      instruction: "Make this more concise",
+      scope: "selection",
+      selectionFrom: 14,
+      selectionTo: 80,
+      selectedText,
+      replacementMarkdown: "This is important, to understand the result.",
+      rationale: "Tightened the selected passage.",
+      provider: "relay-fake-script-editor",
+      model: "deterministic-revision-v1",
+      inputTokens: 0,
+      outputTokens: 0,
+      estimatedCostUsd: 0,
+      wallTimeMs: 0,
+    });
+
+    await expect(
+      t.query(scriptRevisionApi.list, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        _id: proposalId,
+        baseScriptVersionId: script.scriptVersionId,
+        state: "reviewable",
+        replacementMarkdown: "This is important, to understand the result.",
+        provider: "relay-fake-script-editor",
+      }),
+    ]);
+    await expect(
+      t.query(api.listScriptVersions, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+      }),
+    ).resolves.toMatchObject({ versions: [{ version: 1 }] });
+
+    await expect(
+      t.mutation(scriptRevisionApi.decide, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+        proposalId,
+        decision: "apply",
+        baseDraft: `${baseDraft}\n`,
+        selectedText,
+      }),
+    ).rejects.toThrow("draft changed");
+    await t.mutation(scriptRevisionApi.decide, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      proposalId,
+      decision: "apply",
+      baseDraft,
+      selectedText,
+    });
+    await expect(
+      t.query(scriptRevisionApi.list, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ _id: proposalId, state: "applied" }),
+    ]);
+    await expect(
+      t.query(api.listScriptVersions, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+      }),
+    ).resolves.toMatchObject({ versions: [{ version: 1 }] });
+
+    const plainDraft =
+      "COLD OPEN\n\n[VISUAL: Map fades in.]\n\nNARRATOR:\n\nOpening line.";
+    const markdownProposal = await t.mutation(scriptRevisionApi.propose, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      baseScriptVersionId: script.scriptVersionId,
+      baseDraft: plainDraft,
+      instruction: "Do proper markdown",
+      scope: "document",
+      selectionFrom: 0,
+      selectionTo: 0,
+      selectedText: plainDraft,
+      replacementMarkdown:
+        "## COLD OPEN\n\n**[VISUAL: Map fades in.]**\n\n**NARRATOR:**\n\nOpening line.",
+      rationale: "Applied script Markdown structure.",
+      provider: "relay-fake-script-editor",
+      model: "deterministic-revision-v1",
+      inputTokens: 0,
+      outputTokens: 0,
+      estimatedCostUsd: 0,
+      wallTimeMs: 0,
+    });
+    await expect(
+      t.query(scriptRevisionApi.list, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        _id: markdownProposal.proposalId,
+        replacementMarkdown:
+          "## COLD OPEN\n\n**[VISUAL: Map fades in.]**\n\n**NARRATOR:**\n\nOpening line.",
+      }),
+      expect.objectContaining({ _id: proposalId, state: "applied" }),
+    ]);
+
+    await expect(
+      t.mutation(scriptRevisionApi.propose, {
+        ...access(workspace.channel.id, "creator"),
+        projectId,
+        baseScriptVersionId: script.scriptVersionId,
+        baseDraft,
+        instruction: "Make it sound like a documentary",
+        scope: "document",
+        selectionFrom: 0,
+        selectionTo: 0,
+        selectedText: baseDraft,
+        replacementMarkdown:
+          "# Cold open\n\nThe result arrived with the weight of history.",
+        rationale: "Added a restrained documentary cadence.",
+        provider: "openai-codex",
+        model: "gpt-5.6-sol",
+        inputTokens: 42,
+        outputTokens: 18,
+        estimatedCostUsd: 0.001,
+        wallTimeMs: 320,
+      }),
+    ).resolves.toEqual({ proposalId: expect.any(String) });
   });
 
   it("runs durable generated narration through timing, playback storage, telemetry, and cancellation", async () => {

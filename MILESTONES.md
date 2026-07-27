@@ -188,6 +188,11 @@ measured residual limitations are recorded in `docs/M2_GOLDEN_RUN.md`.
 
 **Linear milestone:** Review-to-Final Video
 
+MED-157 establishes the Markdown-backed long-form script editor and the
+reviewable, exact-base script-revision proposal boundary. Real Relay model
+generation runs in the Node worker; deterministic generation remains confined
+to model-free automated tests.
+
 ### Outcome
 
 A creator or channel collaborator can render a draft, leave timestamped feedback, request bounded editing revisions, and produce a high-quality final video with subtitles.

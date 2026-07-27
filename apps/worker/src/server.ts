@@ -15,6 +15,11 @@ import {
   ComponentLoopRequestError,
   ComponentLoopService,
 } from "./component-loop-service.js";
+import {
+  type ScriptRevisionAgent,
+  ScriptRevisionAuthenticationError,
+  scriptRevisionInputSchema,
+} from "./script-revision-agent.js";
 
 const MAX_REQUEST_BYTES = 1_000_000;
 
@@ -27,6 +32,7 @@ export const createWorkerServer = ({
   narrationStatus,
   projectRenderStatus,
   componentLoop,
+  scriptRevisionAgent,
 }: {
   readonly authToken?: string;
   readonly draftRenders?: DraftRenderService;
@@ -40,6 +46,7 @@ export const createWorkerServer = ({
   readonly projectRenderStatus?: () =>
     "disabled" | "running" | "degraded" | "stopped";
   readonly componentLoop?: ComponentLoopService;
+  readonly scriptRevisionAgent?: ScriptRevisionAgent;
 } = {}): Server =>
   createServer(async (request, response) => {
     try {
@@ -69,6 +76,29 @@ export const createWorkerServer = ({
 
       if (url.pathname.startsWith("/component-loop")) {
         await handleComponentLoop(request, response, url, componentLoop);
+        return;
+      }
+      if (url.pathname === "/script-revisions") {
+        if (request.method !== "POST") {
+          sendJson(response, 405, { error: "method_not_allowed" });
+          return;
+        }
+        if (!scriptRevisionAgent) {
+          sendJson(response, 503, {
+            error: "script_revision_unavailable",
+            message: "Real Relay script editing is not configured.",
+          });
+          return;
+        }
+        const input = scriptRevisionInputSchema.parse(await readJson(request));
+        sendJson(response, 200, await scriptRevisionAgent.generate(input));
+        return;
+      }
+      if (
+        request.method === "GET" &&
+        url.pathname === "/script-revision-models"
+      ) {
+        sendJson(response, 200, scriptRevisionAgent?.listModels() ?? []);
         return;
       }
 
@@ -116,6 +146,13 @@ export const createWorkerServer = ({
 
       sendJson(response, 405, { error: "method_not_allowed" });
     } catch (error) {
+      if (error instanceof ScriptRevisionAuthenticationError) {
+        sendJson(response, 503, {
+          error: "script_revision_authentication_required",
+          message: error.message,
+        });
+        return;
+      }
       if (error instanceof DraftRenderRequestError) {
         sendJson(response, error.status, {
           error: error.code,

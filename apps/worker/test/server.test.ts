@@ -8,6 +8,7 @@ import {
   createFakeDraftRenderExecutor,
   DraftRenderService,
 } from "../src/draft-render-service.js";
+import { DeterministicFakeScriptRevisionAgent } from "../src/script-revision-agent.js";
 import { createWorkerServer } from "../src/server.js";
 
 const servers = new Set<ReturnType<typeof createWorkerServer>>();
@@ -106,6 +107,55 @@ describe("worker HTTP boundary", () => {
     await expect(authorized.json()).resolves.toMatchObject({
       error: "component_loop_unavailable",
     });
+  });
+
+  it("keeps model-free script revisions behind the worker boundary", async () => {
+    const server = createWorkerServer({
+      scriptRevisionAgent: new DeterministicFakeScriptRevisionAgent(),
+    }).listen(0, "127.0.0.1");
+    servers.add(server);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const response = await fetch(`http://127.0.0.1:${port}/script-revisions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        instruction: "Make this uppercase",
+        scope: "selection",
+        sourceMarkdown: "A stronger opening.",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      replacementMarkdown: "A STRONGER OPENING.",
+      provider: "relay-fake-script-editor",
+      model: "deterministic-revision-v1",
+    });
+  });
+
+  it("exposes only the worker-configured script revision models", async () => {
+    const server = createWorkerServer({
+      scriptRevisionAgent: new DeterministicFakeScriptRevisionAgent(),
+    }).listen(0, "127.0.0.1");
+    servers.add(server);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const { port } = server.address() as AddressInfo;
+
+    const response = await fetch(
+      `http://127.0.0.1:${port}/script-revision-models`,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual([
+      {
+        provider: "relay-fake-script-editor",
+        model: "deterministic-revision-v1",
+        label: "Relay test editor",
+        default: true,
+      },
+    ]);
   });
 
   it("creates, observes, and downloads a successful worker render", async () => {

@@ -51,6 +51,29 @@ export type ProjectScriptVersionSummary = {
   createdAt: number;
 };
 
+export type ProjectScriptRevisionProposal = {
+  _id: string;
+  baseScriptVersionId: string;
+  baseScriptVersionNumber: number;
+  baseDraftHash: string;
+  scope: "selection" | "document";
+  selectionFrom: number;
+  selectionTo: number;
+  selectedText: string;
+  instruction: string;
+  replacementMarkdown: string;
+  rationale: string;
+  state: "reviewable" | "applied" | "rejected";
+  provider: string;
+  model: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  estimatedCostUsd?: number;
+  wallTimeMs?: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type ProjectNarrationVersion = {
   _id: string;
   projectId: string;
@@ -339,6 +362,61 @@ export async function saveProjectScriptVersion(
     projectId,
     ...input,
   })) as { scriptVersionId: string; version: number };
+}
+
+export async function listProjectScriptRevisionProposals(
+  projectId: string,
+): Promise<ProjectScriptRevisionProposal[]> {
+  const workspace = await developmentWorkspace();
+  return (await convex().query(anyApi.projectScriptRevisions!.list!, {
+    ...access(workspace),
+    projectId,
+  })) as ProjectScriptRevisionProposal[];
+}
+
+export async function proposeProjectScriptRevision(
+  projectId: string,
+  input: {
+    baseScriptVersionId: string;
+    baseDraft: string;
+    instruction: string;
+    scope: "selection" | "document";
+    selectionFrom: number;
+    selectionTo: number;
+    selectedText: string;
+    replacementMarkdown: string;
+    rationale: string;
+    provider: string;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostUsd: number;
+    wallTimeMs: number;
+  },
+): Promise<{ proposalId: string }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(anyApi.projectScriptRevisions!.propose!, {
+    ...access(workspace),
+    projectId,
+    ...input,
+  })) as { proposalId: string };
+}
+
+export async function decideProjectScriptRevision(
+  projectId: string,
+  input: {
+    proposalId: string;
+    decision: "apply" | "reject";
+    baseDraft?: string;
+    selectedText?: string;
+  },
+): Promise<{ proposalId: string }> {
+  const workspace = await developmentWorkspace();
+  return (await convex().mutation(anyApi.projectScriptRevisions!.decide!, {
+    ...access(workspace),
+    projectId,
+    ...input,
+  })) as { proposalId: string };
 }
 
 export async function listProjectNarrations(projectId: string): Promise<{

@@ -12,7 +12,8 @@
     "render:smoke": "npm run build:dependencies && npm run build && node dist/render-smoke.js",
     "isolation:smoke": "npm run build:dependencies && npm run build && node dist/component-build/isolation-smoke.js",
     "authoring:smoke": "npm run build:dependencies && npm run build && node dist/component-authoring/authoring-smoke.js",
-    "pi:smoke": "npm run build:dependencies && npm run build && node dist/component-authoring/pi-smoke.js"
+    "pi:smoke": "npm run build:dependencies && npm run build && node dist/component-authoring/pi-smoke.js",
+    "script-revision:smoke": "npm run build && node dist/script-revision-smoke.js"
   },
   "devDependencies": {
     "@types/pngjs": "^6.0.5",

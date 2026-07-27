@@ -30,6 +30,10 @@ import {
   createFakeProjectRenderExecutor,
   ProjectRenderLoop,
 } from "./project-render-loop.js";
+import {
+  createScriptRevisionAgentFromEnvironment,
+  DeterministicFakeScriptRevisionAgent,
+} from "./script-revision-agent.js";
 
 const port = Number.parseInt(process.env.WORKER_PORT ?? "3212", 10);
 const useFakeRenderer = process.env.RELAY_RENDER_MODE === "fake";
@@ -73,6 +77,7 @@ if (componentBuildsEnabled && buildUrl && buildToken) {
 }
 const authoringEnabled = process.env.AUTHORING_ENABLED === "true";
 const authoringMode = process.env.AUTHORING_MODE ?? "fake";
+const scriptRevisionMode = process.env.SCRIPT_REVISION_MODE ?? "fake";
 const authoringUrl = process.env.AUTHORING_CONVEX_URL;
 const authoringToken = process.env.AUTHORING_WORKER_TOKEN;
 const relayPiSessionRoot = path.resolve(
@@ -85,6 +90,8 @@ if (authoringEnabled && (!authoringUrl || !authoringToken)) {
 }
 if (authoringEnabled && !["fake", "real"].includes(authoringMode))
   throw new Error("AUTHORING_MODE must be fake or real.");
+if (!["fake", "real"].includes(scriptRevisionMode))
+  throw new Error("SCRIPT_REVISION_MODE must be fake or real.");
 if (
   authoringEnabled &&
   authoringMode === "real" &&
@@ -150,6 +157,10 @@ const componentLoop =
           : new DeterministicFakeDialogueAgent(),
       )
     : undefined;
+const scriptRevisionAgent =
+  scriptRevisionMode === "real"
+    ? createScriptRevisionAgentFromEnvironment()
+    : new DeterministicFakeScriptRevisionAgent();
 
 const narrationEnabled = process.env.NARRATION_ENABLED === "true";
 const narrationUrl = process.env.NARRATION_CONVEX_URL;
@@ -191,6 +202,7 @@ const server = createWorkerServer({
   narrationStatus: () => narrationLoop?.status ?? "disabled",
   projectRenderStatus: () => projectRenderLoop?.status ?? "disabled",
   ...(componentLoop ? { componentLoop } : {}),
+  scriptRevisionAgent,
 });
 
 server.listen(port, "127.0.0.1", () => {

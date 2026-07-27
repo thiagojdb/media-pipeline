@@ -1,5 +1,214 @@
 @import "tailwindcss";
 
+.script-editor .tiptap {
+  color: #20262a;
+  font-family: var(--font-script), ui-serif, Georgia, serif;
+  font-size: 1rem;
+  line-height: 1.95;
+}
+
+.script-editor .tiptap > * {
+  margin-inline: auto;
+  max-width: 54rem;
+}
+
+.script-editor .tiptap p {
+  margin-block: 0 1.15em;
+}
+
+.script-editor .tiptap h1,
+.script-editor .tiptap h2,
+.script-editor .tiptap h3 {
+  color: #171b1f;
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.script-editor .tiptap h1 {
+  font-size: 1.8rem;
+  margin-block: 1.8em 0.65em;
+}
+
+.script-editor .tiptap h2 {
+  font-size: 1.35rem;
+  margin-block: 1.7em 0.6em;
+}
+
+.script-editor .tiptap h3 {
+  font-size: 1.1rem;
+  margin-block: 1.5em 0.5em;
+}
+
+.script-editor .tiptap > :first-child {
+  margin-top: 0;
+}
+
+.script-editor .tiptap blockquote {
+  border-left: 3px solid #f45d48;
+  color: #4e5960;
+  font-style: italic;
+  margin-block: 1.4em;
+  padding-left: 1.25rem;
+}
+
+.script-editor .tiptap ul,
+.script-editor .tiptap ol {
+  margin-block: 0 1.15em;
+  padding-left: 1.6rem;
+}
+
+.script-editor .tiptap ul {
+  list-style: disc;
+}
+
+.script-editor .tiptap ol {
+  list-style: decimal;
+}
+
+.script-editor .tiptap a {
+  color: #355ce8;
+  text-decoration: underline;
+  text-decoration-color: #b8c5ff;
+  text-underline-offset: 0.18em;
+}
+
+.script-editor .tiptap ::selection {
+  background: #dbe7ff;
+}
+
+.script-editor {
+  scrollbar-width: none;
+}
+
+.script-editor::-webkit-scrollbar {
+  display: none;
+}
+
+.script-revision-document .revision-original {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 0.2rem;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
+}
+
+.script-revision-document .revision-original-pending {
+  background: #fff1ee;
+  color: #8f625d;
+  text-decoration: line-through;
+  text-decoration-color: rgb(208 107 97 / 75%);
+}
+
+.script-revision-document .revision-original-accepted {
+  display: none;
+}
+
+.script-revision-document .revision-original-rejected {
+  background: #f1f3f2;
+}
+
+.script-revision-document .revision-widget {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+  margin-bottom: 0.7rem;
+  white-space: pre-wrap;
+}
+
+.script-revision-document .revision-replacement {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  border-radius: 0.2rem;
+  background: #edf2ff;
+  color: #2155df;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.script-revision-document .revision-widget-rejected .revision-replacement {
+  display: none;
+}
+
+.script-revision-document .revision-widget-rejected {
+  justify-content: flex-end;
+}
+
+.script-revision-document .revision-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  overflow: hidden;
+  vertical-align: middle;
+  border: 1px solid #dfe4e6;
+  border-radius: 0.625rem;
+  background: white;
+  box-shadow: 0 6px 18px rgb(24 34 39 / 14%);
+}
+
+.script-revision-document .revision-action {
+  display: inline-flex;
+  width: 1.8rem;
+  height: 1.8rem;
+  align-items: center;
+  justify-content: center;
+  color: #68747d;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    transform 140ms ease;
+}
+
+.script-revision-document .revision-action + .revision-action {
+  border-left: 1px solid #e5e8e6;
+}
+
+.script-revision-document .revision-action:hover {
+  background: #f7f8f5;
+}
+
+.script-revision-document .revision-action:active {
+  transform: translateY(1px);
+}
+
+.script-revision-document .revision-action:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #355ce8;
+  outline-offset: -2px;
+}
+
+.script-revision-document .revision-action-reject.is-active {
+  background: #fff0ec;
+  color: #b53d2b;
+}
+
+.script-revision-document .revision-action-accept {
+  color: #355ce8;
+}
+
+.script-revision-document .revision-action-accept.is-active {
+  background: #e8edff;
+}
+
+.script-revision-document .revision-action svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
 :root {
   --background: #f7f8f5;
   --foreground: #171b1f;

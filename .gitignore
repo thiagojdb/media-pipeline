@@ -1,5 +1,6 @@
 node_modules/
 .next/
+.next-dev/
 .open-next/
 dist/
 coverage/
@@ -10,6 +11,7 @@ blob-report/
 .pi-subagents/
 .env*
 !.env.example
+kimi-api-key-code-moonshot
 .convex/
 .DS_Store
 *.tsbuildinfo

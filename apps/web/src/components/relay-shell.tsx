@@ -14,8 +14,10 @@ export function RelayShell({
   fluid?: boolean;
 }) {
   return (
-    <main className="min-h-screen bg-[#f3f5f3] text-[#171b1f]">
-      <div className="flex min-h-screen">
+    <main
+      className={`${fluid ? "h-dvh overflow-hidden" : "min-h-screen"} bg-[#f3f5f3] text-[#171b1f]`}
+    >
+      <div className={`flex ${fluid ? "h-full" : "min-h-screen"}`}>
         <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-[#d8dddb] bg-[#edf0ee] lg:flex">
           <RelayIdentity channelName={channelName} />
           <RelayNavigation active={active} />
@@ -29,7 +31,9 @@ export function RelayShell({
           </div>
         </aside>
 
-        <div className="min-w-0 flex-1">
+        <div
+          className={`min-w-0 flex-1 ${fluid ? "flex min-h-0 flex-col overflow-hidden" : ""}`}
+        >
           <header className="flex h-16 items-center justify-between border-b border-[#d8dddb] bg-[#edf0ee] px-4 lg:hidden">
             <RelayIdentity channelName={channelName} compact />
             <RelayNavigation active={active} compact />
@@ -37,7 +41,9 @@ export function RelayShell({
 
           <div
             className={
-              fluid ? "min-w-0" : "mx-auto max-w-7xl px-5 py-8 lg:px-8 lg:py-10"
+              fluid
+                ? "min-h-0 min-w-0 flex-1 overflow-hidden"
+                : "mx-auto max-w-7xl px-5 py-8 lg:px-8 lg:py-10"
             }
           >
             {children}

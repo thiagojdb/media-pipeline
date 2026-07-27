@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -10,11 +10,14 @@ const loopToken = "relay-local-component-loop";
 const projectsToken = "relay-local-projects";
 const narrationToken = "relay-local-narration";
 const authoringMode = process.env.AUTHORING_MODE ?? "fake";
+const scriptRevisionMode = process.env.SCRIPT_REVISION_MODE ?? "real";
 if (!["fake", "real"].includes(authoringMode))
   throw new Error("AUTHORING_MODE must be fake or real.");
+if (!["fake", "real"].includes(scriptRevisionMode))
+  throw new Error("SCRIPT_REVISION_MODE must be fake or real.");
 let realAuthoringEnvironment = {};
 if (authoringMode === "real") {
-  const model = process.env.AUTHORING_PI_MODEL ?? "openai-codex/gpt-5.4-mini";
+  const model = process.env.AUTHORING_PI_MODEL ?? "openai-codex/gpt-5.6-sol";
   const provider = model.slice(0, model.indexOf("/"));
   const authFile =
     process.env.AUTHORING_PI_AUTH_FILE ??
@@ -29,6 +32,29 @@ if (authoringMode === "real") {
     AUTHORING_REAL_PI_ENABLED: "true",
     AUTHORING_PI_MODEL: model,
     AUTHORING_PI_CREDENTIAL_JSON: JSON.stringify(credential),
+  };
+}
+let realScriptRevisionEnvironment = {};
+if (scriptRevisionMode === "real") {
+  const localKeyFile = path.resolve("kimi-api-key-code-moonshot");
+  const keyFile =
+    process.env.SCRIPT_REVISION_KIMI_API_KEY_FILE ??
+    ((await fileExists(localKeyFile)) ? localKeyFile : undefined);
+  const kimiApiKey =
+    process.env.KIMI_API_KEY?.trim() ||
+    (keyFile ? (await readFile(keyFile, "utf8")).trim() : "");
+  if (!kimiApiKey && !process.env.OPENAI_API_KEY?.trim()) {
+    throw new Error(
+      "Real script editing requires KIMI_API_KEY, SCRIPT_REVISION_KIMI_API_KEY_FILE, or OPENAI_API_KEY.",
+    );
+  }
+  realScriptRevisionEnvironment = {
+    ...(kimiApiKey ? { KIMI_API_KEY: kimiApiKey } : {}),
+    SCRIPT_REVISION_PROVIDER:
+      process.env.SCRIPT_REVISION_PROVIDER ??
+      (kimiApiKey ? "kimi-code" : "openai"),
+    SCRIPT_REVISION_MODEL:
+      process.env.SCRIPT_REVISION_MODEL ?? (kimiApiKey ? "k3-256k" : "gpt-5.6"),
   };
 }
 
@@ -60,6 +86,7 @@ const child = spawn("npm", ["run", "dev", "--workspace", "@relay/worker"], {
     COMPONENT_BUILD_WORKER_TOKEN: buildToken,
     AUTHORING_ENABLED: "true",
     AUTHORING_MODE: authoringMode,
+    SCRIPT_REVISION_MODE: scriptRevisionMode,
     AUTHORING_CONVEX_URL: convexUrl,
     AUTHORING_WORKER_TOKEN: authoringToken,
     COMPONENT_LOOP_ENABLED: "true",
@@ -68,6 +95,7 @@ const child = spawn("npm", ["run", "dev", "--workspace", "@relay/worker"], {
     NARRATION_CONVEX_URL: convexUrl,
     NARRATION_WORKER_TOKEN: narrationToken,
     ...realAuthoringEnvironment,
+    ...realScriptRevisionEnvironment,
   },
 });
 for (const signal of ["SIGINT", "SIGTERM"]) {
@@ -88,6 +116,15 @@ async function waitForConvex() {
     }
   }
   throw new Error("Local Convex did not become ready within 120 seconds.");
+}
+
+async function fileExists(filePath) {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function run(command, args) {

@@ -40,6 +40,28 @@ test("creates, opens, renames, and archives a channel project through real route
     provenance: "manual" | "import";
     createdAt: number;
   }> = [];
+  const scriptRevisionProposals: Array<{
+    _id: string;
+    baseScriptVersionId: string;
+    baseScriptVersionNumber: number;
+    baseDraftHash: string;
+    scope: "selection" | "document";
+    selectionFrom: number;
+    selectionTo: number;
+    selectedText: string;
+    instruction: string;
+    replacementMarkdown: string;
+    rationale: string;
+    state: "reviewable" | "applied" | "rejected";
+    provider: string;
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostUsd: number;
+    wallTimeMs: number;
+    createdAt: number;
+    updatedAt: number;
+  }> = [];
   type MockNarrationVersion = {
     _id: string;
     projectId: string;
@@ -365,6 +387,84 @@ test("creates, opens, renames, and archives a channel project through real route
           return;
         }
       }
+    }
+    if (
+      url.pathname ===
+        "/api/projects/project-election-night/script-revisions" &&
+      project
+    ) {
+      if (request.method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          json:
+            url.searchParams.get("models") === "1"
+              ? [
+                  {
+                    provider: "relay-fake-script-editor",
+                    model: "deterministic-revision-v1",
+                    label: "Relay test editor",
+                    default: true,
+                  },
+                ]
+              : scriptRevisionProposals.toReversed(),
+        });
+        return;
+      }
+      const input = request.postDataJSON() as
+        | {
+            action: "propose";
+            baseScriptVersionId: string;
+            baseDraft: string;
+            instruction: string;
+            scope: "selection" | "document";
+            selectionFrom: number;
+            selectionTo: number;
+            selectedText: string;
+          }
+        | {
+            action: "apply" | "reject";
+            proposalId: string;
+          };
+      if (input.action === "propose") {
+        const base = scriptVersions.at(-1)!;
+        const proposal = {
+          _id: `script-proposal-${scriptRevisionProposals.length + 1}`,
+          baseScriptVersionId: input.baseScriptVersionId,
+          baseScriptVersionNumber: base.version,
+          baseDraftHash: "draft-hash",
+          scope: input.scope,
+          selectionFrom: input.selectionFrom,
+          selectionTo: input.selectionTo,
+          selectedText: input.selectedText,
+          instruction: input.instruction,
+          replacementMarkdown: input.selectedText.toUpperCase(),
+          rationale: "Make the selected passage more direct.",
+          state: "reviewable" as const,
+          provider: "relay-fake-script-editor",
+          model: "deterministic-revision-v1",
+          inputTokens: 0,
+          outputTokens: 0,
+          estimatedCostUsd: 0,
+          wallTimeMs: 0,
+          createdAt: 250,
+          updatedAt: 250,
+        };
+        scriptRevisionProposals.push(proposal);
+        await route.fulfill({
+          status: 201,
+          json: { proposalId: proposal._id },
+        });
+        return;
+      }
+      const proposal = scriptRevisionProposals.find(
+        (candidate) => candidate._id === input.proposalId,
+      )!;
+      proposal.state = input.action === "apply" ? "applied" : "rejected";
+      await route.fulfill({
+        status: 200,
+        json: { proposalId: proposal._id },
+      });
+      return;
     }
     if (
       url.pathname === "/api/projects/project-election-night/scripts" &&
@@ -928,31 +1028,77 @@ test("creates, opens, renames, and archives a channel project through real route
   await expect(page.getByLabel("Project name")).toHaveValue(
     "Election night explained",
   );
-  await page.getByRole("button", { name: /Project settings/ }).click();
-
-  const firstScript = "Opening line.\n\nThe first explanation.";
-  await page.getByLabel("Script text").fill(firstScript);
-  await page.getByLabel("Script provenance").selectOption("import");
-  await page.getByRole("button", { name: "Save as version 1" }).click();
-  await expect(page.getByText("Working · v1")).toBeVisible();
-
   await page
-    .getByLabel("Script text")
-    .fill("Revised opening.\n\nThe first explanation.");
-  await page.getByLabel("Script provenance").selectOption("manual");
-  await page.getByRole("button", { name: "Save as version 2" }).click();
-  await expect(page.getByText("Working · v2")).toBeVisible();
-  await page.getByRole("link", { name: /Version 1/ }).click();
-  await expect(page).toHaveURL(
-    /\/projects\/project-election-night\/scripts\/1$/,
-  );
-  await expect(page.getByText(firstScript, { exact: true })).toBeVisible();
+    .getByRole("dialog", { name: "Project details" })
+    .getByRole("button", { name: "Close project settings" })
+    .click();
+
+  const scriptEditor = page.getByRole("textbox", { name: "Script text" });
+  await scriptEditor.fill("Opening line\n\nThe first explanation.");
+  await scriptEditor.press("Control+a");
+  await page.getByRole("button", { name: "Heading 1" }).click();
+  const firstScriptRefresh = page.waitForResponse((response) => {
+    const request = response.request();
+    return (
+      request.method() === "GET" &&
+      new URL(response.url()).pathname.endsWith(
+        "/project-election-night/scripts",
+      )
+    );
+  });
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await firstScriptRefresh;
+  await expect(
+    page.getByRole("button", { name: "Save", exact: true }),
+  ).toBeDisabled();
+
+  await scriptEditor.fill("Revised opening\n\nThe first explanation.");
+  await scriptEditor.press("Control+a");
+  await page.getByRole("button", { name: "Heading 2" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Save", exact: true }),
+  ).toBeDisabled();
+  await scriptEditor.selectText();
+  await page
+    .getByRole("button", { name: "Ask for changes to selection" })
+    .click();
+  await page.getByLabel("Describe changes").fill("Make this uppercase");
+  await page.getByLabel("Describe changes").press("Enter");
+  await expect(page.getByText(/REVISED OPENING/).first()).toBeVisible();
+  const originalDiffLine = page.locator(".revision-original-pending").first();
+  const replacementDiffLine = page.locator(".revision-replacement").first();
+  await expect(originalDiffLine).toBeVisible();
+  await expect(replacementDiffLine).toBeVisible();
+  await expect
+    .poll(async () => {
+      const originalBox = await originalDiffLine.boundingBox();
+      const replacementBox = await replacementDiffLine.boundingBox();
+      if (!originalBox || !replacementBox) return -1;
+      return Math.round(
+        replacementBox.y - (originalBox.y + originalBox.height),
+      );
+    })
+    .toBeGreaterThanOrEqual(0);
+  const rejectChanges = page.getByRole("button", {
+    name: "Reject this change",
+  });
+  const changeCount = await rejectChanges.count();
+  expect(changeCount).toBeGreaterThan(1);
+  await rejectChanges.first().click();
+  const remainingCount = changeCount - 1;
+  await expect(
+    page.getByText(
+      `${remainingCount} ${remainingCount === 1 ? "change" : "changes"} left · 1 rejected`,
+    ),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Accept remaining" }).click();
+  await expect(scriptEditor).toContainText("Revised opening");
+  await expect(scriptEditor).toContainText("THE FIRST EXPLANATION.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.reload();
-  await expect(page.getByText(firstScript, { exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "Back to project" }).click();
-  await expect(page.getByLabel("Script text")).toHaveValue(
-    "Revised opening.\n\nThe first explanation.",
-  );
+  await expect(scriptEditor).toContainText("Revised opening");
+  await expect(scriptEditor).toContainText("THE FIRST EXPLANATION.");
 
   await page.getByRole("button", { name: "Voice", exact: true }).click();
   await page.getByLabel("Script version").selectOption("script-1");
@@ -1028,7 +1174,10 @@ test("creates, opens, renames, and archives a channel project through real route
   editCompositionReads = 0;
   editBeatReads = 0;
   editLibraryReads = 0;
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Production stages" })
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
   await expect(
     page.getByRole("heading", {
       name: "Place approved visuals on the story",
@@ -1055,7 +1204,10 @@ test("creates, opens, renames, and archives a channel project through real route
   await page.getByRole("button", { name: "Save inputs" }).click();
   await expect(page.getByText("Composition version 2 saved.")).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Production stages" })
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
   await expect(page.getByLabel("Segment 1 inputs")).toContainText(
     "Verified regional result",
   );
@@ -1127,7 +1279,10 @@ test("creates, opens, renames, and archives a channel project through real route
     "relay-project-draft.mp4",
   );
 
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Production stages" })
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
   await page.getByLabel("Editing request").fill("put the chart on beat 9");
   await page.getByRole("button", { name: "Ask Relay for proposal" }).click();
   await expect(page.getByText("invalid", { exact: true })).toBeVisible();
@@ -1193,7 +1348,7 @@ test("creates, opens, renames, and archives a channel project through real route
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Archive project" }).click();
-  await expect(page.getByText("This project is read-only.")).toBeVisible();
+  await expect(page.getByText("Archived", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(
     0,
   );
@@ -1237,6 +1392,29 @@ test("keeps a long-form script navigable at desktop and narrow widths", async ({
     .context()
     .route("**/api/projects/project-long-script**", async (route) => {
       const url = new URL(route.request().url());
+      if (url.pathname.endsWith("/script-revisions")) {
+        await route.fulfill({
+          status: 200,
+          json:
+            url.searchParams.get("models") === "1"
+              ? [
+                  {
+                    provider: "kimi-code",
+                    model: "k3-256k",
+                    label: "Kimi K3 256K",
+                    default: true,
+                  },
+                  {
+                    provider: "kimi-code",
+                    model: "kimi-for-coding",
+                    label: "Kimi K2.7 Code",
+                    default: false,
+                  },
+                ]
+              : [],
+        });
+        return;
+      }
       if (url.pathname.endsWith("/scripts")) {
         await route.fulfill({
           status: 200,
@@ -1286,33 +1464,102 @@ test("keeps a long-form script navigable at desktop and narrow widths", async ({
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/projects/project-long-script");
-  await expect(page.getByLabel("Script text")).toHaveValue(script);
+  await expect(
+    page.getByRole("textbox", { name: "Script text" }),
+  ).toContainText("CONCLUSION: WHAT CANNOT BE WON");
+  const modelPicker = page.getByRole("combobox", { name: "Relay model" });
+  await expect(modelPicker).toHaveValue("kimi-code/k3-256k");
+  await modelPicker.selectOption("kimi-code/kimi-for-coding");
+  await expect(modelPicker).toHaveValue("kimi-code/kimi-for-coding");
   await expect(
     page.getByText(`${script.length.toLocaleString()} / 100,000 chars`, {
       exact: true,
     }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "PART TWELVE: THREE ENDINGS" })
-    .click();
   await expect
     .poll(() =>
-      page
-        .getByLabel("Script text")
-        .evaluate((element) => (element as HTMLTextAreaElement).selectionStart),
+      page.evaluate(
+        () =>
+          (document.scrollingElement?.scrollHeight ?? 0) - window.innerHeight,
+      ),
     )
-    .toBeGreaterThan(script.indexOf("PART ELEVEN"));
+    .toBeLessThanOrEqual(1);
+  const markerRail = page.getByRole("navigation", {
+    name: "Script sections",
+  });
+  const markerPositions = await markerRail
+    .getByRole("button")
+    .evaluateAll((buttons) =>
+      buttons.map((button) => button.getBoundingClientRect().y),
+    );
+  expect(
+    Math.max(...markerPositions) - Math.min(...markerPositions),
+  ).toBeLessThan(200);
+  await expect
+    .poll(
+      async () =>
+        (await page.getByRole("textbox", { name: "Script text" }).boundingBox())
+          ?.y,
+    )
+    .toBeLessThan(200);
+  const sectionMarker = page.getByRole("button", {
+    name: "Jump to PART TWELVE: THREE ENDINGS",
+  });
+  await sectionMarker.hover();
+  await expect(
+    page.getByRole("tooltip", { name: "PART TWELVE: THREE ENDINGS" }),
+  ).toBeVisible();
+  await sectionMarker.click();
+  await expect
+    .poll(() =>
+      page.locator(".script-editor").evaluate((element) => element.scrollTop),
+    )
+    .toBeGreaterThan(1_000);
+  await expect
+    .poll(async () => {
+      const editorTop = await page
+        .locator(".script-editor")
+        .evaluate((element) => element.getBoundingClientRect().top);
+      const headingTop = await page
+        .getByRole("textbox", { name: "Script text" })
+        .getByText("PART TWELVE: THREE ENDINGS", { exact: true })
+        .evaluate((element) => element.getBoundingClientRect().top);
+      return Math.round(headingTop - editorTop);
+    })
+    .toBeGreaterThanOrEqual(20);
+  await expect
+    .poll(async () => {
+      const editorTop = await page
+        .locator(".script-editor")
+        .evaluate((element) => element.getBoundingClientRect().top);
+      const headingTop = await page
+        .getByRole("textbox", { name: "Script text" })
+        .getByText("PART TWELVE: THREE ENDINGS", { exact: true })
+        .evaluate((element) => element.getBoundingClientRect().top);
+      return Math.round(headingTop - editorTop);
+    })
+    .toBeLessThanOrEqual(30);
+  await expect(sectionMarker).toHaveAttribute("aria-current", "location");
+  await expect(
+    page.getByRole("button", {
+      name: "Jump to PART ELEVEN: THE NUCLEAR PROBLEM",
+    }),
+  ).not.toHaveAttribute("aria-current", "location");
 
-  await page.getByLabel("Script text").press("End");
-  await page.getByLabel("Script text").press("Enter");
+  await page.getByRole("textbox", { name: "Script text" }).press("Control+End");
+  await page.getByRole("textbox", { name: "Script text" }).press("Enter");
   await expect(page.getByText("Unsaved changes")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Save as version 2" }),
+    page.getByRole("button", { name: "Save", exact: true }),
   ).toBeEnabled();
 
   await page.setViewportSize({ width: 760, height: 900 });
-  await expect(page.getByRole("button", { name: "COLD OPEN" })).toBeHidden();
-  await expect(page.getByLabel("Script text")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Jump to COLD OPEN" }),
+  ).toBeHidden();
+  await expect(
+    page.getByRole("textbox", { name: "Script text" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("navigation", { name: "Production stages" }),
   ).toBeVisible();

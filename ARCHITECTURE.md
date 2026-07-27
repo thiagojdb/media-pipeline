@@ -84,6 +84,22 @@ Convex is the application control plane. It owns records such as:
 - approval decisions and review comments;
 - asset metadata and file references.
 
+Project script editing keeps Markdown as the durable document format while the
+browser uses a structured rich-text model for authoring. Script versions remain
+immutable. A script revision proposal pins the exact base script version, a
+fingerprint of the current unsaved draft, and either the selected passage or the
+whole document. Applying a reviewable proposal changes only the browser draft;
+the creator still saves a separate immutable script version. This prevents an
+agent response from silently replacing the working script or bypassing version
+history.
+
+Script revision generation runs in the Node worker through the configured Pi
+model runtime. The browser sends only the instruction and exact selected or
+document Markdown through the authenticated Next.js proxy. The worker returns
+bounded replacement Markdown and usage telemetry; Convex performs membership,
+base-version, draft-fingerprint, and proposal-state validation before storing
+it. Deterministic generation is injectable only for model-free automated tests.
+
 Convex functions may validate commands, authorize access, update job state, and issue signed file access. They do not run long Remotion renders or arbitrary agent-generated code.
 
 Use dedicated domain tables rather than a universal artifact table. Add version records only to concepts that require stable history, especially component source/builds, scripts, compositions, and renders.
@@ -188,7 +204,7 @@ MED-143 applies that rule to project evidence. Browser files upload directly thr
 
 The system should not introduce an abstract storage framework during Foundation. If source footage or render volume later requires S3-compatible storage, migrate behind explicit asset access functions using measured requirements.
 
-Secrets never enter component props, source bundles, job logs, browser responses, or render inputs. Provider credentials remain available only to the Pi model runtime/controller that needs them; generated component code and render processes do not receive them.
+Secrets never enter component props, source bundles, job logs, browser responses, or render inputs. Provider credentials remain available only to the worker-owned model adapter that needs them; generated component code, Next.js, Convex, and render processes do not receive them.
 
 ## Channel and authorization boundary
 
