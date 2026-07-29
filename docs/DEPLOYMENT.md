@@ -57,6 +57,13 @@ curl -fsS http://127.0.0.1:3212/health
 curl -fsS https://relay-blush-sigma.vercel.app/api/component-loop/library
 ```
 
+The worker uses authenticated Convex query subscriptions to wake its enabled
+job queues. Healthy idle operation does not repeatedly invoke queue `claim` or
+`recoverExpired` mutations. Deploy Convex functions before a worker release
+that changes the subscription or lease-recovery contract. After restarting the
+worker, submit one job for each enabled queue, then confirm in Convex Usage that
+function calls stop increasing continuously once the queues are empty.
+
 Real Pi authoring remains fail-closed. Enable it only with an explicitly
 selected model and a server-only provider credential. Deterministic fake mode
 is suitable for deployment smoke tests and does not spend model tokens.

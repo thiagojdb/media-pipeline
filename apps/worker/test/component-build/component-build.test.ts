@@ -261,7 +261,7 @@ describe("bounded component build lifecycle", () => {
 
   it("degrades health without an unhandled rejection when the control plane fails", async () => {
     class FailingStore extends InMemoryComponentBuildJobStore {
-      override async recoverExpired(): Promise<number> {
+      override async claim(): Promise<ComponentBuildJob | null> {
         throw new Error("Convex temporarily unavailable");
       }
     }
@@ -275,10 +275,11 @@ describe("bounded component build lifecycle", () => {
       createFakeCandidateExecutor(),
       workerId,
     );
-    const loop = new ComponentBuildLoop(store, service, workerId, 5_000, 10);
+    const loop = new ComponentBuildLoop(store, service, workerId, 5_000);
     const diagnostic = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       loop.start();
+      loop.wake();
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(loop.status).toBe("degraded");
       expect(diagnostic).toHaveBeenCalledWith(
@@ -345,7 +346,7 @@ async function harness(initial: ComponentBuildJob) {
   return {
     root,
     store,
-    loop: new ComponentBuildLoop(store, service, workerId, 5_000, 10),
+    loop: new ComponentBuildLoop(store, service, workerId, 5_000),
   };
 }
 

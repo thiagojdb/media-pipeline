@@ -1,8 +1,9 @@
 import { v } from "convex/values";
 
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import type { ProjectComposition } from "./projectCompositionSchema";
 import { projectCompositionSchema } from "./projectCompositionSchema";
 import { editableProject, readableProject } from "./projects";
@@ -184,6 +185,14 @@ export const claim = mutation({
     };
     await ctx.db.patch(job._id, claimed);
     await event(ctx, job._id, "running", "claimed", "Project render claimed.");
+    await ctx.scheduler.runAt(
+      claimed.leaseExpiresAt,
+      internal.projectDraftRenders.recoverLease,
+      {
+        jobId: job._id,
+        leaseAttempt: claimed.attempt,
+      },
+    );
     return {
       ...job,
       ...claimed,
@@ -327,42 +336,79 @@ export const recoverExpired = mutation({
       )
       .collect();
     for (const job of expired) {
-      if (job.cancelRequested) {
-        await finishFailure(
-          ctx,
-          job._id,
-          "canceled",
-          "render_canceled",
-          "Draft render canceled during worker recovery.",
-        );
-      } else if (job.attempt < job.maxAttempts) {
-        await ctx.db.patch(job._id, {
-          state: "queued",
-          progress: 0,
-          leaseOwner: undefined,
-          leaseExpiresAt: undefined,
-          updatedAt: now,
-        });
-        await event(
-          ctx,
-          job._id,
-          "queued",
-          "recovered",
-          "Expired project render lease recovered for retry.",
-        );
-      } else {
-        await finishFailure(
-          ctx,
-          job._id,
-          "needs_intervention",
-          "render_attempts_exhausted",
-          "Draft render needs intervention after bounded worker retries.",
-        );
-      }
+      await recoverJob(ctx, job, now);
     }
     return { recovered: expired.length };
   },
 });
+
+export const recoverLease = internalMutation({
+  args: {
+    jobId: v.id("projectRenderJobs"),
+    leaseAttempt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (
+      !job ||
+      job.attempt !== args.leaseAttempt ||
+      !job.leaseExpiresAt ||
+      job.state !== "running"
+    ) {
+      return false;
+    }
+    const now = Date.now();
+    if (job.leaseExpiresAt > now) {
+      await ctx.scheduler.runAt(
+        job.leaseExpiresAt,
+        internal.projectDraftRenders.recoverLease,
+        args,
+      );
+      return false;
+    }
+    await recoverJob(ctx, job, now);
+    return true;
+  },
+});
+
+async function recoverJob(
+  ctx: MutationCtx,
+  job: import("./_generated/dataModel").Doc<"projectRenderJobs">,
+  now: number,
+): Promise<void> {
+  if (job.cancelRequested) {
+    await finishFailure(
+      ctx,
+      job._id,
+      "canceled",
+      "render_canceled",
+      "Draft render canceled during worker recovery.",
+    );
+  } else if (job.attempt < job.maxAttempts) {
+    await ctx.db.patch(job._id, {
+      state: "queued",
+      progress: 0,
+      leaseOwner: undefined,
+      leaseExpiresAt: undefined,
+      updatedAt: now,
+    });
+    await event(
+      ctx,
+      job._id,
+      "queued",
+      "recovered",
+      "Expired project render lease recovered for retry.",
+    );
+  } else {
+    await finishFailure(
+      ctx,
+      job._id,
+      "needs_intervention",
+      "render_attempts_exhausted",
+      "Draft render needs intervention after bounded worker retries.",
+    );
+  }
+}
 
 async function materializeSegments(
   ctx: MutationCtx,

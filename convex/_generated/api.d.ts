@@ -21,6 +21,7 @@ import type * as projectEditingAgent from "../projectEditingAgent.js";
 import type * as projectNarrations from "../projectNarrations.js";
 import type * as projectScriptRevisions from "../projectScriptRevisions.js";
 import type * as projects from "../projects.js";
+import type * as workerQueues from "../workerQueues.js";
 
 import type {
   ApiFromModules,
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   projectNarrations: typeof projectNarrations;
   projectScriptRevisions: typeof projectScriptRevisions;
   projects: typeof projects;
+  workerQueues: typeof workerQueues;
 }>;
 
 /**

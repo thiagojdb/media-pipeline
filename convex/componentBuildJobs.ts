@@ -1,4 +1,6 @@
 import type { Doc } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
+import type { MutationCtx } from "./_generated/server";
 import {
   internalMutation,
   internalQuery,
@@ -125,6 +127,14 @@ export const claim = mutation({
       state: "running",
       message: "Build claimed by worker.",
     });
+    await ctx.scheduler.runAt(
+      leaseExpiresAt,
+      internal.componentBuildJobs.recoverLease,
+      {
+        jobId: job._id,
+        leaseAttempt: job.attempt + 1,
+      },
+    );
     return {
       ...job,
       state: "running" as const,
@@ -411,48 +421,86 @@ export const recoverExpired = mutation({
     ]);
     let recovered = 0;
     for (const job of [...running, ...validating]) {
-      if (
-        !job.leaseExpiresAt ||
-        isTerminal(job.state) ||
-        job.state === "queued"
-      )
-        continue;
-      const canRetry = !job.cancelRequested && job.attempt < job.maxAttempts;
-      const nextState = job.cancelRequested
-        ? "canceled"
-        : canRetry
-          ? "queued"
-          : "needs_intervention";
-      await ctx.db.patch(job._id, {
-        state: nextState,
-        updatedAt: now,
-        leaseOwner: undefined,
-        leaseExpiresAt: undefined,
-        terminalCode: job.cancelRequested
-          ? "build_canceled"
-          : canRetry
-            ? undefined
-            : "lease_expired",
-        terminalMessage: job.cancelRequested
-          ? "Component build canceled after its worker lease expired."
-          : canRetry
-            ? undefined
-            : "Worker lease expired and retry budget was exhausted.",
-      });
-      await ctx.db.insert("componentBuildEvents", {
-        jobId: job._id,
-        createdAt: now,
-        kind: "lease_recovered",
-        state: nextState,
-        message: canRetry
-          ? "Expired lease returned to queue."
-          : "Expired lease reached a terminal state.",
-      });
-      recovered += 1;
+      if (await recoverJob(ctx, job, now)) recovered += 1;
     }
     return recovered;
   },
 });
+
+export const recoverLease = internalMutation({
+  args: {
+    jobId: v.id("componentBuildJobs"),
+    leaseAttempt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (
+      !job ||
+      job.attempt !== args.leaseAttempt ||
+      !job.leaseExpiresAt ||
+      (job.state !== "running" && job.state !== "validating")
+    ) {
+      return false;
+    }
+    const now = Date.now();
+    if (job.leaseExpiresAt > now) {
+      await ctx.scheduler.runAt(
+        job.leaseExpiresAt,
+        internal.componentBuildJobs.recoverLease,
+        args,
+      );
+      return false;
+    }
+    return recoverJob(ctx, job, now);
+  },
+});
+
+async function recoverJob(
+  ctx: MutationCtx,
+  job: Doc<"componentBuildJobs">,
+  now: number,
+): Promise<boolean> {
+  if (
+    !job.leaseExpiresAt ||
+    job.leaseExpiresAt > now ||
+    isTerminal(job.state) ||
+    job.state === "queued"
+  ) {
+    return false;
+  }
+  const canRetry = !job.cancelRequested && job.attempt < job.maxAttempts;
+  const nextState = job.cancelRequested
+    ? "canceled"
+    : canRetry
+      ? "queued"
+      : "needs_intervention";
+  await ctx.db.patch(job._id, {
+    state: nextState,
+    updatedAt: now,
+    leaseOwner: undefined,
+    leaseExpiresAt: undefined,
+    terminalCode: job.cancelRequested
+      ? "build_canceled"
+      : canRetry
+        ? undefined
+        : "lease_expired",
+    terminalMessage: job.cancelRequested
+      ? "Component build canceled after its worker lease expired."
+      : canRetry
+        ? undefined
+        : "Worker lease expired and retry budget was exhausted.",
+  });
+  await ctx.db.insert("componentBuildEvents", {
+    jobId: job._id,
+    createdAt: now,
+    kind: "lease_recovered",
+    state: nextState,
+    message: canRetry
+      ? "Expired lease returned to queue."
+      : "Expired lease reached a terminal state.",
+  });
+  return true;
+}
 
 export const getForWorker = query({
   args: { workerToken: v.string(), jobId: v.id("componentBuildJobs") },

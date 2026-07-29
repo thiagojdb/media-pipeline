@@ -1,4 +1,6 @@
 import type { Doc } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
+import type { MutationCtx } from "./_generated/server";
 import {
   internalMutation,
   internalQuery,
@@ -198,6 +200,14 @@ export const claim = mutation({
       "claimed",
       "running",
       "Authoring turn claimed.",
+    );
+    await ctx.scheduler.runAt(
+      leaseExpiresAt,
+      internal.componentAuthoring.recoverLease,
+      {
+        turnId: turn._id,
+        leaseAttempt: attempt,
+      },
     );
     return {
       ...turn,
@@ -561,42 +571,79 @@ export const recoverExpired = mutation({
       )
       .take(25);
     for (const turn of expired) {
-      const retry = !turn.cancelRequested && turn.attempt < turn.maxAttempts;
-      const state = turn.cancelRequested
-        ? "canceled"
-        : retry
-          ? "queued"
-          : "needs_intervention";
-      await ctx.db.patch(turn._id, {
-        state,
-        updatedAt: now,
-        leaseOwner: undefined,
-        leaseExpiresAt: undefined,
-        terminalCode: retry
-          ? undefined
-          : turn.cancelRequested
-            ? "authoring_canceled"
-            : "lease_expired",
-        terminalMessage: retry
-          ? undefined
-          : turn.cancelRequested
-            ? "Authoring turn canceled after its lease expired."
-            : "Authoring lease expired and attempt budget was exhausted.",
-      });
-      await event(
-        ctx,
-        turn._id,
-        now,
-        "lease_recovered",
-        state,
-        retry
-          ? "Expired authoring lease requeued."
-          : "Expired authoring lease became terminal.",
-      );
+      await recoverTurn(ctx, turn, now);
     }
     return expired.length;
   },
 });
+
+export const recoverLease = internalMutation({
+  args: {
+    turnId: v.id("authoringTurns"),
+    leaseAttempt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const turn = await ctx.db.get(args.turnId);
+    if (
+      !turn ||
+      turn.attempt !== args.leaseAttempt ||
+      !turn.leaseExpiresAt ||
+      turn.state !== "running"
+    ) {
+      return false;
+    }
+    const now = Date.now();
+    if (turn.leaseExpiresAt > now) {
+      await ctx.scheduler.runAt(
+        turn.leaseExpiresAt,
+        internal.componentAuthoring.recoverLease,
+        args,
+      );
+      return false;
+    }
+    await recoverTurn(ctx, turn, now);
+    return true;
+  },
+});
+
+async function recoverTurn(
+  ctx: MutationCtx,
+  turn: Doc<"authoringTurns">,
+  now: number,
+): Promise<void> {
+  const retry = !turn.cancelRequested && turn.attempt < turn.maxAttempts;
+  const state = turn.cancelRequested
+    ? "canceled"
+    : retry
+      ? "queued"
+      : "needs_intervention";
+  await ctx.db.patch(turn._id, {
+    state,
+    updatedAt: now,
+    leaseOwner: undefined,
+    leaseExpiresAt: undefined,
+    terminalCode: retry
+      ? undefined
+      : turn.cancelRequested
+        ? "authoring_canceled"
+        : "lease_expired",
+    terminalMessage: retry
+      ? undefined
+      : turn.cancelRequested
+        ? "Authoring turn canceled after its lease expired."
+        : "Authoring lease expired and attempt budget was exhausted.",
+  });
+  await event(
+    ctx,
+    turn._id,
+    now,
+    "lease_recovered",
+    state,
+    retry
+      ? "Expired authoring lease requeued."
+      : "Expired authoring lease became terminal.",
+  );
+}
 
 export const getForWorker = query({
   args: { workerToken: v.string(), turnId: v.id("authoringTurns") },

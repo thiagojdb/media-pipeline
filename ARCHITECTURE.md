@@ -117,6 +117,16 @@ The worker claims explicit jobs from Convex, heartbeats while running, and commi
 
 A worker crash must leave a job eligible for explicit recovery rather than falsely successful. Job handlers use idempotency keys or unique result slots where duplicate execution could publish two results.
 
+MED-158 makes queue activation event-driven. A long-lived authenticated Convex
+query subscription reports only whether the worker's enabled queues contain
+work. A positive signal drains claims until the queue is empty; an idle worker
+does not issue repeated `claim` or recovery mutations. Each successful claim
+atomically schedules one internal, attempt-fenced recovery check at its lease
+expiry. If a heartbeat extended the lease, that check reschedules itself for
+the current expiry; completed, superseded, and stale attempts become no-ops.
+This preserves crash recovery without a fixed-frequency worker poller or a
+recurring global cron.
+
 ## Pi integration
 
 Relay should embed Pi through `@earendil-works/pi-coding-agent` rather than parsing terminal output. The SDK provides session lifecycle, event subscriptions, model runtime, resource loading, custom working directories, explicit tool selection, and persistent or in-memory session managers.
@@ -274,6 +284,12 @@ queued -> running -> succeeded
 ```
 
 Jobs record attempt count, bounded progress, timestamps, worker identity, and terminal error category. Stale heartbeats become recoverable state through an explicit policy implemented with the worker. Convex server time defines lease expiry, and each claim attempt is a fencing token: an expired process cannot heartbeat or publish after a successor claim, even if it reused the same worker identifier.
+
+Queue availability is a wake signal, not job authority. Claims remain atomic
+Convex mutations, so duplicate subscription delivery, reconnects, and multiple
+workers may cause an extra empty claim but cannot create two owners. Scheduled
+recovery also rechecks the exact job state, attempt, and current lease expiry
+before changing state.
 
 ### Component-build execution boundary
 

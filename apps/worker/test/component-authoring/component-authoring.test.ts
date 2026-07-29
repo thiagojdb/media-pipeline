@@ -177,13 +177,7 @@ describe("constrained component authoring", () => {
       workerId,
       repositoryRoot,
     );
-    const loop = new ComponentAuthoringLoop(
-      store,
-      service,
-      workerId,
-      5_000,
-      10,
-    );
+    const loop = new ComponentAuthoringLoop(store, service, workerId, 5_000);
     await loop.tick();
     expect(providerCallStarted).toBe(false);
     expect(store.turns.get(configured.id)?.state).toBe("needs_intervention");
@@ -577,7 +571,7 @@ async function harness(initial: AuthoringTurn) {
   return {
     store,
     root,
-    loop: new ComponentAuthoringLoop(store, service, workerId, 5_000, 10),
+    loop: new ComponentAuthoringLoop(store, service, workerId, 5_000),
   };
 }
 

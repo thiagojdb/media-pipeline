@@ -62,8 +62,10 @@ export interface ProjectRenderExecutor {
 export class ProjectRenderLoop {
   readonly #client: ConvexHttpClient;
   readonly #workerId = `${os.hostname()}:${process.pid}:${randomUUID()}`;
-  #timer: NodeJS.Timeout | undefined;
   #busy = false;
+  #draining = false;
+  #wakeRequested = false;
+  #retryTimer: NodeJS.Timeout | undefined;
   #status: "running" | "degraded" | "stopped" = "stopped";
 
   constructor(
@@ -71,7 +73,6 @@ export class ProjectRenderLoop {
     private readonly workerToken: string,
     private readonly executor: ProjectRenderExecutor,
     private readonly leaseMs = 30_000,
-    private readonly pollMs = 500,
   ) {
     this.#client = new ConvexHttpClient(url);
   }
@@ -81,25 +82,29 @@ export class ProjectRenderLoop {
   }
 
   start() {
-    if (this.#timer) return;
+    if (this.#status !== "stopped") return;
     this.#status = "running";
-    this.#timer = setInterval(() => this.#tickSafely(), this.pollMs);
-    this.#tickSafely();
   }
 
   stop() {
-    if (this.#timer) clearInterval(this.#timer);
-    this.#timer = undefined;
+    if (this.#retryTimer) clearTimeout(this.#retryTimer);
+    this.#retryTimer = undefined;
+    this.#wakeRequested = false;
     this.#status = "stopped";
+  }
+
+  wake() {
+    if (this.#status === "stopped") return;
+    if (this.#retryTimer) clearTimeout(this.#retryTimer);
+    this.#retryTimer = undefined;
+    this.#wakeRequested = true;
+    if (!this.#draining) void this.#drainSafely();
   }
 
   async tick(): Promise<boolean> {
     if (this.#busy) return false;
     this.#busy = true;
     try {
-      await this.#client.mutation(api.recoverExpired!, {
-        workerToken: this.workerToken,
-      });
       const job = (await this.#client.mutation(api.claim!, {
         workerToken: this.workerToken,
         workerId: this.#workerId,
@@ -113,15 +118,32 @@ export class ProjectRenderLoop {
     }
   }
 
-  #tickSafely() {
-    void this.tick()
-      .then(() => {
-        if (this.#status !== "stopped") this.#status = "running";
-      })
-      .catch((error) => {
-        if (this.#status !== "stopped") this.#status = "degraded";
-        console.error(`Project render loop degraded safely: ${message(error)}`);
-      });
+  async #drainSafely() {
+    this.#draining = true;
+    try {
+      do {
+        this.#wakeRequested = false;
+        while (this.#status !== "stopped" && (await this.tick())) {
+          // Drain every queued render before waiting again.
+        }
+      } while (this.#status !== "stopped" && this.#wakeRequested);
+      if (this.#status !== "stopped") this.#status = "running";
+    } catch (error) {
+      if (this.#status !== "stopped") this.#status = "degraded";
+      console.error(`Project render loop degraded safely: ${message(error)}`);
+      this.#scheduleRetry();
+    } finally {
+      this.#draining = false;
+      if (this.#status !== "stopped" && this.#wakeRequested) this.wake();
+    }
+  }
+
+  #scheduleRetry() {
+    if (this.#status === "stopped" || this.#retryTimer) return;
+    this.#retryTimer = setTimeout(() => {
+      this.#retryTimer = undefined;
+      this.wake();
+    }, 1_000);
   }
 
   async #run(job: ClaimedProjectRender) {

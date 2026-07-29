@@ -133,6 +133,62 @@ describe("Convex component authoring lifecycle", () => {
     ).resolves.toBeNull();
   });
 
+  it("schedules fenced lease recovery and respects heartbeat extensions", async () => {
+    const t = convexTest(schema, modules);
+    const turnId = await t.mutation(
+      internal.componentAuthoring.enqueue,
+      enqueueArgs({ turnId: "scheduled-recovery" }),
+    );
+    await t.mutation(api.componentAuthoring.claim, {
+      workerToken,
+      workerId: "worker-a",
+      leaseMs: 5_000,
+    });
+
+    const scheduled = await t.run((ctx) =>
+      ctx.db.system.query("_scheduled_functions").collect(),
+    );
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]?.name).toContain("componentAuthoring:recoverLease");
+
+    await t.mutation(api.componentAuthoring.heartbeat, {
+      workerToken,
+      turnId,
+      workerId: "worker-a",
+      leaseAttempt: 1,
+      leaseMs: 30_000,
+    });
+    await expect(
+      t.mutation(internal.componentAuthoring.recoverLease, {
+        turnId,
+        leaseAttempt: 1,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      t.query(internal.componentAuthoring.getSafeTurn, { turnId }),
+    ).resolves.toMatchObject({ state: "running", attempt: 1 });
+
+    await t.run((ctx) => ctx.db.patch(turnId, { leaseExpiresAt: 1 }));
+    await expect(
+      t.mutation(internal.componentAuthoring.recoverLease, {
+        turnId,
+        leaseAttempt: 1,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      t.query(internal.componentAuthoring.getSafeTurn, { turnId }),
+    ).resolves.toMatchObject({
+      state: "needs_intervention",
+      terminalCode: "lease_expired",
+    });
+    await expect(
+      t.mutation(internal.componentAuthoring.recoverLease, {
+        turnId,
+        leaseAttempt: 1,
+      }),
+    ).resolves.toBe(false);
+  });
+
   it("lets cancellation win over submit and creates exactly one MED-133 handoff", async () => {
     const canceled = convexTest(schema, modules);
     const canceledId = await canceled.mutation(

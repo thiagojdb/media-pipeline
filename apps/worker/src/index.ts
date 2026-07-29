@@ -34,6 +34,7 @@ import {
   createScriptRevisionAgentFromEnvironment,
   DeterministicFakeScriptRevisionAgent,
 } from "./script-revision-agent.js";
+import { WorkerQueueCoordinator } from "./worker-queue-coordinator.js";
 
 const port = Number.parseInt(process.env.WORKER_PORT ?? "3212", 10);
 const useFakeRenderer = process.env.RELAY_RENDER_MODE === "fake";
@@ -191,6 +192,40 @@ const projectRenderLoop =
     : undefined;
 projectRenderLoop?.start();
 
+const queueCoordinators = [
+  ...(componentBuildLoop && buildUrl && buildToken
+    ? [
+        new WorkerQueueCoordinator(
+          buildUrl,
+          { componentBuildToken: buildToken },
+          { componentBuild: () => componentBuildLoop.wake() },
+        ),
+      ]
+    : []),
+  ...(authoringLoop && authoringUrl && authoringToken
+    ? [
+        new WorkerQueueCoordinator(
+          authoringUrl,
+          { authoringToken },
+          { componentAuthoring: () => authoringLoop.wake() },
+        ),
+      ]
+    : []),
+  ...(narrationLoop && projectRenderLoop && narrationUrl && narrationToken
+    ? [
+        new WorkerQueueCoordinator(
+          narrationUrl,
+          { narrationToken },
+          {
+            narration: () => narrationLoop.wake(),
+            projectRender: () => projectRenderLoop.wake(),
+          },
+        ),
+      ]
+    : []),
+];
+for (const coordinator of queueCoordinators) coordinator.start();
+
 const server = createWorkerServer({
   ...(process.env.RELAY_WORKER_AUTH_TOKEN
     ? { authToken: process.env.RELAY_WORKER_AUTH_TOKEN }
@@ -231,12 +266,19 @@ const shutdown = (): void => {
   authoringLoop?.stop();
   narrationLoop?.stop();
   projectRenderLoop?.stop();
-  server.close((error) => {
-    if (error) {
+  void Promise.all(queueCoordinators.map((coordinator) => coordinator.stop()))
+    .catch((error) => {
       console.error(error);
       process.exitCode = 1;
-    }
-  });
+    })
+    .finally(() => {
+      server.close((error) => {
+        if (error) {
+          console.error(error);
+          process.exitCode = 1;
+        }
+      });
+    });
 };
 
 process.on("SIGINT", shutdown);

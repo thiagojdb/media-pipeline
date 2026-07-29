@@ -1,8 +1,9 @@
 import { v } from "convex/values";
 
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { editableProject, readableProject } from "./projects";
 
 const workerState = v.union(
@@ -245,6 +246,14 @@ export const claim = mutation({
       );
       return null;
     }
+    await ctx.scheduler.runAt(
+      claimed.leaseExpiresAt,
+      internal.projectNarrations.recoverLease,
+      {
+        jobId: job._id,
+        leaseAttempt: claimed.attempt,
+      },
+    );
     return {
       ...job,
       ...claimed,
@@ -494,35 +503,72 @@ export const recoverExpired = mutation({
       )
       .take(25);
     for (const job of expired) {
-      const retry = !job.cancelRequested && job.attempt < job.maxAttempts;
-      const state = job.cancelRequested
-        ? "canceled"
-        : retry
-          ? "queued"
-          : "needs_intervention";
-      await ctx.db.patch(job._id, {
-        state,
-        leaseOwner: undefined,
-        leaseExpiresAt: undefined,
-        terminalCode: retry ? undefined : "lease_expired",
-        terminalMessage: retry
-          ? undefined
-          : "Narration worker lease expired and retries were exhausted.",
-        updatedAt: now,
-      });
-      await event(
-        ctx,
-        job._id,
-        state,
-        "lease_recovered",
-        retry
-          ? "Expired narration job returned to the queue."
-          : "Expired narration job reached a recoverable terminal state.",
-      );
+      await recoverJob(ctx, job, now);
     }
     return expired.length;
   },
 });
+
+export const recoverLease = internalMutation({
+  args: {
+    jobId: v.id("narrationJobs"),
+    leaseAttempt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (
+      !job ||
+      job.attempt !== args.leaseAttempt ||
+      !job.leaseExpiresAt ||
+      job.state !== "running"
+    ) {
+      return false;
+    }
+    const now = Date.now();
+    if (job.leaseExpiresAt > now) {
+      await ctx.scheduler.runAt(
+        job.leaseExpiresAt,
+        internal.projectNarrations.recoverLease,
+        args,
+      );
+      return false;
+    }
+    await recoverJob(ctx, job, now);
+    return true;
+  },
+});
+
+async function recoverJob(
+  ctx: MutationCtx,
+  job: import("./_generated/dataModel").Doc<"narrationJobs">,
+  now: number,
+): Promise<void> {
+  const retry = !job.cancelRequested && job.attempt < job.maxAttempts;
+  const state = job.cancelRequested
+    ? "canceled"
+    : retry
+      ? "queued"
+      : "needs_intervention";
+  await ctx.db.patch(job._id, {
+    state,
+    leaseOwner: undefined,
+    leaseExpiresAt: undefined,
+    terminalCode: retry ? undefined : "lease_expired",
+    terminalMessage: retry
+      ? undefined
+      : "Narration worker lease expired and retries were exhausted.",
+    updatedAt: now,
+  });
+  await event(
+    ctx,
+    job._id,
+    state,
+    "lease_recovered",
+    retry
+      ? "Expired narration job returned to the queue."
+      : "Expired narration job reached a recoverable terminal state.",
+  );
+}
 
 type WorkerLease = {
   jobId: Id<"narrationJobs">;

@@ -193,6 +193,11 @@ reviewable, exact-base script-revision proposal boundary. Real Relay model
 generation runs in the Node worker; deterministic generation remains confined
 to model-free automated tests.
 
+MED-158 removes fixed-frequency empty worker polling before further background
+job types are added. Reactive queue wakeups and claim-scoped durable recovery
+retain the existing fenced lease guarantees while keeping idle Convex function
+usage flat.
+
 ### Outcome
 
 A creator or channel collaborator can render a draft, leave timestamped feedback, request bounded editing revisions, and produce a high-quality final video with subtitles.
