@@ -23,16 +23,22 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install media test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+          npx playwright install --with-deps chromium
 
       - name: Run model-free repository gate
         run: npm run verify
