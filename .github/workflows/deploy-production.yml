@@ -1,0 +1,100 @@
+name: Deploy production
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - relay-production
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ steps.vercel.outputs.url }}
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Check out verified commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy Convex functions
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: npx convex deploy --typecheck enable --message "GitHub ${DEPLOY_SHA}"
+
+      - name: Package worker release
+        run: git archive --format=tar.gz --output="${RUNNER_TEMP}/relay-worker-${DEPLOY_SHA}.tar.gz" "${DEPLOY_SHA}"
+
+      - name: Stage worker release
+        run: |
+          install -d "${HOME}/services/relay-worker"
+          install -m 600 \
+            "${RUNNER_TEMP}/relay-worker-${DEPLOY_SHA}.tar.gz" \
+            "${HOME}/services/relay-worker/relay-worker-${DEPLOY_SHA}.tar.gz"
+          install -m 700 \
+            "deploy/worker-deploy.sh" \
+            "${HOME}/services/relay-worker/worker-deploy.sh"
+
+      - name: Activate worker release
+        run: bash "${HOME}/services/relay-worker/worker-deploy.sh" "${DEPLOY_SHA}"
+
+      - name: Pull Vercel production configuration
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: npx --yes vercel@58.4.0 pull --yes --environment=production --token="${VERCEL_TOKEN}"
+
+      - name: Build Vercel application
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: npx --yes vercel@58.4.0 build --prod --token="${VERCEL_TOKEN}"
+
+      - name: Deploy Vercel application
+        id: vercel
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          deployment_url="$(
+            npx --yes vercel@58.4.0 deploy --prebuilt --prod --token="${VERCEL_TOKEN}"
+          )"
+          printf 'url=%s\n' "${deployment_url}" >> "${GITHUB_OUTPUT}"

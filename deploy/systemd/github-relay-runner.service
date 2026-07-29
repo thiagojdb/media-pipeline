@@ -1,0 +1,15 @@
+[Unit]
+Description=GitHub Actions runner for Relay production deployments
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/services/github-relay-runner
+ExecStart=%h/services/github-relay-runner/run.sh
+Restart=always
+RestartSec=5
+KillMode=process
+
+[Install]
+WantedBy=default.target
