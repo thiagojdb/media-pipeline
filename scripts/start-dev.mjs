@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { access } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 const mode = process.argv[2];
 if (mode !== "real" && mode !== "fake") {
@@ -11,6 +14,25 @@ const stackScript = mode === "real" ? "dev:stack:real" : "dev:stack:fake";
 const localWorkerPort = process.env.RELAY_LOCAL_WORKER_PORT ?? "3213";
 const localWorkerAuthToken =
   process.env.RELAY_LOCAL_WORKER_AUTH_TOKEN ?? "relay-local-worker";
+for (const envFile of [
+  path.join(os.homedir(), ".config", "relay-worker", "development.env"),
+  path.join(os.homedir(), ".config", "relay", "development.env"),
+]) {
+  try {
+    await access(envFile);
+    process.loadEnvFile(envFile);
+  } catch {
+    // Each file is optional here; required values are checked below.
+  }
+}
+
+for (const name of ["PROJECTS_CONVEX_URL", "PROJECTS_SERVER_TOKEN"]) {
+  if (!process.env[name]?.trim()) {
+    throw new Error(
+      `${name} is required in ~/.config/relay/development.env for npm run dev.`,
+    );
+  }
+}
 const developmentEnvironment = {
   ...process.env,
   RELAY_ENV: "development",
