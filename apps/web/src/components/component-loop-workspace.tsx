@@ -1000,6 +1000,7 @@ function InlinePreview({
           className="max-w-48 rounded border border-white/15 bg-white/10 px-2 py-1"
           onChange={(event) => {
             setFixtureId(event.target.value);
+            setPlaying(false);
             hasStartedPlaybackRef.current = false;
             setFrame(0);
           }}
