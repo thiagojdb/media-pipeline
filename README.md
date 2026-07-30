@@ -55,7 +55,7 @@ authoring. The local launcher loads the configured Pi credential into the
 worker only for real script revisions; no credential enters Next.js, Convex,
 browser payloads, logs, or model input.
 
-`npm run dev` is the single start path. It runs the Next.js application, Convex development service, and Node worker together. On the first run, the Convex CLI configures a local development deployment and writes `.env.local`; later runs reuse that configuration. Choose a hosted project only when you explicitly want cloud development.
+`npm run dev` is the single start path. It runs the Next.js application, a local Convex service, and the Node worker together. Project API requests are forwarded to the hosted development environment by default, so localhost works with the same projects and project state as the stable development deployment. Set `RELAY_DEVELOPMENT_API_ORIGIN` only when intentionally targeting another development API origin.
 
 Local endpoints are:
 

@@ -24,9 +24,10 @@
 5. Only an exact CI-verified commit may be promoted from `main` to `prod`.
 6. The production workflow cannot run while
    `PRODUCTION_DEPLOY_ENABLED=false`.
-7. Local development uses local Convex, worker port `3213`, and a fixed
-   development-only worker token; it cannot fall through to the persistent
-   worker on `3212`.
+7. Local development uses worker port `3213` and a fixed development-only
+   worker token. Project API requests use the hosted development environment,
+   while local-only worker state remains isolated from the persistent worker
+   on `3212`.
 
 ## Current transition
 

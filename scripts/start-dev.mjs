@@ -11,9 +11,13 @@ const stackScript = mode === "real" ? "dev:stack:real" : "dev:stack:fake";
 const localWorkerPort = process.env.RELAY_LOCAL_WORKER_PORT ?? "3213";
 const localWorkerAuthToken =
   process.env.RELAY_LOCAL_WORKER_AUTH_TOKEN ?? "relay-local-worker";
+const developmentApiOrigin =
+  process.env.RELAY_DEVELOPMENT_API_ORIGIN ??
+  "https://relay-blush-sigma.vercel.app";
 const developmentEnvironment = {
   ...process.env,
   RELAY_ENV: "development",
+  RELAY_DEVELOPMENT_API_ORIGIN: developmentApiOrigin,
   RELAY_LOCAL_WORKER_PORT: localWorkerPort,
   RELAY_WORKER_URL: `http://127.0.0.1:${localWorkerPort}`,
   RELAY_WORKER_AUTH_TOKEN: localWorkerAuthToken,
