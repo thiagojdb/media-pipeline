@@ -1,0 +1,15 @@
+**/node_modules/
+**/.next/
+**/.next-dev/
+**/.open-next/
+**/dist/
+**/coverage/
+**/playwright-report/
+**/test-results/
+**/blob-report/
+.relay/
+.pi-subagents/
+.convex/
+.env*
+kimi-api-key-code-moonshot
+*.tsbuildinfo

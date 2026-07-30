@@ -24,10 +24,10 @@
 5. Only an exact CI-verified commit may be promoted from `main` to `prod`.
 6. The production workflow cannot run while
    `PRODUCTION_DEPLOY_ENABLED=false`.
-7. Local development uses worker port `3213` and a fixed development-only
-   worker token. Project API requests use the hosted development environment,
-   while local-only worker state remains isolated from the persistent worker
-   on `3212`.
+7. Local development executes Next.js API and worker code locally on worker
+   port `3213`, backed by hosted development Convex data and credentials. It
+   never forwards API execution to the deployed web application or contacts
+   the persistent worker on `3212`.
 
 ## Current transition
 

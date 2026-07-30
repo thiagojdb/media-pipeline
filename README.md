@@ -55,12 +55,12 @@ authoring. The local launcher loads the configured Pi credential into the
 worker only for real script revisions; no credential enters Next.js, Convex,
 browser payloads, logs, or model input.
 
-`npm run dev` is the single start path. It runs the Next.js application, a local Convex service, and the Node worker together. Project API requests are forwarded to the hosted development environment by default, so localhost works with the same projects and project state as the stable development deployment. Set `RELAY_DEVELOPMENT_API_ORIGIN` only when intentionally targeting another development API origin.
+`npm run dev` is the single start path. It runs the local Next.js application and Node worker against the hosted development Convex deployment. The API handlers execute from this checkout, so API edits are exercised locally while localhost uses the same projects and project state as the stable development deployment. Machine-local development credentials live in `~/.config/relay/development.env` with mode `0600`.
 
 Local endpoints are:
 
 - web application: <http://localhost:3000>
-- Convex API: <http://127.0.0.1:3210> when using the default local deployment
+- Convex API: the hosted development deployment
 - local worker health: <http://127.0.0.1:3213/health>
 
 `npm run dev` selects the real authoring, script-revision, and
@@ -72,8 +72,8 @@ gitignored root `.env.local` file. Pi authoring can also use the existing local
 Pi/OpenCode OAuth credential store. One `OPENAI_API_KEY` can configure both
 OpenAI script revision and narration alignment; alternatively configure
 `KIMI_API_KEY` for script revision and `NARRATION_OPENAI_API_KEY` for alignment.
-For deterministic or offline work, use `npm run dev:fake`; that command makes
-no paid model calls. Both commands use local Convex plus the worker on port
+For deterministic model behavior, use `npm run dev:fake`; that command makes
+no paid model calls. Both commands use hosted development Convex plus the worker on port
 3213, leaving a production worker on 3212 untouched. Set
 `RELAY_LOCAL_WORKER_PORT` to override the local port. The launcher explicitly
 binds Next.js and the local worker to that same port and gives both a
