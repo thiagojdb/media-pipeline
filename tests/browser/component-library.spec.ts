@@ -210,7 +210,20 @@ test("plays an approved version with fixture and input controls", async ({
 
   // Playback streams frames into the preview document.
   await expect(previewDocumentFrame.locator("#frame")).toHaveText("89");
+  const messageCountBeforePlayback = await previewDocumentFrame
+    .locator("body")
+    .getAttribute("data-frame-history")
+    .then((history) => history?.split(",").length ?? 0);
   await page.getByRole("button", { name: "Play preview" }).click();
+  await expect
+    .poll(async () => {
+      const history =
+        (await previewDocumentFrame
+          .locator("body")
+          .getAttribute("data-frame-history")) ?? "";
+      return history.split(",")[messageCountBeforePlayback];
+    })
+    .toBe("0");
   await expect(previewDocumentFrame.locator("#frame")).not.toHaveText("89");
   await page.getByRole("button", { name: "Pause preview" }).click();
 
@@ -351,6 +364,8 @@ function previewDocument(invalidInput: boolean) {
 <script>
   window.addEventListener("message", (event) => {
     if (event.data && event.data.type === "relay-preview-frame-v1") {
+      const history = document.body.dataset.frameHistory;
+      document.body.dataset.frameHistory = history ? history + "," + event.data.frame : String(event.data.frame);
       document.getElementById("frame").textContent = String(event.data.frame);
     }
   });
