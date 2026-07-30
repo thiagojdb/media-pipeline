@@ -9,8 +9,8 @@
   "scripts": {
     "dev": "node scripts/start-dev.mjs real",
     "dev:fake": "node scripts/start-dev.mjs fake",
-    "dev:stack:real": "npm run build:packages && AUTHORING_MODE=real SCRIPT_REVISION_MODE=real NARRATION_ALIGNMENT_MODE=openai concurrently --kill-others-on-fail --names web,convex,worker --prefix-colors blue,magenta,green \"node scripts/wait-for-local-worker.mjs && PROJECTS_CONVEX_URL=http://127.0.0.1:3210 PROJECTS_SERVER_TOKEN=relay-local-projects npm run dev --workspace @relay/web\" \"convex dev\" \"node scripts/start-local-worker.mjs\"",
-    "dev:stack:fake": "npm run build:packages && AUTHORING_MODE=fake SCRIPT_REVISION_MODE=fake NARRATION_ALIGNMENT_MODE=fake concurrently --kill-others-on-fail --names web,convex,worker --prefix-colors blue,magenta,green \"node scripts/wait-for-local-worker.mjs && PROJECTS_CONVEX_URL=http://127.0.0.1:3210 PROJECTS_SERVER_TOKEN=relay-local-projects npm run dev --workspace @relay/web\" \"convex dev\" \"node scripts/start-local-worker.mjs\"",
+    "dev:stack:real": "npm run build:packages && AUTHORING_MODE=real SCRIPT_REVISION_MODE=real NARRATION_ALIGNMENT_MODE=openai concurrently --kill-others-on-fail --names web,worker --prefix-colors blue,green \"node scripts/wait-for-local-worker.mjs && npm run dev --workspace @relay/web\" \"node scripts/start-local-worker.mjs\"",
+    "dev:stack:fake": "npm run build:packages && AUTHORING_MODE=fake SCRIPT_REVISION_MODE=fake NARRATION_ALIGNMENT_MODE=fake concurrently --kill-others-on-fail --names web,worker --prefix-colors blue,green \"node scripts/wait-for-local-worker.mjs && npm run dev --workspace @relay/web\" \"node scripts/start-local-worker.mjs\"",
     "dev:loop": "npm run dev",
     "dev:loop:real": "npm run dev",
     "format": "prettier --write .",

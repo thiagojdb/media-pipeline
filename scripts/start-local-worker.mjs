@@ -6,12 +6,6 @@ import path from "node:path";
 const localEnvFile = path.resolve(".env.local");
 if (await fileExists(localEnvFile)) process.loadEnvFile(localEnvFile);
 
-const convexUrl = "http://127.0.0.1:3210";
-const buildToken = "relay-local-build-worker";
-const authoringToken = "relay-local-authoring-worker";
-const loopToken = "relay-local-component-loop";
-const projectsToken = "relay-local-projects";
-const narrationToken = "relay-local-narration";
 const workerPort = process.env.RELAY_LOCAL_WORKER_PORT ?? "3213";
 const workerAuthToken =
   process.env.RELAY_WORKER_AUTH_TOKEN ?? "relay-local-worker";
@@ -23,10 +17,11 @@ if (!["fake", "real"].includes(scriptRevisionMode))
   throw new Error("SCRIPT_REVISION_MODE must be fake or real.");
 let realAuthoringEnvironment = {};
 if (authoringMode === "real") {
-  const model = process.env.AUTHORING_PI_MODEL ?? "openai-codex/gpt-5.6-sol";
-  const provider = model.slice(0, model.indexOf("/"));
   const authFile = await authoringAuthFile();
   const credentials = JSON.parse(await readFile(authFile, "utf8"));
+  const model =
+    process.env.AUTHORING_PI_MODEL ?? defaultAuthoringModel(credentials);
+  const provider = model.slice(0, model.indexOf("/"));
   const credential =
     credentials[provider] ??
     (provider === "openai-codex" ? credentials.openai : undefined);
@@ -77,17 +72,6 @@ if (
   );
 }
 
-await waitForConvex();
-for (const [name, value] of [
-  ["COMPONENT_BUILD_WORKER_TOKEN", buildToken],
-  ["AUTHORING_WORKER_TOKEN", authoringToken],
-  ["COMPONENT_LOOP_WORKER_TOKEN", loopToken],
-  ["PROJECTS_SERVER_TOKEN", projectsToken],
-  ["NARRATION_WORKER_TOKEN", narrationToken],
-]) {
-  await run("npx", ["convex", "env", "set", name, value]);
-}
-
 const child = spawn("npm", ["run", "dev", "--workspace", "@relay/worker"], {
   stdio: "inherit",
   env: {
@@ -95,19 +79,27 @@ const child = spawn("npm", ["run", "dev", "--workspace", "@relay/worker"], {
     RELAY_ENV: "development",
     WORKER_PORT: workerPort,
     RELAY_WORKER_AUTH_TOKEN: workerAuthToken,
+    RELAY_RENDER_OUTPUT_DIR: path.resolve(".relay", "local-renders"),
     COMPONENT_BUILD_ENABLED: "true",
-    COMPONENT_BUILD_CONVEX_URL: convexUrl,
-    COMPONENT_BUILD_WORKER_TOKEN: buildToken,
+    COMPONENT_BUILD_CONVEX_URL: process.env.COMPONENT_BUILD_CONVEX_URL,
+    COMPONENT_BUILD_WORKER_TOKEN: process.env.COMPONENT_BUILD_WORKER_TOKEN,
+    COMPONENT_BUILD_WORKSPACE_ROOT: path.resolve(
+      ".relay",
+      "local-component-builds",
+    ),
     AUTHORING_ENABLED: "true",
     AUTHORING_MODE: authoringMode,
     SCRIPT_REVISION_MODE: scriptRevisionMode,
-    AUTHORING_CONVEX_URL: convexUrl,
-    AUTHORING_WORKER_TOKEN: authoringToken,
+    AUTHORING_CONVEX_URL: process.env.AUTHORING_CONVEX_URL,
+    AUTHORING_WORKER_TOKEN: process.env.AUTHORING_WORKER_TOKEN,
+    AUTHORING_WORKSPACE_ROOT: path.resolve(".relay", "local-authoring"),
+    AUTHORING_PI_SESSION_ROOT: path.resolve(".relay", "local-pi-sessions"),
     COMPONENT_LOOP_ENABLED: "true",
-    COMPONENT_LOOP_WORKER_TOKEN: loopToken,
+    COMPONENT_LOOP_WORKER_TOKEN: process.env.COMPONENT_LOOP_WORKER_TOKEN,
     NARRATION_ENABLED: "true",
-    NARRATION_CONVEX_URL: convexUrl,
-    NARRATION_WORKER_TOKEN: narrationToken,
+    NARRATION_CONVEX_URL: process.env.NARRATION_CONVEX_URL,
+    NARRATION_WORKER_TOKEN: process.env.NARRATION_WORKER_TOKEN,
+    RELAY_NARRATION_TMPDIR: path.resolve(".relay", "local-narration"),
     NARRATION_ALIGNMENT_MODE: process.env.NARRATION_ALIGNMENT_MODE ?? "fake",
     NARRATION_OPENAI_API_KEY:
       process.env.NARRATION_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY,
@@ -121,19 +113,6 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 process.exitCode = await new Promise((resolve) => {
   child.on("exit", (code) => resolve(code ?? 1));
 });
-
-async function waitForConvex() {
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    try {
-      await fetch(convexUrl);
-      return;
-    } catch {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-  }
-  throw new Error("Local Convex did not become ready within 120 seconds.");
-}
 
 async function fileExists(filePath) {
   try {
@@ -159,13 +138,11 @@ async function authoringAuthFile() {
   );
 }
 
-function run(command, args) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "inherit" });
-    child.on("exit", (code) => {
-      if (code === 0) resolve();
-      else
-        reject(new Error(`${command} exited with code ${code ?? "unknown"}.`));
-    });
-  });
+function defaultAuthoringModel(credentials) {
+  if (credentials["openai-codex"] || credentials.openai)
+    return "openai-codex/gpt-5.6-sol";
+  if (credentials["github-copilot"]) return "github-copilot/gpt-5.6-sol";
+  throw new Error(
+    "Real authoring requires an OpenAI Codex, OpenAI, or GitHub Copilot credential.",
+  );
 }
