@@ -273,6 +273,8 @@ test("keeps the inline preview mounted during playback and repeated seeks", asyn
           addEventListener("message", event => {
             if (event.source !== parent || event.data?.type !== "relay-preview-frame-v1") return;
             const rendered = document.getElementById("rendered-frame");
+            const history = document.body.dataset.frameHistory;
+            document.body.dataset.frameHistory = history ? history + "," + event.data.frame : String(event.data.frame);
             rendered.dataset.frame = String(event.data.frame);
             rendered.textContent = "frame " + event.data.frame;
           });
@@ -301,7 +303,22 @@ test("keeps the inline preview mounted during playback and repeated seeks", asyn
     ).relayPreviewNode = node;
   });
 
+  const messageCountBeforePlayback = await iframe
+    .contentFrame()
+    .locator("body")
+    .getAttribute("data-frame-history")
+    .then((history) => history?.split(",").length ?? 0);
   await page.getByRole("button", { name: "Play preview" }).click();
+  await expect
+    .poll(async () => {
+      const history =
+        (await iframe
+          .contentFrame()
+          .locator("body")
+          .getAttribute("data-frame-history")) ?? "";
+      return history.split(",")[messageCountBeforePlayback];
+    })
+    .toBe("0");
   await expect(renderedFrame).not.toHaveAttribute("data-frame", "45");
   await page.getByRole("button", { name: "Pause preview" }).click();
 

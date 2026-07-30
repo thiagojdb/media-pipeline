@@ -932,6 +932,7 @@ function InlinePreview({
   );
   const [frame, setFrame] = useState(Math.min(45, maximumFrame));
   const [playing, setPlaying] = useState(false);
+  const hasStartedPlaybackRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
     if (!playing) return;
@@ -979,7 +980,17 @@ function InlinePreview({
         <button
           aria-label={playing ? "Pause preview" : "Play preview"}
           className="rounded border border-white/15 px-2 py-1"
-          onClick={() => setPlaying((value) => !value)}
+          onClick={() => {
+            if (playing) {
+              setPlaying(false);
+              return;
+            }
+            if (!hasStartedPlaybackRef.current) {
+              hasStartedPlaybackRef.current = true;
+              setFrame(0);
+            }
+            setPlaying(true);
+          }}
           type="button"
         >
           {playing ? "Pause" : "Play"}
@@ -989,6 +1000,7 @@ function InlinePreview({
           className="max-w-48 rounded border border-white/15 bg-white/10 px-2 py-1"
           onChange={(event) => {
             setFixtureId(event.target.value);
+            hasStartedPlaybackRef.current = false;
             setFrame(0);
           }}
           value={fixture?.id ?? ""}
@@ -1004,7 +1016,11 @@ function InlinePreview({
           className="min-w-24 flex-1 accent-white"
           max={maximumFrame}
           min={0}
-          onChange={(event) => setFrame(Number(event.target.value))}
+          onChange={(event) => {
+            hasStartedPlaybackRef.current = true;
+            setPlaying(false);
+            setFrame(Number(event.target.value));
+          }}
           type="range"
           value={frame}
         />

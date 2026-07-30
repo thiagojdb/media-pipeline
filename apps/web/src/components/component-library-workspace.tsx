@@ -390,6 +390,7 @@ function LibraryVersionPlayer({
     Math.min(version.previewFrame, maximumFrame),
   );
   const [playing, setPlaying] = useState(false);
+  const hasStartedPlaybackRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -468,6 +469,7 @@ function LibraryVersionPlayer({
     setDraftError(undefined);
     setIssues([]);
     setMeta(undefined);
+    hasStartedPlaybackRef.current = false;
     stopAtFrame(0);
   };
 
@@ -484,6 +486,7 @@ function LibraryVersionPlayer({
     setDraftError(undefined);
     setIssues([]);
     setMeta(undefined);
+    hasStartedPlaybackRef.current = false;
     stopAtFrame(0);
     setAppliedInput(browserBase64Url(JSON.stringify(parsed)));
   };
@@ -494,6 +497,7 @@ function LibraryVersionPlayer({
     setDraftError(undefined);
     setIssues([]);
     setMeta(undefined);
+    hasStartedPlaybackRef.current = false;
     stopAtFrame(0);
   };
 
@@ -524,7 +528,17 @@ function LibraryVersionPlayer({
           <button
             aria-label={playing ? "Pause preview" : "Play preview"}
             className="inline-flex items-center gap-1.5 rounded border border-white/15 px-2.5 py-1.5 hover:bg-white/10"
-            onClick={() => setPlaying((value) => !value)}
+            onClick={() => {
+              if (playing) {
+                setPlaying(false);
+                return;
+              }
+              if (!hasStartedPlaybackRef.current) {
+                hasStartedPlaybackRef.current = true;
+                setFrame(0);
+              }
+              setPlaying(true);
+            }}
             type="button"
           >
             {playing ? (
@@ -551,7 +565,10 @@ function LibraryVersionPlayer({
             className="min-w-24 flex-1 accent-white"
             max={maximumFrame}
             min={0}
-            onChange={(event) => stopAtFrame(Number(event.target.value))}
+            onChange={(event) => {
+              hasStartedPlaybackRef.current = true;
+              stopAtFrame(Number(event.target.value));
+            }}
             type="range"
             value={Math.min(frame, maximumFrame)}
           />
