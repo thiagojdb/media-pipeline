@@ -24,7 +24,11 @@ import {
   DeterministicFakeDialogueAgent,
   RealPiDialogueAgent,
 } from "./component-dialogue-agent.js";
-import { NarrationLoop } from "./narration-loop.js";
+import {
+  DeterministicFakeAligner,
+  NarrationLoop,
+  OpenAIWhisperAligner,
+} from "./narration-loop.js";
 import {
   BrowserProjectRenderExecutor,
   createFakeProjectRenderExecutor,
@@ -160,20 +164,49 @@ const componentLoop =
     : undefined;
 const scriptRevisionAgent =
   scriptRevisionMode === "real"
-    ? createScriptRevisionAgentFromEnvironment()
+    ? process.env.KIMI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim()
+      ? createScriptRevisionAgentFromEnvironment()
+      : undefined
     : new DeterministicFakeScriptRevisionAgent();
 
 const narrationEnabled = process.env.NARRATION_ENABLED === "true";
 const narrationUrl = process.env.NARRATION_CONVEX_URL;
 const narrationToken = process.env.NARRATION_WORKER_TOKEN;
+const narrationAlignmentMode = process.env.NARRATION_ALIGNMENT_MODE;
 if (narrationEnabled && (!narrationUrl || !narrationToken)) {
   throw new Error(
     "NARRATION_ENABLED=true requires NARRATION_CONVEX_URL and NARRATION_WORKER_TOKEN.",
   );
 }
+if (
+  narrationEnabled &&
+  narrationAlignmentMode !== "fake" &&
+  narrationAlignmentMode !== "openai"
+) {
+  throw new Error(
+    "NARRATION_ENABLED=true requires NARRATION_ALIGNMENT_MODE=fake or openai.",
+  );
+}
+const narrationOpenAIApiKey = process.env.NARRATION_OPENAI_API_KEY?.trim();
+const narrationAligner =
+  narrationAlignmentMode === "openai"
+    ? narrationOpenAIApiKey
+      ? new OpenAIWhisperAligner(
+          narrationOpenAIApiKey,
+          process.env.NARRATION_OPENAI_MODEL ?? "whisper-1",
+          process.env.NARRATION_OPENAI_BASE_URL,
+        )
+      : {
+          async transcribe(): Promise<never> {
+            throw new Error(
+              "Real narration alignment requires NARRATION_OPENAI_API_KEY or OPENAI_API_KEY.",
+            );
+          },
+        }
+    : new DeterministicFakeAligner();
 const narrationLoop =
   narrationEnabled && narrationUrl && narrationToken
-    ? new NarrationLoop(narrationUrl, narrationToken)
+    ? new NarrationLoop(narrationUrl, narrationToken, narrationAligner)
     : undefined;
 narrationLoop?.start();
 
@@ -237,7 +270,7 @@ const server = createWorkerServer({
   narrationStatus: () => narrationLoop?.status ?? "disabled",
   projectRenderStatus: () => projectRenderLoop?.status ?? "disabled",
   ...(componentLoop ? { componentLoop } : {}),
-  scriptRevisionAgent,
+  ...(scriptRevisionAgent ? { scriptRevisionAgent } : {}),
 });
 
 server.listen(port, "127.0.0.1", () => {

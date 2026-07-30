@@ -421,6 +421,16 @@ async function setup() {
       storageId: narrationStorageId,
       mediaType: "audio/wav",
       durationMs: 3_000,
+      alignmentState: "approved",
+      wordTimings: [
+        {
+          index: 0,
+          word: "Opening",
+          startMs: 0,
+          endMs: 500,
+          match: "exact",
+        },
+      ],
       timingSegments: [],
       createdAt: 10,
     });

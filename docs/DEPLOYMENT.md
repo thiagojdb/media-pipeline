@@ -1,118 +1,143 @@
-# Production deployment
+# Relay environments and deployment
 
-Relay uses two production runtimes because generated component code and video
-rendering must not execute inside Next.js:
+Relay uses promotion branches and fully separate environment credentials:
 
-- Vercel hosts `apps/web` and forwards authenticated worker requests.
-- Convex stores durable application, component, and render state.
-- A persistent Linux host runs `apps/worker` with Bubblewrap, Chromium, and
-  FFmpeg. The worker is exposed through HTTPS and requires
-  `RELAY_WORKER_AUTH_TOKEN` for every operation; `/health` remains
-  unauthenticated for monitoring.
+- `main` is the development branch.
+- `prod` is the production branch.
+- A production release is a reviewed promotion of an exact commit from
+  `main`; production is never built from an uncommitted workspace.
 
-## Vercel
+## Development
 
-The repository root is the Vercel project root. `vercel.json` builds shared
-packages before the Next.js workspace. Production requires:
+Development is the complete alpha environment. It owns:
 
-- `CONVEX_URL`
-- `NEXT_PUBLIC_CONVEX_URL`
-- `PROJECTS_CONVEX_URL`
-- `PROJECTS_SERVER_TOKEN`
-- `RELAY_WORKER_URL`
-- `RELAY_WORKER_AUTH_TOKEN`
+- the stable development Vercel project;
+- the development Convex deployment and data;
+- the persistent development worker on `brutus`;
+- real-provider credentials used for private dogfooding;
+- development-only worker and queue tokens.
 
-The worker URL must be an HTTPS endpoint reachable from Vercel. Never expose a
-worker without the matching auth token.
+The live stack formerly called production is now development. The persistent
+worker remains on loopback port `3212`; local `npm run dev` uses `3213` so both
+can run on `brutus` without sharing a process, credential, or workspace.
 
-## Convex
+Pushes to `main` run model-free CI. A successful push starts
+`Deploy development`, which:
 
-Production worker loops require matching server-only values in Convex and the
-worker environment:
+1. deploys development Convex functions;
+2. uploads, builds, and activates the exact development worker release;
+3. rolls the worker back if its local health check fails;
+4. builds and promotes the stable development Vercel deployment.
 
-- `COMPONENT_BUILD_WORKER_TOKEN`
-- `AUTHORING_WORKER_TOKEN`
-- `COMPONENT_LOOP_WORKER_TOKEN`
-- `NARRATION_WORKER_TOKEN`
+The GitHub `development` environment accepts only the `main` branch and must
+contain:
 
-`PROJECTS_SERVER_TOKEN` remains the separate Next.js-to-Convex credential.
+- `CONVEX_DEPLOY_KEY` for the development Convex deployment;
+- `VERCEL_TOKEN`;
+- `VERCEL_ORG_ID`;
+- `VERCEL_PROJECT_ID` for the development Vercel project.
 
-## Persistent worker
+`DEVELOPMENT_DEPLOY_ENABLED` remains `false` until the four credentials
+formerly stored in the old production environment have been configured in the
+development environment. The already-running development deployment remains
+available during that credential transition.
 
-Install the tracked user unit from
-`deploy/systemd/relay-worker.service`, place the production environment at
-`~/.config/relay-worker/production.env` with mode `0600`, and enable the unit:
+The self-hosted runner is repository-scoped and carries the
+`relay-development` label. It must never execute pull-request code.
 
-```sh
-systemctl --user daemon-reload
-systemctl --user enable --now relay-worker.service
+### Persistent development worker
+
+The tracked unit is
+`deploy/systemd/relay-development-worker.service`. Its host-specific
+environment is:
+
+```text
+~/.config/relay-worker/development.env
 ```
 
-The production host must have Node.js, npm, Bubblewrap, Chromium, and FFmpeg.
-User lingering keeps the worker running without an interactive login. Verify
-both boundaries after deployment:
+That file must be mode `0600`. The release root is:
+
+```text
+~/services/relay-development-worker
+```
+
+Install the unit and enable it:
+
+```sh
+install -Dm644 deploy/systemd/relay-development-worker.service \
+  ~/.config/systemd/user/relay-development-worker.service
+systemctl --user daemon-reload
+systemctl --user enable --now relay-development-worker.service
+```
+
+Verify the development boundaries after deployment:
 
 ```sh
 curl -fsS http://127.0.0.1:3212/health
 curl -fsS https://relay-blush-sigma.vercel.app/api/component-loop/library
 ```
 
-The worker uses authenticated Convex query subscriptions to wake its enabled
-job queues. Healthy idle operation does not repeatedly invoke queue `claim` or
-`recoverExpired` mutations. Deploy Convex functions before a worker release
-that changes the subscription or lease-recovery contract. After restarting the
-worker, submit one job for each enabled queue, then confirm in Convex Usage that
-function calls stop increasing continuously once the queues are empty.
+## Production
 
-Real Pi authoring remains fail-closed. Enable it only with an explicitly
-selected model and a server-only provider credential. Deterministic fake mode
-is suitable for deployment smoke tests and does not spend model tokens.
+Production is a separate web and data environment owned by the `prod` branch.
+During alpha it intentionally has **no worker**. Component authoring, model
+script revision, narration alignment, and rendering therefore return an
+explicit unavailable response in production instead of reaching the
+development worker.
 
-## GitHub Actions
+The production Vercel project must set:
 
-Pull requests to `main` and pushes to `main` run the model-free `CI / verify`
-check. A successful `main` push then starts the serialized
-`Deploy production` workflow:
+- `RELAY_ENV=production`;
+- its own `CONVEX_URL`;
+- its own `NEXT_PUBLIC_CONVEX_URL`;
+- its own `PROJECTS_CONVEX_URL`;
+- its own `PROJECTS_SERVER_TOKEN`;
+- no `RELAY_WORKER_URL`;
+- no `RELAY_WORKER_AUTH_TOKEN`.
 
-1. Deploy Convex functions.
-2. Upload, build, and activate an exact worker release.
-3. Roll the worker back if its local health check does not pass.
-4. Build and promote the Vercel production deployment.
+The production Convex deployment and all tokens must be distinct from
+development. Production must never contain development project or channel
+data.
 
-Create a GitHub environment named `production`. Configure these environment
-secrets:
+The GitHub `production` environment accepts only the `prod` branch and must
+contain production-scoped:
 
-- `CONVEX_DEPLOY_KEY`: a production-scoped Convex deploy key.
-- `VERCEL_TOKEN`: a Vercel access token that can deploy the Relay project.
-- `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID`: the linked Vercel project IDs.
+- `CONVEX_DEPLOY_KEY`;
+- `VERCEL_TOKEN`;
+- `VERCEL_ORG_ID`;
+- `VERCEL_PROJECT_ID`.
 
-The production job targets a self-hosted runner with the
-`relay-production` label on the persistent worker host. Do not assign this
-label to a general-purpose runner, and do not run pull-request workflows on
-it. The runner account needs permission to write `~/services/relay-worker`,
-run the tracked user service, and read the existing
-`~/.config/relay-worker/production.env`. Before the first automated release:
+`PRODUCTION_DEPLOY_ENABLED` is an environment variable, not a secret. It
+defaults to `false`. Keep it disabled until the separate Vercel project,
+Convex deployment, and four production secrets are configured and verified.
 
-```sh
-mkdir -p ~/services/relay-worker/releases
-install -Dm644 deploy/systemd/relay-worker.service \
-  ~/.config/systemd/user/relay-worker.service
-systemctl --user daemon-reload
-systemctl --user enable relay-worker.service
-```
+Once enabled, a successful CI push to `prod` deploys only:
 
-Install the GitHub runner with the repository-scoped registration token, the
-name `brutus-relay`, and the labels `self-hosted,Linux,X64,relay-production`.
-Then install and enable the tracked
-`deploy/systemd/github-relay-runner.service` user unit. Keep this runner
-repository-scoped so unrelated repositories cannot schedule work on the
-production host.
+1. production Convex functions;
+2. the production Vercel application.
 
-If the Vercel project is still connected directly to GitHub, disable its
-automatic production deployment for `main`; GitHub Actions is the production
-release authority. Preview deployments may remain enabled for pull requests.
+It does not package, start, or contact a worker.
 
-The production GitHub environment is the approval boundary for releases. Add
-required reviewers there if production should require a manual approval after
-`main` passes CI. Do not add provider credentials to GitHub's repository-wide
-variables or workflow files.
+## Promotion
+
+Normal work lands on `main` and deploys to development. Promote to production
+by opening a pull request from `main` to `prod`. CI must pass on the exact
+candidate commit. Merging that pull request advances `prod`; it does not copy
+development data or credentials.
+
+Before enabling automatic production deployment:
+
+1. Verify the production Vercel project has no worker URL or token.
+2. Verify its Convex URL differs from development.
+3. Verify the production GitHub secrets target only the new production
+   resources.
+4. Confirm worker-backed routes return `503 worker_unavailable`.
+5. Set `PRODUCTION_DEPLOY_ENABLED=true`.
+
+## Trust boundary
+
+Generated component code and video rendering never execute in Next.js or
+Convex. Development retains the private dogfood worker until production worker
+is explicitly justified. Adding a production worker later requires a separate
+service, credentials, queue tokens, storage roots, monitoring, and release
+approval; it must not reuse the development worker.

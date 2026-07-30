@@ -1,4 +1,5 @@
-const workerUrl = "http://127.0.0.1:3212/health";
+const workerPort = process.env.RELAY_LOCAL_WORKER_PORT ?? "3213";
+const workerUrl = `http://127.0.0.1:${workerPort}/health`;
 const deadline = Date.now() + 120_000;
 
 while (Date.now() < deadline) {

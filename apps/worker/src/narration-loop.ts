@@ -8,18 +8,46 @@ import { ConvexHttpClient } from "convex/browser";
 import { anyApi } from "convex/server";
 
 const api = anyApi.projectNarrations!;
-const SAMPLE_RATE = 16_000;
-const MAX_DURATION_MS = 120_000;
+
+type NarrationCue = {
+  index: number;
+  text: string;
+};
 
 type NarrationJob = {
   _id: string;
-  kind?: "generated" | "upload";
-  scriptContent?: string;
-  sourceUrl?: string;
-  sourceMediaType?: string;
   attempt: number;
   cancelRequested: boolean;
+  sourceUrl: string;
+  sourceFileName: string;
+  sourceMediaType: string;
+  plan: {
+    _id: string;
+    cues: NarrationCue[];
+  };
 };
+
+export type TranscribedWord = {
+  word: string;
+  startMs: number;
+  endMs: number;
+};
+
+export type TranscriptionResult = {
+  provider: string;
+  model: string;
+  transcript: string;
+  words: TranscribedWord[];
+};
+
+export interface NarrationAligner {
+  transcribe(input: {
+    audio: Buffer;
+    fileName: string;
+    mediaType: string;
+    planText: string;
+  }): Promise<TranscriptionResult>;
+}
 
 export type NarrationLoopStatus = "running" | "degraded" | "stopped";
 
@@ -35,7 +63,8 @@ export class NarrationLoop {
   constructor(
     url: string,
     private readonly workerToken: string,
-    private readonly leaseMs = 30_000,
+    private readonly aligner: NarrationAligner,
+    private readonly leaseMs = 120_000,
   ) {
     this.#client = new ConvexHttpClient(url);
   }
@@ -87,14 +116,14 @@ export class NarrationLoop {
       do {
         this.#wakeRequested = false;
         while (this.#status !== "stopped" && (await this.tick())) {
-          // Drain every queued narration job before waiting again.
+          // Drain every queued alignment before waiting again.
         }
       } while (this.#status !== "stopped" && this.#wakeRequested);
       if (this.#status !== "stopped") this.#status = "running";
     } catch (error) {
       if (this.#status !== "stopped") this.#status = "degraded";
       console.error(
-        `Narration control loop degraded safely: ${safeMessage(error)}`,
+        `Narration alignment loop degraded safely: ${safeMessage(error)}`,
       );
       this.#scheduleRetry();
     } finally {
@@ -119,24 +148,51 @@ export class NarrationLoop {
       workerId: this.#workerId,
       leaseAttempt: job.attempt,
     };
+    const heartbeatTimer = setInterval(
+      () => {
+        void this.#client
+          .mutation(api.heartbeat!, {
+            ...lease,
+            leaseMs: this.leaseMs,
+          })
+          .catch((error) => {
+            console.error(
+              `Narration job ${job._id} heartbeat failed: ${safeMessage(error)}`,
+            );
+          });
+      },
+      Math.max(5_000, Math.min(30_000, Math.floor(this.leaseMs / 3))),
+    );
     try {
       if (job.cancelRequested) {
         await this.#fail(
           lease,
           "canceled",
           "narration_canceled",
-          "Narration generation canceled.",
+          "Narration alignment canceled.",
         );
         return;
       }
-      if (job.kind === "upload") {
-        await this.#probeUpload(job, lease, startedAt);
-        return;
+      const response = await fetch(job.sourceUrl);
+      if (!response.ok) {
+        throw new Error(
+          `Narration download failed with status ${response.status}.`,
+        );
       }
-      if (!job.scriptContent) {
-        throw new Error("Generated narration job has no script content.");
+      const audio = Buffer.from(await response.arrayBuffer());
+      if (audio.length > 100 * 1024 * 1024) {
+        throw new Error("Narration upload exceeds the worker limit.");
       }
-      const generated = generateDeterministicNarration(job.scriptContent);
+      const [metadata, transcription] = await Promise.all([
+        probeAudio(audio),
+        this.aligner.transcribe({
+          audio,
+          fileName: job.sourceFileName,
+          mediaType: job.sourceMediaType,
+          planText: job.plan.cues.map((cue) => cue.text).join("\n\n"),
+        }),
+      ]);
+      const aligned = alignTranscriptToPlan(job.plan.cues, transcription.words);
       const current = (await this.#client.query(api.getForWorker!, {
         workerToken: this.workerToken,
         jobId: job._id,
@@ -146,92 +202,40 @@ export class NarrationLoop {
           lease,
           "canceled",
           "narration_canceled",
-          "Narration generation canceled.",
+          "Narration alignment canceled.",
         );
         return;
       }
-      const uploadUrl = (await this.#client.mutation(
-        api.createUploadUrl!,
-        lease,
-      )) as string;
-      const upload = await fetch(uploadUrl, {
-        method: "POST",
-        headers: { "content-type": "audio/wav" },
-        body: new Uint8Array(generated.audio),
-      });
-      if (!upload.ok)
-        throw new Error(`Audio upload failed with status ${upload.status}.`);
-      const body = (await upload.json()) as { storageId?: string };
-      if (!body.storageId)
-        throw new Error("Audio upload returned no storage id.");
-      await this.#client.mutation(api.complete!, {
+      await this.#client.mutation(api.completeUpload!, {
         ...lease,
-        storageId: body.storageId,
-        durationMs: generated.durationMs,
-        timingSegments: generated.timingSegments,
-        usageCharacters: job.scriptContent.length,
-        estimatedCostUsd: 0,
+        durationMs: metadata.durationMs,
+        mediaType: job.sourceMediaType,
+        audioCodec: metadata.audioCodec,
+        sampleRate: metadata.sampleRate,
+        channels: metadata.channels,
+        transcript: transcription.transcript,
+        timingSegments: aligned.cueTimings,
+        wordTimings: aligned.wordTimings,
+        omittedWordCount: aligned.omittedWordCount,
+        insertedWordCount: aligned.insertedWordCount,
+        substitutedWordCount: aligned.substitutedWordCount,
+        provider: transcription.provider,
+        model: transcription.model,
         wallTimeMs: Date.now() - startedAt,
       });
     } catch (error) {
       await this.#fail(
         lease,
         "failed",
-        "narration_generation_failed",
-        "Narration generation failed safely and can be retried.",
+        "narration_alignment_failed",
+        "Narration alignment failed safely and can be retried.",
       ).catch(() => undefined);
       console.error(
         `Narration job ${job._id} failed safely: ${safeMessage(error)}`,
       );
+    } finally {
+      clearInterval(heartbeatTimer);
     }
-  }
-
-  async #probeUpload(
-    job: NarrationJob,
-    lease: {
-      workerToken: string;
-      jobId: string;
-      workerId: string;
-      leaseAttempt: number;
-    },
-    startedAt: number,
-  ): Promise<void> {
-    if (!job.sourceUrl || !job.sourceMediaType) {
-      throw new Error("Uploaded narration job has no source audio.");
-    }
-    const response = await fetch(job.sourceUrl);
-    if (!response.ok) {
-      throw new Error(
-        `Narration download failed with status ${response.status}.`,
-      );
-    }
-    const audio = Buffer.from(await response.arrayBuffer());
-    if (audio.length > 100 * 1024 * 1024) {
-      throw new Error("Narration upload exceeds the worker probe limit.");
-    }
-    const metadata = await probeAudio(audio);
-    const current = (await this.#client.query(api.getForWorker!, {
-      workerToken: this.workerToken,
-      jobId: job._id,
-    })) as { cancelRequested?: boolean } | null;
-    if (!current || current.cancelRequested) {
-      await this.#fail(
-        lease,
-        "canceled",
-        "narration_canceled",
-        "Narration upload probing canceled.",
-      );
-      return;
-    }
-    await this.#client.mutation(api.completeUpload!, {
-      ...lease,
-      durationMs: metadata.durationMs,
-      mediaType: job.sourceMediaType,
-      audioCodec: metadata.audioCodec,
-      sampleRate: metadata.sampleRate,
-      channels: metadata.channels,
-      wallTimeMs: Date.now() - startedAt,
-    });
   }
 
   #fail(
@@ -254,34 +258,174 @@ export class NarrationLoop {
   }
 }
 
-export function generateDeterministicNarration(content: string): {
-  audio: Buffer;
-  durationMs: number;
-  timingSegments: Array<{
-    index: number;
-    startMs: number;
-    endMs: number;
-    text: string;
-  }>;
-} {
-  const segments = splitSegments(content);
-  const rawDurations = segments.map((text) =>
-    Math.max(600, Math.min(4_000, text.split(/\s+/).length * 280)),
+export class OpenAIWhisperAligner implements NarrationAligner {
+  constructor(
+    private readonly apiKey: string,
+    private readonly model = "whisper-1",
+    private readonly baseUrl = "https://api.openai.com/v1",
+  ) {}
+
+  async transcribe(input: {
+    audio: Buffer;
+    fileName: string;
+    mediaType: string;
+    planText: string;
+  }): Promise<TranscriptionResult> {
+    const form = new FormData();
+    form.set(
+      "file",
+      new File([new Uint8Array(input.audio)], input.fileName, {
+        type: input.mediaType,
+      }),
+    );
+    form.set("model", this.model);
+    form.set("response_format", "verbose_json");
+    form.append("timestamp_granularities[]", "word");
+    const response = await fetch(`${this.baseUrl}/audio/transcriptions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${this.apiKey}` },
+      body: form,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Transcription failed with status ${response.status}: ${(await response.text()).slice(0, 300)}`,
+      );
+    }
+    const result = (await response.json()) as {
+      text?: string;
+      words?: Array<{ word?: string; start?: number; end?: number }>;
+    };
+    const words = (result.words ?? []).map((word) => ({
+      word: word.word?.trim() ?? "",
+      startMs: Math.round((word.start ?? -1) * 1_000),
+      endMs: Math.round((word.end ?? -1) * 1_000),
+    }));
+    if (
+      !result.text?.trim() ||
+      !words.length ||
+      words.some(
+        (word) => !word.word || word.startMs < 0 || word.endMs <= word.startMs,
+      )
+    ) {
+      throw new Error("Transcription returned no valid word timing.");
+    }
+    return {
+      provider: "openai",
+      model: this.model,
+      transcript: result.text.trim(),
+      words,
+    };
+  }
+}
+
+export class DeterministicFakeAligner implements NarrationAligner {
+  async transcribe(input: {
+    audio: Buffer;
+    fileName: string;
+    mediaType: string;
+    planText: string;
+  }): Promise<TranscriptionResult> {
+    const metadata = await probeAudio(input.audio);
+    const words = tokenize(input.planText).map((word) => word.text);
+    const duration = Math.max(1, metadata.durationMs);
+    const step = duration / Math.max(1, words.length);
+    return {
+      provider: "relay-fake-alignment",
+      model: "deterministic-word-timing-v1",
+      transcript: words.join(" "),
+      words: words.map((word, index) => ({
+        word,
+        startMs: Math.round(index * step),
+        endMs: Math.max(
+          Math.round(index * step) + 1,
+          Math.round((index + 1) * step),
+        ),
+      })),
+    };
+  }
+}
+
+export function alignTranscriptToPlan(
+  cues: NarrationCue[],
+  transcriptWords: TranscribedWord[],
+) {
+  const planWords = cues.flatMap((cue) =>
+    tokenize(cue.text).map((word) => ({
+      ...word,
+      cueIndex: cue.index,
+    })),
   );
-  const rawTotal = rawDurations.reduce((sum, value) => sum + value, 0);
-  const scale = Math.min(1, MAX_DURATION_MS / rawTotal);
-  let cursor = 0;
-  const timingSegments = segments.map((text, index) => {
-    const duration = Math.max(250, Math.round(rawDurations[index]! * scale));
-    const segment = { index, startMs: cursor, endMs: cursor + duration, text };
-    cursor += duration;
-    return segment;
+  let planCursor = 0;
+  let omittedWordCount = 0;
+  let insertedWordCount = 0;
+  let substitutedWordCount = 0;
+  const wordTimings = transcriptWords.map((word, index) => {
+    const normalized = normalizeWord(word.word);
+    const matchIndex = planWords.findIndex(
+      (candidate, candidateIndex) =>
+        candidateIndex >= planCursor &&
+        candidateIndex <= planCursor + 12 &&
+        candidate.normalized === normalized,
+    );
+    if (matchIndex >= 0) {
+      omittedWordCount += matchIndex - planCursor;
+      const planWord = planWords[matchIndex]!;
+      planCursor = matchIndex + 1;
+      return {
+        index,
+        word: word.word,
+        startMs: word.startMs,
+        endMs: word.endMs,
+        cueIndex: planWord.cueIndex,
+        planWordIndex: matchIndex,
+        match: "exact" as const,
+      };
+    }
+    const expected = planWords[planCursor];
+    if (expected) {
+      substitutedWordCount += 1;
+      planCursor += 1;
+      return {
+        index,
+        word: word.word,
+        startMs: word.startMs,
+        endMs: word.endMs,
+        cueIndex: expected.cueIndex,
+        planWordIndex: planCursor - 1,
+        match: "substitution" as const,
+      };
+    }
+    insertedWordCount += 1;
+    return {
+      index,
+      word: word.word,
+      startMs: word.startMs,
+      endMs: word.endMs,
+      match: "insertion" as const,
+    };
   });
-  const durationMs = cursor;
+  omittedWordCount += planWords.length - planCursor;
+  const cueTimings = cues.flatMap((cue) => {
+    const words = wordTimings.filter((word) => word.cueIndex === cue.index);
+    const first = words[0];
+    const last = words.at(-1);
+    return first && last
+      ? [
+          {
+            index: cue.index,
+            startMs: first.startMs,
+            endMs: last.endMs,
+            text: cue.text,
+          },
+        ]
+      : [];
+  });
   return {
-    audio: wavTone(durationMs, content),
-    durationMs,
-    timingSegments,
+    wordTimings,
+    cueTimings,
+    omittedWordCount,
+    insertedWordCount,
+    substitutedWordCount,
   };
 }
 
@@ -384,59 +528,21 @@ function probeAudioFile(input: string): Promise<{
   });
 }
 
-function splitSegments(content: string): string[] {
-  const parts = content
-    .split(/(?<=[.!?])\s+|\n{2,}/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (!parts.length) return [content.trim()];
-  if (parts.length <= 200) return parts;
-  const grouped: string[] = [];
-  const size = Math.ceil(parts.length / 200);
-  for (let index = 0; index < parts.length; index += size) {
-    grouped.push(parts.slice(index, index + size).join(" "));
-  }
-  return grouped;
-}
-
-function wavTone(durationMs: number, seed: string): Buffer {
-  const sampleCount = Math.max(
-    1,
-    Math.round((durationMs / 1_000) * SAMPLE_RATE),
+function tokenize(text: string) {
+  return [...text.matchAll(/[\p{L}\p{N}]+(?:[’'-][\p{L}\p{N}]+)*/gu)].map(
+    (match) => ({
+      text: match[0],
+      normalized: normalizeWord(match[0]),
+    }),
   );
-  const dataSize = sampleCount * 2;
-  const output = Buffer.alloc(44 + dataSize);
-  output.write("RIFF", 0);
-  output.writeUInt32LE(36 + dataSize, 4);
-  output.write("WAVEfmt ", 8);
-  output.writeUInt32LE(16, 16);
-  output.writeUInt16LE(1, 20);
-  output.writeUInt16LE(1, 22);
-  output.writeUInt32LE(SAMPLE_RATE, 24);
-  output.writeUInt32LE(SAMPLE_RATE * 2, 28);
-  output.writeUInt16LE(2, 32);
-  output.writeUInt16LE(16, 34);
-  output.write("data", 36);
-  output.writeUInt32LE(dataSize, 40);
-  const frequency = 180 + (hashSeed(seed) % 120);
-  for (let sample = 0; sample < sampleCount; sample += 1) {
-    const envelope = Math.min(1, sample / 400, (sampleCount - sample) / 400);
-    const value =
-      Math.sin((2 * Math.PI * frequency * sample) / SAMPLE_RATE) *
-      1_400 *
-      Math.max(0, envelope);
-    output.writeInt16LE(Math.round(value), 44 + sample * 2);
-  }
-  return output;
 }
 
-function hashSeed(value: string): number {
-  let hash = 2166136261;
-  for (const character of value) {
-    hash ^= character.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
+function normalizeWord(word: string) {
+  return word
+    .normalize("NFKD")
+    .replaceAll(/\p{M}/gu, "")
+    .toLocaleLowerCase("en")
+    .replaceAll(/[^\p{L}\p{N}]/gu, "");
 }
 
 function safeMessage(error: unknown): string {
