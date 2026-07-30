@@ -7,11 +7,19 @@ Relay is being rebuilt as an AI-assisted production workspace for scripted, sour
 1. `PRODUCT.md`
 2. `ARCHITECTURE.md`
 3. `MILESTONES.md`
-4. The active Linear issue and its acceptance criteria
+4. Any task-specific planning document or acceptance criteria supplied by the
+   user, when one exists.
+
+Linear is optional. Do not require, create, or update a Linear issue unless the
+user explicitly asks for Linear to be part of the work.
 
 ## Current phase
 
 Foundation is the active milestone. There is no runnable application until MED-130 establishes it. Do not add placeholder commands or claim verification that does not exist.
+
+`main` is the development branch. `prod` is the production promotion branch.
+Production has no worker during alpha; never connect it to the development
+worker or development Convex deployment.
 
 ## Source boundaries
 
@@ -37,7 +45,8 @@ Foundation is the active milestone. There is no runnable application until MED-1
 
 ## Work discipline
 
-- Implement one Linear issue at a time.
+- Implement one bounded work item at a time. The user's request can define the
+  work directly; a tracking issue is not required.
 - Keep changes reviewable and tied to acceptance criteria.
 - Verify through the cheapest command that proves the changed boundary, then run the repository gate when it exists.
 - For UI behavior, test real routes in a browser rather than relying only on isolated component tests.

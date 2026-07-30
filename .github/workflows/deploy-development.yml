@@ -1,4 +1,4 @@
-name: Deploy production
+name: Deploy development
 
 on:
   workflow_run:
@@ -12,32 +12,36 @@ permissions:
   contents: read
 
 concurrency:
-  group: production
+  group: development
   cancel-in-progress: false
 
 jobs:
   deploy:
     name: deploy
     if: >-
-      vars.PRODUCTION_DEPLOY_ENABLED == 'true' &&
+      vars.DEVELOPMENT_DEPLOY_ENABLED == 'true' &&
       (
         github.event_name == 'workflow_dispatch' ||
         (
           github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_branch == 'prod'
+          github.event.workflow_run.head_branch == 'main'
         )
       )
-    runs-on: ubuntu-24.04
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - relay-development
     timeout-minutes: 30
     environment:
-      name: production
+      name: development
       url: ${{ steps.vercel.outputs.url }}
     env:
       DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
     steps:
-      - name: Check out verified production commit
+      - name: Check out verified commit
         uses: actions/checkout@v6
         with:
           ref: ${{ env.DEPLOY_SHA }}
@@ -51,26 +55,42 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Deploy production Convex functions
+      - name: Deploy Convex functions
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: npx convex deploy --typecheck enable --message "GitHub ${DEPLOY_SHA}"
 
-      - name: Pull production web configuration
+      - name: Package development worker release
+        run: git archive --format=tar.gz --output="${RUNNER_TEMP}/relay-development-worker-${DEPLOY_SHA}.tar.gz" "${DEPLOY_SHA}"
+
+      - name: Stage development worker release
+        run: |
+          install -d "${HOME}/services/relay-development-worker"
+          install -m 600 \
+            "${RUNNER_TEMP}/relay-development-worker-${DEPLOY_SHA}.tar.gz" \
+            "${HOME}/services/relay-development-worker/relay-development-worker-${DEPLOY_SHA}.tar.gz"
+          install -m 700 \
+            "deploy/development-worker-deploy.sh" \
+            "${HOME}/services/relay-development-worker/development-worker-deploy.sh"
+
+      - name: Activate development worker release
+        run: bash "${HOME}/services/relay-development-worker/development-worker-deploy.sh" "${DEPLOY_SHA}"
+
+      - name: Pull stable development web configuration
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: npx --yes vercel@58.4.0 pull --yes --environment=production --token="${VERCEL_TOKEN}"
 
-      - name: Build production web application
+      - name: Build stable development web application
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: npx --yes vercel@58.4.0 build --prod --token="${VERCEL_TOKEN}"
 
-      - name: Deploy production web application
+      - name: Deploy stable development web application
         id: vercel
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}

@@ -31,11 +31,17 @@ export const list = query({
       .collect();
     return {
       currentNarrationVersionId: project.currentNarrationVersionId ?? null,
-      narrationVersions: narrationVersions.map((version) => ({
-        _id: version._id,
-        version: version.version,
-        durationMs: version.durationMs,
-      })),
+      narrationVersions: narrationVersions
+        .filter(
+          (version) =>
+            version.alignmentState === "approved" &&
+            Boolean(version.wordTimings?.length),
+        )
+        .map((version) => ({
+          _id: version._id,
+          version: version.version,
+          durationMs: version.durationMs,
+        })),
       beats: beats.sort((left, right) =>
         left.narrationVersionId === right.narrationVersionId
           ? left.order - right.order
@@ -57,6 +63,12 @@ export const replace = mutation({
     const narration = await ctx.db.get(args.narrationVersionId);
     if (!narration || narration.projectId !== project._id) {
       throw new Error("Narration version was not found.");
+    }
+    if (
+      narration.alignmentState !== "approved" ||
+      !narration.wordTimings?.length
+    ) {
+      throw new Error("Narration needs approved word timing before beats.");
     }
     const validated = validateBeats(args.beats, narration.durationMs);
     const existing = await ctx.db

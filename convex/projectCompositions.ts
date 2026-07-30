@@ -48,7 +48,10 @@ async function currentWithComposition(
 ) {
   const record = await ctx.db.get(id);
   return record
-    ? { ...record, composition: JSON.parse(record.compositionJson) }
+    ? {
+        ...record,
+        composition: JSON.parse(record.compositionJson) as ProjectComposition,
+      }
     : null;
 }
 
@@ -119,6 +122,12 @@ export async function validateCompositionForProject(
     : null;
   if (!narration || narration.projectId !== projectId) {
     throw new Error("Composition narration version was not found.");
+  }
+  if (
+    narration.alignmentState !== "approved" ||
+    !narration.wordTimings?.length
+  ) {
+    throw new Error("Composition requires approved narration word timing.");
   }
   const durationMs = narration.durationMs;
   const ids = new Set<string>();

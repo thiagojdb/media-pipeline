@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-release_sha="${1:?usage: worker-deploy.sh RELEASE_SHA}"
+release_sha="${1:?usage: development-worker-deploy.sh RELEASE_SHA}"
 case "${release_sha}" in
   *[!0-9a-f]* | "")
     echo "Release SHA must contain only lowercase hexadecimal characters." >&2
@@ -10,8 +10,8 @@ case "${release_sha}" in
     ;;
 esac
 
-service_root="${HOME}/services/relay-worker"
-archive="${service_root}/relay-worker-${release_sha}.tar.gz"
+service_root="${HOME}/services/relay-development-worker"
+archive="${service_root}/relay-development-worker-${release_sha}.tar.gz"
 release_dir="${service_root}/releases/${release_sha}"
 current_link="${service_root}/current"
 next_link="${service_root}/current.next"
@@ -36,7 +36,7 @@ tar -xzf "${archive}" -C "${release_dir}"
 
 ln -sfn "${release_dir}" "${next_link}"
 mv -Tf "${next_link}" "${current_link}"
-systemctl --user restart relay-worker.service
+systemctl --user restart relay-development-worker.service
 
 healthy=false
 for _attempt in {1..20}; do
@@ -57,10 +57,9 @@ echo "Worker release ${release_sha} failed its health check." >&2
 if [[ -n "${previous_target}" && -d "${previous_target}" ]]; then
   ln -sfn "${previous_target}" "${next_link}"
   mv -Tf "${next_link}" "${current_link}"
-  systemctl --user restart relay-worker.service
+  systemctl --user restart relay-development-worker.service
   echo "Restored worker release ${previous_target}." >&2
 else
   echo "No prior worker release was available for rollback." >&2
 fi
 exit 1
-

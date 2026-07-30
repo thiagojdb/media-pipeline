@@ -3,14 +3,20 @@ import { access, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+const localEnvFile = path.resolve(".env.local");
+if (await fileExists(localEnvFile)) process.loadEnvFile(localEnvFile);
+
 const convexUrl = "http://127.0.0.1:3210";
 const buildToken = "relay-local-build-worker";
 const authoringToken = "relay-local-authoring-worker";
 const loopToken = "relay-local-component-loop";
 const projectsToken = "relay-local-projects";
 const narrationToken = "relay-local-narration";
+const workerPort = process.env.RELAY_LOCAL_WORKER_PORT ?? "3213";
+const workerAuthToken =
+  process.env.RELAY_WORKER_AUTH_TOKEN ?? "relay-local-worker";
 const authoringMode = process.env.AUTHORING_MODE ?? "fake";
-const scriptRevisionMode = process.env.SCRIPT_REVISION_MODE ?? "real";
+const scriptRevisionMode = process.env.SCRIPT_REVISION_MODE ?? "fake";
 if (!["fake", "real"].includes(authoringMode))
   throw new Error("AUTHORING_MODE must be fake or real.");
 if (!["fake", "real"].includes(scriptRevisionMode))
@@ -19,11 +25,11 @@ let realAuthoringEnvironment = {};
 if (authoringMode === "real") {
   const model = process.env.AUTHORING_PI_MODEL ?? "openai-codex/gpt-5.6-sol";
   const provider = model.slice(0, model.indexOf("/"));
-  const authFile =
-    process.env.AUTHORING_PI_AUTH_FILE ??
-    path.join(os.homedir(), ".pi", "codex-tuta", "auth.json");
+  const authFile = await authoringAuthFile();
   const credentials = JSON.parse(await readFile(authFile, "utf8"));
-  const credential = credentials[provider];
+  const credential =
+    credentials[provider] ??
+    (provider === "openai-codex" ? credentials.openai : undefined);
   if (!credential)
     throw new Error(
       `Pi credential provider ${provider} is unavailable in the configured auth file.`,
@@ -43,19 +49,32 @@ if (scriptRevisionMode === "real") {
   const kimiApiKey =
     process.env.KIMI_API_KEY?.trim() ||
     (keyFile ? (await readFile(keyFile, "utf8")).trim() : "");
-  if (!kimiApiKey && !process.env.OPENAI_API_KEY?.trim()) {
-    throw new Error(
-      "Real script editing requires KIMI_API_KEY, SCRIPT_REVISION_KIMI_API_KEY_FILE, or OPENAI_API_KEY.",
+  const openAIApiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!kimiApiKey && !openAIApiKey) {
+    console.warn(
+      "Real script editing is selected but unavailable until KIMI_API_KEY or OPENAI_API_KEY is configured.",
     );
+  } else {
+    realScriptRevisionEnvironment = {
+      ...(kimiApiKey ? { KIMI_API_KEY: kimiApiKey } : {}),
+      ...(openAIApiKey ? { OPENAI_API_KEY: openAIApiKey } : {}),
+      SCRIPT_REVISION_PROVIDER:
+        process.env.SCRIPT_REVISION_PROVIDER ??
+        (kimiApiKey ? "kimi-code" : "openai"),
+      SCRIPT_REVISION_MODEL:
+        process.env.SCRIPT_REVISION_MODEL ??
+        (kimiApiKey ? "k3-256k" : "gpt-5.6"),
+    };
   }
-  realScriptRevisionEnvironment = {
-    ...(kimiApiKey ? { KIMI_API_KEY: kimiApiKey } : {}),
-    SCRIPT_REVISION_PROVIDER:
-      process.env.SCRIPT_REVISION_PROVIDER ??
-      (kimiApiKey ? "kimi-code" : "openai"),
-    SCRIPT_REVISION_MODEL:
-      process.env.SCRIPT_REVISION_MODEL ?? (kimiApiKey ? "k3-256k" : "gpt-5.6"),
-  };
+}
+if (
+  process.env.NARRATION_ALIGNMENT_MODE === "openai" &&
+  !process.env.NARRATION_OPENAI_API_KEY?.trim() &&
+  !process.env.OPENAI_API_KEY?.trim()
+) {
+  console.warn(
+    "Real narration alignment is selected but unavailable until NARRATION_OPENAI_API_KEY or OPENAI_API_KEY is configured.",
+  );
 }
 
 await waitForConvex();
@@ -66,21 +85,16 @@ for (const [name, value] of [
   ["PROJECTS_SERVER_TOKEN", projectsToken],
   ["NARRATION_WORKER_TOKEN", narrationToken],
 ]) {
-  await run("npx", [
-    "convex",
-    "env",
-    "set",
-    "--deployment",
-    "local",
-    name,
-    value,
-  ]);
+  await run("npx", ["convex", "env", "set", name, value]);
 }
 
 const child = spawn("npm", ["run", "dev", "--workspace", "@relay/worker"], {
   stdio: "inherit",
   env: {
     ...process.env,
+    RELAY_ENV: "development",
+    WORKER_PORT: workerPort,
+    RELAY_WORKER_AUTH_TOKEN: workerAuthToken,
     COMPONENT_BUILD_ENABLED: "true",
     COMPONENT_BUILD_CONVEX_URL: convexUrl,
     COMPONENT_BUILD_WORKER_TOKEN: buildToken,
@@ -94,6 +108,9 @@ const child = spawn("npm", ["run", "dev", "--workspace", "@relay/worker"], {
     NARRATION_ENABLED: "true",
     NARRATION_CONVEX_URL: convexUrl,
     NARRATION_WORKER_TOKEN: narrationToken,
+    NARRATION_ALIGNMENT_MODE: process.env.NARRATION_ALIGNMENT_MODE ?? "fake",
+    NARRATION_OPENAI_API_KEY:
+      process.env.NARRATION_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY,
     ...realAuthoringEnvironment,
     ...realScriptRevisionEnvironment,
   },
@@ -125,6 +142,21 @@ async function fileExists(filePath) {
   } catch {
     return false;
   }
+}
+
+async function authoringAuthFile() {
+  if (process.env.AUTHORING_PI_AUTH_FILE) {
+    return process.env.AUTHORING_PI_AUTH_FILE;
+  }
+  for (const candidate of [
+    path.join(os.homedir(), ".pi", "agent", "auth.json"),
+    path.join(os.homedir(), ".local", "share", "opencode", "auth.json"),
+  ]) {
+    if (await fileExists(candidate)) return candidate;
+  }
+  throw new Error(
+    "Real authoring requires AUTHORING_PI_AUTH_FILE or a supported local Pi/OpenCode auth file.",
+  );
 }
 
 function run(command, args) {

@@ -118,6 +118,21 @@ type NarrationVersion = {
   fileName?: string;
   audioUrl?: string;
   durationMs: number;
+  planVersionId?: string;
+  alignmentState?: "reviewable" | "approved";
+  transcript?: string;
+  wordTimings?: Array<{
+    index: number;
+    word: string;
+    startMs: number;
+    endMs: number;
+    cueIndex?: number;
+    planWordIndex?: number;
+    match: "exact" | "substitution" | "insertion";
+  }>;
+  omittedWordCount?: number;
+  insertedWordCount?: number;
+  substitutedWordCount?: number;
   timingSegments: Array<{
     index: number;
     startMs: number;
@@ -133,6 +148,23 @@ type NarrationVersion = {
   estimatedCostUsd?: number;
   wallTimeMs?: number;
   createdAt: number;
+};
+
+type NarrationPlan = {
+  _id: string;
+  scriptVersionId: string;
+  version: number;
+  state: "reviewable" | "approved";
+  cues: Array<{
+    index: number;
+    sourceStart: number;
+    sourceEnd: number;
+    text: string;
+  }>;
+  wordCount: number;
+  estimatedDurationMs: number;
+  createdAt: number;
+  updatedAt: number;
 };
 
 type NarrationJob = {
@@ -652,7 +684,7 @@ const projectStages: Array<{
 }> = [
   { id: "sources", label: "Sources", icon: Link2 },
   { id: "script", label: "Script", icon: BookOpenText },
-  { id: "voice", label: "Voice", icon: AudioLines },
+  { id: "voice", label: "Narration", icon: AudioLines },
   { id: "edit", label: "Edit", icon: Film },
   { id: "review", label: "Review", icon: MessageSquareText },
 ];
@@ -2543,7 +2575,12 @@ function NarrationWorkspace({
 }) {
   const [scripts, setScripts] = useState<ScriptVersionSummary[]>([]);
   const [selectedScriptId, setSelectedScriptId] = useState("");
+  const [plans, setPlans] = useState<{
+    currentPlanVersionId: string | null;
+    versions: NarrationPlan[];
+  }>();
   const [data, setData] = useState<{
+    currentNarrationVersionId: string | null;
     versions: NarrationVersion[];
     jobs: NarrationJob[];
   }>();
@@ -2552,18 +2589,25 @@ function NarrationWorkspace({
   const [uploadFile, setUploadFile] = useState<File>();
 
   const refresh = useCallback(async () => {
-    const [scriptData, narrationData] = await Promise.all([
+    const [scriptData, planData, narrationData] = await Promise.all([
       request<{ versions: ScriptVersionSummary[] }>(
         `/api/projects/${projectId}/scripts`,
       ),
-      request<{ versions: NarrationVersion[]; jobs: NarrationJob[] }>(
-        `/api/projects/${projectId}/narrations`,
-      ),
+      request<{
+        currentPlanVersionId: string | null;
+        versions: NarrationPlan[];
+      }>(`/api/projects/${projectId}/narration-plans`),
+      request<{
+        currentNarrationVersionId: string | null;
+        versions: NarrationVersion[];
+        jobs: NarrationJob[];
+      }>(`/api/projects/${projectId}/narrations`),
     ]);
     setScripts(scriptData.versions);
     setSelectedScriptId(
       (current) => current || scriptData.versions[0]?._id || "",
     );
+    setPlans(planData);
     setData(narrationData);
     window.dispatchEvent(new Event("relay-narration-saved"));
   }, [projectId]);
@@ -2576,28 +2620,11 @@ function NarrationWorkspace({
   }, [refresh]);
 
   useEffect(() => {
-    let active = true;
-    void Promise.all([
-      request<{ versions: ScriptVersionSummary[] }>(
-        `/api/projects/${projectId}/scripts`,
-      ),
-      request<{ versions: NarrationVersion[]; jobs: NarrationJob[] }>(
-        `/api/projects/${projectId}/narrations`,
-      ),
-    ])
-      .then(([scriptData, narrationData]) => {
-        if (!active) return;
-        setScripts(scriptData.versions);
-        setSelectedScriptId(scriptData.versions[0]?._id ?? "");
-        setData(narrationData);
-      })
-      .catch((cause) => {
-        if (active) setError(errorMessage(cause));
-      });
-    return () => {
-      active = false;
-    };
-  }, [projectId]);
+    const timer = window.setTimeout(() => {
+      void refresh().catch((cause) => setError(errorMessage(cause)));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [refresh]);
 
   const activeJob = data?.jobs.find((job) =>
     ["queued", "running"].includes(job.state),
@@ -2605,30 +2632,98 @@ function NarrationWorkspace({
   useEffect(() => {
     if (!activeJob) return;
     const timer = window.setInterval(() => {
-      void request<{ versions: NarrationVersion[]; jobs: NarrationJob[] }>(
-        `/api/projects/${projectId}/narrations`,
-      )
-        .then((value) => {
-          setData(value);
-          window.dispatchEvent(new Event("relay-narration-saved"));
-        })
-        .catch((cause) => setError(errorMessage(cause)));
-    }, 700);
+      void refresh().catch((cause) => setError(errorMessage(cause)));
+    }, 1_000);
     return () => window.clearInterval(timer);
-  }, [activeJob, projectId]);
+  }, [activeJob, refresh]);
 
-  const generate = async () => {
+  const createPlan = async () => {
     setBusy(true);
     setError(undefined);
     try {
-      await request(`/api/projects/${projectId}/narrations`, {
+      await request(`/api/projects/${projectId}/narration-plans`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          action: "generate",
+          action: "create",
           scriptVersionId: selectedScriptId,
         }),
       });
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const updateCue = (cueIndex: number, text: string) => {
+    setPlans((current) => {
+      if (!current?.versions[0] || current.versions[0].state !== "reviewable") {
+        return current;
+      }
+      return {
+        ...current,
+        versions: current.versions.map((plan, index) =>
+          index === 0
+            ? {
+                ...plan,
+                cues: plan.cues.map((cue) =>
+                  cue.index === cueIndex ? { ...cue, text } : cue,
+                ),
+              }
+            : plan,
+        ),
+      };
+    });
+  };
+
+  const removeCue = (cueIndex: number) => {
+    setPlans((current) => {
+      if (!current?.versions[0] || current.versions[0].state !== "reviewable") {
+        return current;
+      }
+      return {
+        ...current,
+        versions: current.versions.map((plan, index) =>
+          index === 0
+            ? {
+                ...plan,
+                cues: plan.cues
+                  .filter((cue) => cue.index !== cueIndex)
+                  .map((cue, nextIndex) => ({ ...cue, index: nextIndex })),
+              }
+            : plan,
+        ),
+      };
+    });
+  };
+
+  const savePlan = async (approve: boolean) => {
+    const plan = plans?.versions[0];
+    if (!plan || plan.state !== "reviewable") return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}/narration-plans`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          planVersionId: plan._id,
+          cues: plan.cues,
+        }),
+      });
+      if (approve) {
+        await request(`/api/projects/${projectId}/narration-plans`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            action: "approve",
+            planVersionId: plan._id,
+          }),
+        });
+      }
       await refresh();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -2655,7 +2750,10 @@ function NarrationWorkspace({
   };
 
   const upload = async () => {
-    if (!uploadFile) return;
+    const approvedPlan = plans?.versions.find(
+      (plan) => plan._id === plans.currentPlanVersionId,
+    );
+    if (!uploadFile || !approvedPlan) return;
     setBusy(true);
     setError(undefined);
     try {
@@ -2668,6 +2766,7 @@ function NarrationWorkspace({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action: "prepare_upload",
+          planVersionId: approvedPlan._id,
           fileName: uploadFile.name,
           mediaType,
           byteSize: uploadFile.size,
@@ -2692,6 +2791,7 @@ function NarrationWorkspace({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action: "finalize_upload",
+          planVersionId: approvedPlan._id,
           storageId: uploaded.storageId,
           fileName: uploadFile.name,
           mediaType,
@@ -2706,38 +2806,58 @@ function NarrationWorkspace({
     }
   };
 
+  const approveAlignment = async (versionId: string) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await request(`/api/projects/${projectId}/narrations`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "approve_alignment",
+          narrationVersionId: versionId,
+        }),
+      });
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const activePlan = plans?.versions[0];
+  const approvedPlan = plans?.versions.find(
+    (plan) => plan._id === plans.currentPlanVersionId,
+  );
   const latest = data?.versions[0];
   const latestJob = data?.jobs[0];
 
   return (
-    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 text-white shadow-sm">
-      <div className="grid lg:grid-cols-[21rem_minmax(0,1fr)]">
-        <div className="border-b border-white/10 p-6 sm:p-8 lg:border-r lg:border-b-0">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-emerald-400 text-slate-950">
-            <AudioLines className="size-5" />
+    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 bg-slate-950 px-6 py-6 text-white sm:px-8">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div>
+            <div className="flex size-10 items-center justify-center rounded-xl bg-emerald-400 text-slate-950">
+              <AudioLines className="size-5" />
+            </div>
+            <p className="mt-4 text-xs font-medium tracking-[0.18em] text-slate-400 uppercase">
+              Narration plan
+            </p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight">
+              Decide what is spoken before attaching audio.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+              Relay excludes production directions, then aligns a producer or
+              human narrator recording down to each word.
+            </p>
           </div>
-          <p className="mt-5 text-xs font-medium tracking-[0.18em] text-slate-400 uppercase">
-            Generated narration
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight">
-            Turn a pinned script into timed audio.
-          </h2>
-          <p className="mt-3 text-sm leading-6 text-slate-400">
-            Generation is explicit. Each result keeps the exact script version,
-            provider, timing, usage, and cost.
-          </p>
           {editable ? (
-            <div className="mt-6 space-y-3">
-              <label
-                className="block text-sm font-medium"
-                htmlFor="narration-script"
-              >
-                Script version
-              </label>
+            <div className="w-full max-w-sm space-y-3">
               <select
+                aria-label="Script version"
                 className="h-11 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm"
-                disabled={!scripts.length || Boolean(activeJob)}
-                id="narration-script"
+                disabled={!scripts.length || busy}
                 onChange={(event) => setSelectedScriptId(event.target.value)}
                 value={selectedScriptId}
               >
@@ -2747,29 +2867,130 @@ function NarrationWorkspace({
                     key={script._id}
                     value={script._id}
                   >
-                    Version {script.version} · {script.characterCount} chars
+                    Script v{script.version} · {script.characterCount} chars
                   </option>
                 ))}
               </select>
               <Button
                 className="w-full bg-emerald-400 text-slate-950 hover:bg-emerald-300"
-                disabled={busy || Boolean(activeJob) || !selectedScriptId}
-                onClick={() => void generate()}
+                disabled={busy || !selectedScriptId}
+                onClick={() => void createPlan()}
               >
-                {busy ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <AudioLines />
-                )}
-                Generate timed narration
+                {busy ? <LoaderCircle className="animate-spin" /> : <Plus />}
+                Propose narration plan
               </Button>
-              <div className="flex items-center gap-3 py-1 text-xs text-slate-500">
-                <span className="h-px flex-1 bg-white/10" />
-                or upload voiceover
-                <span className="h-px flex-1 bg-white/10" />
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <div className="grid lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
+        <div className="border-b border-slate-200 p-6 sm:p-8 lg:border-r lg:border-b-0">
+          {error ? <ProjectError message={error} /> : null}
+          {activePlan ? (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-medium text-slate-500 uppercase">
+                    Plan version {activePlan.version}
+                  </p>
+                  <h3 className="mt-1 text-xl font-semibold">
+                    {activePlan.wordCount.toLocaleString()} spoken words ·{" "}
+                    {formatDuration(activePlan.estimatedDurationMs)}
+                  </h3>
+                </div>
+                <span
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                    activePlan.state === "approved"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-amber-100 text-amber-800"
+                  }`}
+                >
+                  {activePlan.state}
+                </span>
               </div>
+              <ol className="mt-6 max-h-[42rem] space-y-3 overflow-y-auto pr-2">
+                {activePlan.cues.map((cue) => (
+                  <li
+                    className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                    key={cue.index}
+                  >
+                    <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
+                      <span>Cue {cue.index + 1}</span>
+                      <span>
+                        source {cue.sourceStart}–{cue.sourceEnd}
+                      </span>
+                    </div>
+                    {activePlan.state === "reviewable" && editable ? (
+                      <>
+                        <textarea
+                          aria-label={`Narration cue ${cue.index + 1}`}
+                          className="min-h-24 w-full rounded-lg border bg-white px-3 py-2 text-sm leading-6"
+                          onChange={(event) =>
+                            updateCue(cue.index, event.target.value)
+                          }
+                          value={cue.text}
+                        />
+                        <Button
+                          className="mt-2"
+                          disabled={activePlan.cues.length === 1}
+                          onClick={() => removeCue(cue.index)}
+                          size="sm"
+                          variant="outline"
+                        >
+                          <Trash2 /> Exclude from narration
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-sm leading-6 text-slate-700">
+                        {cue.text}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ol>
+              {activePlan.state === "reviewable" && editable ? (
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <Button
+                    disabled={busy}
+                    onClick={() => void savePlan(false)}
+                    variant="outline"
+                  >
+                    <Save /> Save plan
+                  </Button>
+                  <Button
+                    className="bg-emerald-600 hover:bg-emerald-500"
+                    disabled={busy}
+                    onClick={() => void savePlan(true)}
+                  >
+                    <Check /> Approve spoken text
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="py-16 text-center text-sm text-slate-500">
+              Choose a script and propose the spoken narration.
+            </div>
+          )}
+        </div>
+        <div className="bg-slate-50 p-6 sm:p-8">
+          <div className="flex size-10 items-center justify-center rounded-xl bg-slate-950 text-white">
+            <AudioLines className="size-5" />
+          </div>
+          <p className="mt-4 text-xs font-medium tracking-[0.18em] text-slate-500 uppercase">
+            Human performance
+          </p>
+          <h3 className="mt-1 text-xl font-semibold">
+            Attach and align the narration take.
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Upload the producer or narrator recording. Relay processes actual
+            word start and end times before the track can drive editing.
+          </p>
+          {editable && approvedPlan ? (
+            <div className="mt-6 space-y-3">
               <label
-                className="flex min-h-11 cursor-pointer items-center rounded-lg border border-dashed border-white/20 bg-white/5 px-3 text-sm text-slate-300"
+                className="flex min-h-11 cursor-pointer items-center rounded-lg border border-dashed border-slate-300 bg-white px-3 text-sm text-slate-600"
                 htmlFor="narration-upload"
               >
                 {uploadFile?.name ?? "Choose audio file"}
@@ -2783,17 +3004,14 @@ function NarrationWorkspace({
                 />
               </label>
               <Button
-                className="w-full border-white/20 text-white hover:bg-white/10"
                 disabled={busy || Boolean(activeJob) || !uploadFile}
                 onClick={() => void upload()}
-                variant="outline"
               >
                 {busy ? <LoaderCircle className="animate-spin" /> : <Upload />}
-                Upload and probe narration
+                Upload and align words
               </Button>
               {activeJob ? (
                 <Button
-                  className="w-full border-white/20 text-white hover:bg-white/10"
                   disabled={busy || activeJob.cancelRequested}
                   onClick={() => void cancel(activeJob._id)}
                   variant="outline"
@@ -2801,31 +3019,19 @@ function NarrationWorkspace({
                   <CircleStop />
                   {activeJob.cancelRequested
                     ? "Canceling…"
-                    : "Cancel generation"}
+                    : "Cancel alignment"}
                 </Button>
               ) : null}
             </div>
-          ) : null}
-        </div>
-        <div className="p-6 sm:p-8">
-          {error ? (
-            <div
-              className="rounded-xl border border-red-400/30 bg-red-400/10 p-4 text-sm text-red-100"
-              role="alert"
-            >
-              {error}
-            </div>
-          ) : null}
-          {!data && !error ? (
-            <div className="flex items-center gap-2 text-sm text-slate-400">
-              <LoaderCircle className="size-4 animate-spin" /> Opening
-              narration…
-            </div>
+          ) : !approvedPlan ? (
+            <p className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Approve the spoken narration plan before attaching audio.
+            </p>
           ) : null}
           {latestJob ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-5">
+            <div className="mt-6 flex items-center justify-between gap-3 rounded-lg border bg-white p-3">
               <div>
-                <p className="text-xs text-slate-400 uppercase">Latest job</p>
+                <p className="text-xs text-slate-500 uppercase">Latest job</p>
                 <p className="mt-1 text-sm font-medium">
                   {narrationStateLabel(latestJob)}
                 </p>
@@ -2838,31 +3044,22 @@ function NarrationWorkspace({
             </div>
           ) : null}
           {latest ? (
-            <div className="mt-6">
-              <div className="flex flex-wrap items-end justify-between gap-4">
-                <div>
-                  <p className="text-xs text-slate-400 uppercase">
-                    Narration version {latest.version}
-                  </p>
-                  <h3 className="mt-1 text-xl font-semibold">
-                    {formatDuration(latest.durationMs)}
-                    {latest.timingSegments.length
-                      ? ` with ${latest.timingSegments.length} timing segments`
-                      : " · ready for manual beat timing"}
-                  </h3>
-                </div>
-                <p className="font-mono text-xs text-slate-400">
-                  {latest.provider}/{latest.model} · $
-                  {(latest.estimatedCostUsd ?? 0).toFixed(4)}
-                </p>
+            <div className="mt-6 rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <strong>Track candidate v{latest.version}</strong>
+                <span className="text-xs font-medium text-amber-700">
+                  {latest.alignmentState}
+                </span>
               </div>
-              {latest.provenance === "upload" ? (
-                <p className="mt-3 font-mono text-xs text-slate-400">
-                  {latest.fileName} · {latest.audioCodec} ·{" "}
-                  {latest.sampleRate?.toLocaleString()} Hz · {latest.channels}{" "}
-                  channel{latest.channels === 1 ? "" : "s"}
-                </p>
-              ) : null}
+              <p className="mt-2 text-sm text-slate-600">
+                {formatDuration(latest.durationMs)} ·{" "}
+                {latest.wordTimings?.length ?? 0} timed words
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {latest.omittedWordCount ?? 0} omitted ·{" "}
+                {latest.insertedWordCount ?? 0} inserted ·{" "}
+                {latest.substitutedWordCount ?? 0} substituted
+              </p>
               {latest.audioUrl ? (
                 <audio
                   className="mt-5 w-full"
@@ -2873,59 +3070,30 @@ function NarrationWorkspace({
                   <track kind="captions" />
                 </audio>
               ) : null}
-              <ol className="mt-6 grid gap-2">
-                {latest.timingSegments.map((segment) => (
-                  <li
-                    className="grid gap-2 rounded-lg bg-white/6 px-4 py-3 text-sm sm:grid-cols-[6rem_1fr]"
-                    key={segment.index}
+              <div className="mt-4 max-h-48 overflow-y-auto rounded-lg bg-slate-950 p-3 text-sm text-slate-200">
+                {(latest.wordTimings ?? []).slice(0, 300).map((word) => (
+                  <span
+                    className={
+                      word.match === "exact"
+                        ? ""
+                        : "rounded bg-amber-400/20 text-amber-200"
+                    }
+                    key={word.index}
+                    title={`${formatTimestamp(word.startMs)}–${formatTimestamp(word.endMs)} · ${word.match}`}
                   >
-                    <span className="font-mono text-xs text-emerald-300">
-                      {formatTimestamp(segment.startMs)}–
-                      {formatTimestamp(segment.endMs)}
-                    </span>
-                    <span className="text-slate-200">{segment.text}</span>
-                  </li>
+                    {word.word}{" "}
+                  </span>
                 ))}
-              </ol>
-              {data && data.versions.length > 1 ? (
-                <div className="mt-8 border-t border-white/10 pt-5">
-                  <h4 className="text-sm font-semibold">Narration history</h4>
-                  <ol className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {data.versions.map((version, index) => (
-                      <li
-                        className="rounded-lg border border-white/10 bg-white/5 p-3"
-                        key={version._id}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <strong className="text-sm">
-                            Version {version.version}
-                          </strong>
-                          <span
-                            className={`text-xs ${
-                              index === 0
-                                ? "text-emerald-300"
-                                : "text-amber-300"
-                            }`}
-                          >
-                            {index === 0 ? "Current" : "Superseded"}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-xs text-slate-400">
-                          {version.provenance} ·{" "}
-                          {formatDuration(version.durationMs)}
-                        </p>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
+              </div>
+              {latest.alignmentState === "reviewable" && editable ? (
+                <Button
+                  className="mt-4 w-full bg-emerald-600 hover:bg-emerald-500"
+                  disabled={busy}
+                  onClick={() => void approveAlignment(latest._id)}
+                >
+                  <Check /> Approve aligned track
+                </Button>
               ) : null}
-            </div>
-          ) : data && !latestJob ? (
-            <div className="py-12 text-center">
-              <AudioLines className="mx-auto size-7 text-slate-600" />
-              <p className="mt-3 text-sm text-slate-400">
-                Save a script, then generate the first narration.
-              </p>
             </div>
           ) : null}
         </div>

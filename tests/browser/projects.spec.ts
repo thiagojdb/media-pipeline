@@ -66,11 +66,26 @@ test("creates, opens, renames, and archives a channel project through real route
     _id: string;
     projectId: string;
     scriptVersionId?: string;
+    planVersionId: string;
     version: number;
-    provenance: "generated" | "upload";
+    provenance: "upload";
+    alignmentState: "reviewable" | "approved";
     mediaType: string;
     audioUrl: string;
     durationMs: number;
+    transcript: string;
+    wordTimings: Array<{
+      index: number;
+      word: string;
+      startMs: number;
+      endMs: number;
+      cueIndex?: number;
+      planWordIndex?: number;
+      match: "exact" | "substitution" | "insertion";
+    }>;
+    omittedWordCount: number;
+    insertedWordCount: number;
+    substitutedWordCount: number;
     timingSegments: Array<{
       index: number;
       startMs: number;
@@ -88,11 +103,30 @@ test("creates, opens, renames, and archives a channel project through real route
     wallTimeMs: number;
     createdAt: number;
   };
+  type MockNarrationPlan = {
+    _id: string;
+    scriptVersionId: string;
+    version: number;
+    state: "reviewable" | "approved";
+    cues: Array<{
+      index: number;
+      sourceStart: number;
+      sourceEnd: number;
+      text: string;
+    }>;
+    wordCount: number;
+    estimatedDurationMs: number;
+    createdAt: number;
+    updatedAt: number;
+  };
+  const narrationPlans: MockNarrationPlan[] = [];
+  let currentNarrationPlanVersionId: string | null = null;
+  let currentNarrationVersionId: string | null = null;
   const narrationVersions: MockNarrationVersion[] = [];
   let narrationJob:
     | {
         _id: string;
-        kind: "generated" | "upload";
+        kind: "upload";
         scriptVersionId?: string;
         state: "queued" | "succeeded";
         cancelRequested: false;
@@ -528,33 +562,81 @@ test("creates, opens, renames, and archives a channel project through real route
       return;
     }
     if (
+      url.pathname === "/api/projects/project-election-night/narration-plans" &&
+      project
+    ) {
+      if (request.method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          json: {
+            currentPlanVersionId: currentNarrationPlanVersionId,
+            versions: narrationPlans,
+          },
+        });
+        return;
+      }
+      const input = request.postDataJSON() as {
+        action: "create" | "update" | "approve";
+        scriptVersionId?: string;
+        planVersionId?: string;
+        cues?: MockNarrationPlan["cues"];
+      };
+      if (input.action === "create") {
+        const plan: MockNarrationPlan = {
+          _id: `narration-plan-${narrationPlans.length + 1}`,
+          scriptVersionId: String(input.scriptVersionId),
+          version: narrationPlans.length + 1,
+          state: "reviewable",
+          cues: [
+            {
+              index: 0,
+              sourceStart: 0,
+              sourceEnd: 13,
+              text: "Opening line.",
+            },
+            {
+              index: 1,
+              sourceStart: 15,
+              sourceEnd: 37,
+              text: "The first explanation.",
+            },
+          ],
+          wordCount: 5,
+          estimatedDurationMs: 2_000,
+          createdAt: 290,
+          updatedAt: 290,
+        };
+        narrationPlans.unshift(plan);
+        await route.fulfill({ status: 201, json: plan });
+        return;
+      }
+      const plan = narrationPlans.find(
+        (candidate) => candidate._id === input.planVersionId,
+      )!;
+      if (input.action === "update") {
+        plan.cues = input.cues ?? plan.cues;
+        plan.updatedAt += 1;
+      } else {
+        plan.state = "approved";
+        currentNarrationPlanVersionId = plan._id;
+      }
+      await route.fulfill({ status: 200, json: plan });
+      return;
+    }
+    if (
       url.pathname === "/api/projects/project-election-night/narrations" &&
       project
     ) {
       if (request.method() === "POST") {
         const input = request.postDataJSON() as {
-          action: "generate" | "cancel" | "prepare_upload" | "finalize_upload";
-          scriptVersionId?: string;
+          action:
+            | "cancel"
+            | "prepare_upload"
+            | "finalize_upload"
+            | "approve_alignment";
+          narrationVersionId?: string;
           fileName?: string;
         };
-        if (input.action === "generate") {
-          narrationJob = {
-            _id: "narration-job-1",
-            kind: "generated",
-            scriptVersionId: String(input.scriptVersionId),
-            state: "queued",
-            cancelRequested: false,
-            provider: "relay-fake-tts",
-            model: "deterministic-wave-v1",
-            createdAt: 300,
-          };
-          narrationPolls = 0;
-          await route.fulfill({
-            status: 202,
-            json: { jobId: narrationJob._id },
-          });
-          return;
-        }
         if (input.action === "prepare_upload") {
           pendingNarrationFileName = String(input.fileName);
           await route.fulfill({
@@ -572,14 +654,29 @@ test("creates, opens, renames, and archives a channel project through real route
             kind: "upload",
             state: "queued",
             cancelRequested: false,
-            provider: "relay-upload",
-            model: "ffprobe",
+            provider: "pending-alignment",
+            model: "pending-alignment",
             createdAt: 400 + narrationUploadCount,
           };
           narrationPolls = 0;
           await route.fulfill({
             status: 202,
             json: { jobId: narrationJob._id },
+          });
+          return;
+        }
+        if (input.action === "approve_alignment") {
+          const version = narrationVersions.find(
+            (candidate) => candidate._id === input.narrationVersionId,
+          )!;
+          version.alignmentState = "approved";
+          currentNarrationVersionId = version._id;
+          await route.fulfill({
+            status: 200,
+            json: {
+              narrationVersionId: version._id,
+              version: version.version,
+            },
           });
           return;
         }
@@ -591,49 +688,9 @@ test("creates, opens, renames, and archives a channel project through real route
             narrationJob = {
               ...narrationJob,
               state: "succeeded",
-              terminalMessage:
-                narrationJob.kind === "generated"
-                  ? "Narration generated with timing."
-                  : "Uploaded narration probed and ready.",
+              terminalMessage: "Narration take aligned with word timing.",
             };
             if (
-              narrationJob.kind === "generated" &&
-              !narrationVersions.some(
-                (version) => version.provenance === "generated",
-              )
-            ) {
-              narrationVersions.unshift({
-                _id: "narration-version-1",
-                projectId: project._id,
-                scriptVersionId: narrationJob.scriptVersionId,
-                version: 1,
-                provenance: "generated",
-                mediaType: "audio/wav",
-                audioUrl: silentWavDataUrl(3_000),
-                durationMs: 2_000,
-                timingSegments: [
-                  {
-                    index: 0,
-                    startMs: 0,
-                    endMs: 800,
-                    text: "Opening line.",
-                  },
-                  {
-                    index: 1,
-                    startMs: 800,
-                    endMs: 2_000,
-                    text: "The first explanation.",
-                  },
-                ],
-                provider: "relay-fake-tts",
-                model: "deterministic-wave-v1",
-                usageCharacters: 38,
-                estimatedCostUsd: 0,
-                wallTimeMs: 10,
-                createdAt: 310,
-              });
-            } else if (
-              narrationJob.kind === "upload" &&
               !narrationVersions.some(
                 (version) => version.fileName === pendingNarrationFileName,
               )
@@ -641,14 +698,81 @@ test("creates, opens, renames, and archives a channel project through real route
               narrationVersions.unshift({
                 _id: `narration-version-${narrationVersions.length + 1}`,
                 projectId: project._id,
+                scriptVersionId: narrationPlans[0]?.scriptVersionId,
+                planVersionId: currentNarrationPlanVersionId!,
                 version: narrationVersions.length + 1,
                 provenance: "upload",
+                alignmentState: "reviewable",
                 mediaType: "audio/wav",
                 audioUrl: silentWavDataUrl(3_000),
                 durationMs: 2_500 + narrationUploadCount * 100,
-                timingSegments: [],
-                provider: "relay-upload",
-                model: "ffprobe",
+                transcript: "Opening line. The first explanation.",
+                wordTimings: [
+                  {
+                    index: 0,
+                    word: "Opening",
+                    startMs: 0,
+                    endMs: 350,
+                    cueIndex: 0,
+                    planWordIndex: 0,
+                    match: "exact",
+                  },
+                  {
+                    index: 1,
+                    word: "line",
+                    startMs: 350,
+                    endMs: 700,
+                    cueIndex: 0,
+                    planWordIndex: 1,
+                    match: "exact",
+                  },
+                  {
+                    index: 2,
+                    word: "The",
+                    startMs: 900,
+                    endMs: 1_100,
+                    cueIndex: 1,
+                    planWordIndex: 2,
+                    match: "exact",
+                  },
+                  {
+                    index: 3,
+                    word: "first",
+                    startMs: 1_100,
+                    endMs: 1_450,
+                    cueIndex: 1,
+                    planWordIndex: 3,
+                    match: "exact",
+                  },
+                  {
+                    index: 4,
+                    word: "explanation",
+                    startMs: 1_450,
+                    endMs: 2_000,
+                    cueIndex: 1,
+                    planWordIndex: 4,
+                    match: "exact",
+                  },
+                ],
+                omittedWordCount: 0,
+                insertedWordCount: 0,
+                substitutedWordCount: 0,
+                timingSegments: [
+                  {
+                    index: 0,
+                    startMs: 0,
+                    endMs: 700,
+                    text: "Opening line.",
+                  },
+                  {
+                    index: 1,
+                    startMs: 900,
+                    endMs: 2_000,
+                    text: "The first explanation.",
+                  },
+                ],
+                provider: "test-transcriber",
+                model: "word-timing-v1",
                 fileName: pendingNarrationFileName,
                 audioCodec: "pcm_s16le",
                 sampleRate: 16_000,
@@ -662,6 +786,7 @@ test("creates, opens, renames, and archives a channel project through real route
         await route.fulfill({
           status: 200,
           json: {
+            currentNarrationVersionId,
             jobs: narrationJob ? [narrationJob] : [],
             versions: narrationVersions,
           },
@@ -678,14 +803,14 @@ test("creates, opens, renames, and archives a channel project through real route
         await route.fulfill({
           status: 200,
           json: {
-            currentNarrationVersionId: narrationVersions[0]?._id ?? null,
-            narrationVersions: narrationVersions.map(
-              ({ _id, version, durationMs }) => ({
+            currentNarrationVersionId,
+            narrationVersions: narrationVersions
+              .filter((version) => version.alignmentState === "approved")
+              .map(({ _id, version, durationMs }) => ({
                 _id,
                 version,
                 durationMs,
-              }),
-            ),
+              })),
             beats,
           },
         });
@@ -1100,23 +1225,13 @@ test("creates, opens, renames, and archives a channel project through real route
   await expect(scriptEditor).toContainText("Revised opening");
   await expect(scriptEditor).toContainText("THE FIRST EXPLANATION.");
 
-  await page.getByRole("button", { name: "Voice", exact: true }).click();
+  await page.getByRole("button", { name: "Narration", exact: true }).click();
   await page.getByLabel("Script version").selectOption("script-1");
-  await page.getByRole("button", { name: "Generate timed narration" }).click();
-  await expect(
-    page.getByText("Waiting for the narration worker"),
-  ).toBeVisible();
-  await expect(
-    page.getByText("Narration generated with timing."),
-  ).toBeVisible();
-  await expect(
-    page.getByText("2.0 seconds with 2 timing segments"),
-  ).toBeVisible();
-  await expect(page.locator("audio[controls]").first()).toHaveAttribute(
-    "src",
-    /^data:audio\/wav/,
-  );
-  await expect(page.getByText("0:00.0–0:00.8")).toBeVisible();
+  await page.getByRole("button", { name: "Propose narration plan" }).click();
+  await expect(page.getByText("Plan version 1")).toBeVisible();
+  await expect(page.getByLabel("Narration cue 1")).toHaveValue("Opening line.");
+  await page.getByRole("button", { name: "Approve spoken text" }).click();
+  await expect(page.getByText("approved", { exact: true })).toBeVisible();
   await expect(page.getByText("Opening line.", { exact: true })).toBeVisible();
 
   await page.getByLabel("Narration audio file").setInputFiles({
@@ -1124,32 +1239,18 @@ test("creates, opens, renames, and archives a channel project through real route
     mimeType: "audio/wav",
     buffer: Buffer.from("RIFF uploaded narration"),
   });
-  await page
-    .getByRole("button", { name: "Upload and probe narration" })
-    .click();
+  await page.getByRole("button", { name: "Upload and align words" }).click();
   await expect(
-    page.getByText("Uploaded narration probed and ready."),
+    page.getByText("Narration take aligned with word timing."),
   ).toBeVisible();
-  await expect(page.getByText(/voiceover\.wav · pcm_s16le/)).toBeVisible();
-  await expect(page.getByText("Superseded")).toBeVisible();
-
-  await page.getByLabel("Narration audio file").setInputFiles({
-    name: "voiceover-final.wav",
-    mimeType: "audio/wav",
-    buffer: Buffer.from("RIFF replacement narration"),
-  });
-  await page
-    .getByRole("button", { name: "Upload and probe narration" })
-    .click();
-  await expect(
-    page.getByText("voiceover-final.wav", { exact: false }),
-  ).toBeVisible();
-  await expect(page.getByText("Version 3", { exact: true })).toBeVisible();
-  await expect(page.getByText("Superseded")).toHaveCount(2);
+  await expect(page.getByText("Track candidate v1")).toBeVisible();
+  await expect(page.getByText("5 timed words")).toBeVisible();
   await expect(page.locator("audio[controls]").first()).toHaveAttribute(
     "src",
     /^data:audio\/wav/,
   );
+  await page.getByRole("button", { name: "Approve aligned track" }).click();
+  await expect(page.getByText("approved", { exact: true })).toHaveCount(2);
 
   await expect(
     page.getByRole("heading", { name: "Shape narration into timed beats" }),
@@ -1164,7 +1265,7 @@ test("creates, opens, renames, and archives a channel project through real route
   await page.getByRole("button", { name: "Save beat timeline" }).click();
   await expect(page.getByText("Beat timeline saved.")).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Voice", exact: true }).click();
+  await page.getByRole("button", { name: "Narration", exact: true }).click();
   await expect(page.getByLabel("Beat 1 title")).toHaveValue("Opening hook");
   await expect(page.getByLabel("Beat 1 end seconds")).toHaveValue("1.1");
   await expect(page.getByLabel("Beat 2 title")).toHaveValue(

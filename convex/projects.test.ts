@@ -9,6 +9,7 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 const api = anyApi.projects!;
 const scriptRevisionApi = anyApi.projectScriptRevisions!;
+const narrationPlanApi = anyApi.narrationPlans!;
 const narrationApi = anyApi.projectNarrations!;
 const beatsApi = anyApi.projectBeats!;
 const serverToken = "projects-test-token";
@@ -457,7 +458,7 @@ describe("membership-backed channel projects", () => {
     ).resolves.toEqual({ proposalId: expect.any(String) });
   });
 
-  it("runs durable generated narration through timing, playback storage, telemetry, and cancellation", async () => {
+  it("aligns a human narration take and requires approval before editing", async () => {
     const t = convexTest(schema, modules);
     const workspace = await bootstrap(t, "creator");
     const projectId = await t.mutation(api.create, {
@@ -470,10 +471,28 @@ describe("membership-backed channel projects", () => {
       content: "Opening line. The evidence follows.",
       provenance: "manual",
     });
-    const { jobId } = await t.mutation(narrationApi.enqueue, {
+    const plan = await t.mutation(narrationPlanApi.createFromScript, {
       ...access(workspace.channel.id, "creator"),
       projectId,
       scriptVersionId: script.scriptVersionId,
+    });
+    await t.mutation(narrationPlanApi.approve, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      planVersionId: plan._id,
+    });
+    const storageId = await t.run((ctx) =>
+      ctx.storage.store(
+        new Blob([`RIFF${"0".repeat(124)}`], { type: "audio/wav" }),
+      ),
+    );
+    const { jobId } = await t.mutation(narrationApi.enqueueUpload, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      planVersionId: plan._id,
+      storageId,
+      fileName: "narrator.wav",
+      mediaType: "audio/wav",
     });
     await expect(
       t.query(narrationApi.list, {
@@ -494,59 +513,146 @@ describe("membership-backed channel projects", () => {
       _id: jobId,
       state: "running",
       attempt: 1,
-      scriptContent: "Opening line. The evidence follows.",
+      plan: {
+        _id: plan._id,
+        cues: [{ text: "Opening line. The evidence follows." }],
+      },
     });
-    const storageId = await t.run((ctx) =>
-      ctx.storage.store(
-        new Blob([`RIFF${"0".repeat(124)}`], { type: "audio/wav" }),
-      ),
-    );
-    const completed = await t.mutation(narrationApi.complete, {
+    await expect(
+      t.mutation(narrationApi.heartbeat, {
+        workerToken: narrationWorkerToken,
+        workerId: "narration-worker",
+        leaseAttempt: 1,
+        jobId,
+        leaseMs: 30_000,
+      }),
+    ).resolves.toBe(true);
+    const completed = await t.mutation(narrationApi.completeUpload, {
       workerToken: narrationWorkerToken,
       workerId: "narration-worker",
       leaseAttempt: 1,
       jobId,
-      storageId,
       durationMs: 2_000,
+      mediaType: "audio/wav",
+      audioCodec: "pcm_s16le",
+      sampleRate: 16_000,
+      channels: 1,
+      transcript: "Opening line. The evidence follows.",
       timingSegments: [
-        { index: 0, startMs: 0, endMs: 900, text: "Opening line." },
         {
-          index: 1,
-          startMs: 900,
+          index: 0,
+          startMs: 0,
           endMs: 2_000,
-          text: "The evidence follows.",
+          text: "Opening line. The evidence follows.",
         },
       ],
-      usageCharacters: 35,
-      estimatedCostUsd: 0,
+      wordTimings: [
+        {
+          index: 0,
+          word: "Opening",
+          startMs: 0,
+          endMs: 400,
+          cueIndex: 0,
+          planWordIndex: 0,
+          match: "exact",
+        },
+        {
+          index: 1,
+          word: "line",
+          startMs: 400,
+          endMs: 700,
+          cueIndex: 0,
+          planWordIndex: 1,
+          match: "exact",
+        },
+        {
+          index: 2,
+          word: "The",
+          startMs: 900,
+          endMs: 1_100,
+          cueIndex: 0,
+          planWordIndex: 2,
+          match: "exact",
+        },
+        {
+          index: 3,
+          word: "evidence",
+          startMs: 1_100,
+          endMs: 1_500,
+          cueIndex: 0,
+          planWordIndex: 3,
+          match: "exact",
+        },
+        {
+          index: 4,
+          word: "follows",
+          startMs: 1_500,
+          endMs: 2_000,
+          cueIndex: 0,
+          planWordIndex: 4,
+          match: "exact",
+        },
+      ],
+      omittedWordCount: 0,
+      insertedWordCount: 0,
+      substitutedWordCount: 0,
+      provider: "test-transcriber",
+      model: "word-timing-v1",
       wallTimeMs: 12,
     });
     expect(completed.version).toBe(1);
+    const reviewable = await t.query(narrationApi.list, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+    });
+    expect(reviewable).toMatchObject({
+      currentNarrationVersionId: null,
+      versions: [
+        {
+          version: 1,
+          planVersionId: plan._id,
+          scriptVersionId: script.scriptVersionId,
+          alignmentState: "reviewable",
+          provider: "test-transcriber",
+          model: "word-timing-v1",
+          durationMs: 2_000,
+          audioUrl: expect.any(String),
+        },
+      ],
+      jobs: [{ _id: jobId, state: "succeeded" }],
+    });
+    expect(reviewable.versions[0]?.wordTimings?.[0]).toMatchObject({
+      word: "Opening",
+      startMs: 0,
+      endMs: 400,
+    });
+    await t.mutation(narrationApi.approveAlignment, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      narrationVersionId: completed.narrationVersionId,
+    });
     await expect(
       t.query(narrationApi.list, {
         ...access(workspace.channel.id, "creator"),
         projectId,
       }),
     ).resolves.toMatchObject({
-      versions: [
-        {
-          version: 1,
-          scriptVersionId: script.scriptVersionId,
-          provider: "relay-fake-tts",
-          model: "deterministic-wave-v1",
-          durationMs: 2_000,
-          usageCharacters: 35,
-          estimatedCostUsd: 0,
-          audioUrl: expect.any(String),
-        },
-      ],
-      jobs: [{ _id: jobId, state: "succeeded" }],
+      currentNarrationVersionId: completed.narrationVersionId,
+      versions: [{ alignmentState: "approved" }],
     });
 
-    const canceled = await t.mutation(narrationApi.enqueue, {
+    const canceledStorageId = await t.run((ctx) =>
+      ctx.storage.store(
+        new Blob([`RIFF${"1".repeat(124)}`], { type: "audio/wav" }),
+      ),
+    );
+    const canceled = await t.mutation(narrationApi.enqueueUpload, {
       ...access(workspace.channel.id, "creator"),
       projectId,
-      scriptVersionId: script.scriptVersionId,
+      planVersionId: plan._id,
+      storageId: canceledStorageId,
+      fileName: "canceled.wav",
+      mediaType: "audio/wav",
     });
     await t.mutation(narrationApi.claim, {
       workerToken: narrationWorkerToken,
@@ -575,12 +681,28 @@ describe("membership-backed channel projects", () => {
     });
   });
 
-  it("probes uploaded narration as immutable replacement versions", async () => {
+  it("keeps aligned human narration takes as immutable candidates", async () => {
     const t = convexTest(schema, modules);
     const workspace = await bootstrap(t, "creator");
     const projectId = await t.mutation(api.create, {
       ...access(workspace.channel.id, "creator"),
       name: "Uploaded voiceover",
+    });
+    const script = await t.mutation(api.saveScriptVersion, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      content: "A human narrator reads this line.",
+      provenance: "manual",
+    });
+    const plan = await t.mutation(narrationPlanApi.createFromScript, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      scriptVersionId: script.scriptVersionId,
+    });
+    await t.mutation(narrationPlanApi.approve, {
+      ...access(workspace.channel.id, "creator"),
+      projectId,
+      planVersionId: plan._id,
     });
 
     for (const [index, fileName] of [
@@ -597,6 +719,7 @@ describe("membership-backed channel projects", () => {
       const queued = await t.mutation(narrationApi.enqueueUpload, {
         ...access(workspace.channel.id, "creator"),
         projectId,
+        planVersionId: plan._id,
         storageId,
         fileName,
         mediaType: "audio/wav",
@@ -622,6 +745,31 @@ describe("membership-backed channel projects", () => {
         audioCodec: "pcm_s16le",
         sampleRate: 16_000,
         channels: 1,
+        transcript: "A human narrator reads this line.",
+        timingSegments: [
+          {
+            index: 0,
+            startMs: 0,
+            endMs: 2_000 + index * 500,
+            text: "A human narrator reads this line.",
+          },
+        ],
+        wordTimings: [
+          {
+            index: 0,
+            word: "A",
+            startMs: 0,
+            endMs: 200,
+            cueIndex: 0,
+            planWordIndex: 0,
+            match: "exact",
+          },
+        ],
+        omittedWordCount: 5,
+        insertedWordCount: 0,
+        substitutedWordCount: 0,
+        provider: "test-transcriber",
+        model: "word-timing-v1",
         wallTimeMs: 8,
       });
     }
@@ -634,6 +782,7 @@ describe("membership-backed channel projects", () => {
       {
         version: 2,
         provenance: "upload",
+        alignmentState: "reviewable",
         fileName: "replacement.wav",
         durationMs: 2_500,
         audioCodec: "pcm_s16le",
@@ -672,6 +821,16 @@ describe("membership-backed channel projects", () => {
         storageId,
         mediaType: "audio/wav",
         durationMs: 4_000,
+        alignmentState: "approved",
+        wordTimings: [
+          {
+            index: 0,
+            word: "Opening",
+            startMs: 0,
+            endMs: 500,
+            match: "exact",
+          },
+        ],
         timingSegments: [],
         createdAt: Date.now(),
       });

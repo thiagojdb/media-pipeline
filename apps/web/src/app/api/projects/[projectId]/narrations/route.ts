@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 import {
+  approveNarrationAlignment,
   cancelProjectNarration,
   finalizeNarrationUpload,
-  generateProjectNarration,
   listProjectNarrations,
   prepareNarrationUpload,
 } from "@/lib/project-api";
@@ -13,15 +13,12 @@ type RouteContext = { params: Promise<{ projectId: string }> };
 
 const actionSchema = z.discriminatedUnion("action", [
   z.object({
-    action: z.literal("generate"),
-    scriptVersionId: z.string().min(1).max(200),
-  }),
-  z.object({
     action: z.literal("cancel"),
     jobId: z.string().min(1).max(200),
   }),
   z.object({
     action: z.literal("prepare_upload"),
+    planVersionId: z.string().min(1).max(200),
     fileName: z.string().trim().min(1).max(255),
     mediaType: z.string().trim().min(1).max(100),
     byteSize: z
@@ -32,9 +29,14 @@ const actionSchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("finalize_upload"),
+    planVersionId: z.string().min(1).max(200),
     storageId: z.string().min(1).max(200),
     fileName: z.string().trim().min(1).max(255),
     mediaType: z.string().trim().min(1).max(100),
+  }),
+  z.object({
+    action: z.literal("approve_alignment"),
+    narrationVersionId: z.string().min(1).max(200),
   }),
 ]);
 
@@ -61,19 +63,17 @@ export async function POST(request: Request, context: RouteContext) {
         { status: 400 },
       );
     }
-    let result: { jobId: string } | { uploadUrl: string; maximumBytes: number };
+    let result:
+      | { jobId: string }
+      | { uploadUrl: string; maximumBytes: number }
+      | { narrationVersionId: string; version: number };
     switch (parsed.data.action) {
-      case "generate":
-        result = await generateProjectNarration(
-          projectId,
-          parsed.data.scriptVersionId,
-        );
-        break;
       case "cancel":
         result = await cancelProjectNarration(projectId, parsed.data.jobId);
         break;
       case "prepare_upload":
         result = await prepareNarrationUpload(projectId, {
+          planVersionId: parsed.data.planVersionId,
           fileName: parsed.data.fileName,
           mediaType: parsed.data.mediaType,
           byteSize: parsed.data.byteSize,
@@ -81,10 +81,17 @@ export async function POST(request: Request, context: RouteContext) {
         break;
       case "finalize_upload":
         result = await finalizeNarrationUpload(projectId, {
+          planVersionId: parsed.data.planVersionId,
           storageId: parsed.data.storageId,
           fileName: parsed.data.fileName,
           mediaType: parsed.data.mediaType,
         });
+        break;
+      case "approve_alignment":
+        result = await approveNarrationAlignment(
+          projectId,
+          parsed.data.narrationVersionId,
+        );
         break;
     }
     return Response.json(result, { status: 202 });

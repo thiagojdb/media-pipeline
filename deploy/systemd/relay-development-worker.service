@@ -1,12 +1,13 @@
 [Unit]
-Description=Relay production worker
+Description=Relay development worker
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/services/relay-worker/current
-EnvironmentFile=%h/.config/relay-worker/production.env
+WorkingDirectory=%h/services/relay-development-worker/current
+EnvironmentFile=%h/.config/relay-worker/development.env
+Environment=RELAY_ENV=development
 ExecStart=/usr/bin/npm run start --workspace @relay/worker
 Restart=on-failure
 RestartSec=5
