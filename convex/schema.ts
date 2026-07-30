@@ -41,6 +41,8 @@ export default defineSchema({
     description: v.optional(v.string()),
     currentScriptVersionId: v.optional(v.id("scriptVersions")),
     currentScriptVersionNumber: v.optional(v.number()),
+    currentNarrationPlanVersionId: v.optional(v.id("narrationPlanVersions")),
+    currentNarrationPlanVersionNumber: v.optional(v.number()),
     currentNarrationVersionId: v.optional(v.id("narrationVersions")),
     currentNarrationVersionNumber: v.optional(v.number()),
     currentCompositionVersionId: v.optional(v.id("compositionVersions")),
@@ -111,6 +113,29 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_project_created", ["projectId", "createdAt"]),
+  narrationPlanVersions: defineTable({
+    channelId: v.id("channels"),
+    projectId: v.id("projects"),
+    scriptVersionId: v.id("scriptVersions"),
+    createdByMembershipId: v.id("channelMemberships"),
+    version: v.number(),
+    state: v.union(v.literal("reviewable"), v.literal("approved")),
+    cues: v.array(
+      v.object({
+        index: v.number(),
+        sourceStart: v.number(),
+        sourceEnd: v.number(),
+        text: v.string(),
+      }),
+    ),
+    wordCount: v.number(),
+    estimatedDurationMs: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    approvedAt: v.optional(v.number()),
+  })
+    .index("by_project_version", ["projectId", "version"])
+    .index("by_script_version", ["scriptVersionId"]),
   narrationVersions: defineTable({
     channelId: v.id("channels"),
     projectId: v.id("projects"),
@@ -121,6 +146,31 @@ export default defineSchema({
     storageId: v.id("_storage"),
     mediaType: v.string(),
     durationMs: v.number(),
+    planVersionId: v.optional(v.id("narrationPlanVersions")),
+    alignmentState: v.optional(
+      v.union(v.literal("reviewable"), v.literal("approved")),
+    ),
+    transcript: v.optional(v.string()),
+    wordTimings: v.optional(
+      v.array(
+        v.object({
+          index: v.number(),
+          word: v.string(),
+          startMs: v.number(),
+          endMs: v.number(),
+          cueIndex: v.optional(v.number()),
+          planWordIndex: v.optional(v.number()),
+          match: v.union(
+            v.literal("exact"),
+            v.literal("substitution"),
+            v.literal("insertion"),
+          ),
+        }),
+      ),
+    ),
+    omittedWordCount: v.optional(v.number()),
+    insertedWordCount: v.optional(v.number()),
+    substitutedWordCount: v.optional(v.number()),
     timingSegments: v.array(
       v.object({
         index: v.number(),
@@ -259,6 +309,7 @@ export default defineSchema({
     projectId: v.id("projects"),
     kind: v.optional(v.union(v.literal("generated"), v.literal("upload"))),
     scriptVersionId: v.optional(v.id("scriptVersions")),
+    planVersionId: v.optional(v.id("narrationPlanVersions")),
     sourceStorageId: v.optional(v.id("_storage")),
     sourceFileName: v.optional(v.string()),
     sourceMediaType: v.optional(v.string()),

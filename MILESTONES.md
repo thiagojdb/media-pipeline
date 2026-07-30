@@ -1,6 +1,8 @@
 # Relay Delivery Milestones
 
-Status: ordered delivery plan. Linear is the task-tracking surface; this file explains why the work is sequenced this way and defines milestone gates.
+Status: ordered delivery plan. Work may be tracked in Linear when useful, but
+Linear is not required; this file explains why the work is sequenced this way
+and defines milestone gates.
 
 ## Delivery rule
 
@@ -142,7 +144,7 @@ A channel member can create a project, add source material, produce or import sc
 - Channel and membership-backed projects
 - Basic URL and file sources
 - Script editing or import
-- Generated narration or uploaded narration with the minimum timing path
+- Human or producer narration with an approved spoken plan and word timing
 - Semantic beats
 - Channel component library insertion
 - Structured composition with exact component versions and inputs
@@ -155,8 +157,8 @@ M1 and the MED-141 component-library bridge are complete. M2 is decomposed as
 MED-142 through MED-153 and proceeds through these dependency layers:
 
 1. MED-142 establishes membership-backed channel projects.
-2. MED-143, MED-144, and MED-146 add sources, versioned scripts, and uploaded narration.
-3. MED-145 and MED-147 add generated narration and timed semantic beats.
+2. MED-143, MED-144, and MED-146 add sources, versioned scripts, and the original uploaded narration path.
+3. MED-145 and MED-147 add the original generated narration proof and timed semantic beats; the M3 narration rebuild supersedes that synthetic production path.
 4. MED-148 and MED-149 establish the immutable composition model and manual component insertion.
 5. MED-150 through MED-152 add synchronized preview, agent proposals, and draft rendering.
 6. MED-153 proves the complete source-to-draft workflow with a real dogfood run.
@@ -197,6 +199,14 @@ MED-158 removes fixed-frequency empty worker polling before further background
 job types are added. Reactive queue wakeups and claim-scoped durable recovery
 retain the existing fenced lease guarantees while keeping idle Convex function
 usage flat.
+
+The narration boundary must be rebuilt before review-to-final expands further.
+`docs/NARRATION_REIMPLEMENTATION.md` records the production-project evidence,
+target domain model, safety rules, delivery sequence, and golden acceptance
+case. The current deterministic waveform remains test infrastructure and must
+not be treated as production narration. Producer and human-narrator recordings
+are first-class inputs, and an editing-ready track requires reviewed word-level
+start and end timing regardless of how the audio was produced.
 
 ### Outcome
 

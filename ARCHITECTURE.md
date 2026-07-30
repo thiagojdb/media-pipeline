@@ -226,11 +226,30 @@ MED-142 establishes the private-development form of this boundary. Convex stores
 
 MED-144 stores project scripts as append-only `scriptVersions` with monotonic project-local numbers, exact unmodified content, provenance, creator membership, and creation time. The project holds an explicit pointer and number for the current version; no mutation edits an existing version. Historical versions have stable project/version routes, while list responses expose bounded summaries rather than duplicating every full script into the browser.
 
-MED-145 adds durable narration jobs with leases, attempt fencing, heartbeat recovery, creator cancellation, and visible terminal states. A successful worker claim pins one exact immutable script version, generates or receives timestamped audio outside Next.js and Convex, uploads it to Convex storage, then atomically publishes an immutable narration version with duration, timing segments, provider/model identity, usage, cost, and wall-time telemetry. Normal development and CI use a deterministic WAV-generating fake provider with zero external calls; the provider boundary can be replaced without changing narration records or job authority.
+The M3 narration rebuild separates spoken intent, audio performance, alignment,
+and editing authority. A deterministic parser proposes source-spanned spoken
+cues from one exact script version while excluding known Markdown production
+directions. A channel member may edit or exclude proposed cues and must approve
+the resulting narration-plan version before any audio can attach to it.
 
-MED-146 extends that same immutable version boundary to uploaded narration. The browser uploads directly to Convex storage after a server-authorized prepare step; a durable worker then probes the stored file with FFprobe and publishes its exact duration, codec, sample rate, channel count, and source filename. Replacements advance the project narration pointer without changing earlier versions, so compositions can continue to reference the exact audio version they were built against.
+Human and producer recordings are first-class narration inputs. The browser
+uploads audio directly to Convex storage after a server-authorized prepare
+step. A durable worker pins the approved plan, probes the take with FFprobe,
+transcribes it through a server-only adapter, and maps every returned word to
+the plan as an exact match, substitution, or insertion while recording
+omissions. Narration jobs retain leases, attempt fencing, periodic heartbeats,
+creator cancellation, bounded recovery, and visible terminal states. Local
+development and CI use a deterministic timing aligner over real uploaded audio;
+production OpenAI mode requires an explicit server-side API key and uses
+word-timestamp transcription.
 
-MED-147 stores semantic beats as ordered, project-owned ranges pinned to one exact immutable narration version. The Convex boundary atomically validates and replaces a version's editable beat set, rejecting non-integer timing, overlap, out-of-bounds markers, and zero-duration ranges before changing persisted state. Beat editing never patches narration or audio, and older beat sets remain available with their superseded narration version.
+Successful alignment publishes a reviewable immutable track candidate with
+audio metadata, transcript, cue ranges, per-word start/end timing, and
+deviation counts. It does not advance the project narration pointer. Only
+explicit producer approval marks the alignment approved and makes that exact
+track current. Semantic beats and composition versions reject narration that
+lacks approved word timing, preserving the exact audio and timing boundary that
+preview and rendering consume.
 
 MED-148 defines the single structured project composition consumed by both preview and rendering. Each immutable composition version pins one narration version and an ordered set of beat- or time-anchored visual segments. Segments reference either an exact approved channel component version with inputs checked against that version's stored JSON Schema, or an active project source. Zod validates the record shape first; Convex then validates ownership, exact beat timing, non-overlap, narration bounds, source availability, component approval, and component inputs before advancing the explicit current-version pointer.
 
@@ -329,6 +348,24 @@ The initial repository gate should remain small: format, lint, typecheck, unit t
 ## Deployment and trust stages
 
 The first milestone targets local development and private dogfooding. Even locally, arbitrary generated code remains outside Next.js and Convex and cannot replace a working version without validation.
+
+Relay uses promotion branches and resource isolation rather than treating a
+branch name as sufficient separation. `main` owns the complete development
+alpha environment. `prod` owns a separate production Vercel project and Convex
+deployment. Development and production never share data, server tokens,
+provider credentials, or worker endpoints.
+
+Production intentionally has no Node worker during alpha. Next.js requires an
+explicit `RELAY_WORKER_URL`; when absent, worker-backed routes return a bounded
+unavailable response. They never default to localhost or reach the development
+worker. A future production worker requires an explicit architecture decision
+and separate service, queue credentials, storage, monitoring, and release
+boundary.
+
+An exact CI-verified commit moves from `main` to `prod` through a pull request.
+The production workflow remains disabled until its independent Vercel and
+Convex resources are configured. `docs/ENVIRONMENTS.md` is the operational
+environment contract.
 
 MED-133 establishes the local Linux proof with disposable workspaces, Bubblewrap namespaces, a read-only base, no network or home access, and `prlimit` CPU/memory/process/file/wall-time bounds. JavaScript sandbox libraries and model instructions alone remain insufficient. Before untrusted external users or deployment beyond private dogfooding, this boundary still requires production container policy, authenticated enqueue paths, durable artifact storage, and operational monitoring.
 

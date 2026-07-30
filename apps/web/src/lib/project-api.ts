@@ -1,259 +1,57 @@
+import "server-only";
+
+import { api } from "../../../../convex/_generated/api";
+import type { Id, TableNames } from "../../../../convex/_generated/dataModel";
+import type { ProjectComposition } from "../../../../convex/projectCompositionSchema";
 import { ConvexHttpClient } from "convex/browser";
-import { anyApi } from "convex/server";
+import type { FunctionReturnType } from "convex/server";
 
-const api = anyApi.projects!;
+export type { ProjectComposition };
 
-export type ChannelProject = {
-  _id: string;
-  channelId: string;
-  creatorMembershipId: string;
-  name: string;
-  description?: string;
-  status: "active" | "archived";
-  createdAt: number;
-  updatedAt: number;
-  archivedAt?: number;
-};
+type Workspace = FunctionReturnType<
+  typeof api.projects.bootstrapDevelopmentWorkspace
+>;
+type ChannelProject = FunctionReturnType<typeof api.projects.list>[number];
+type ProjectScriptVersion = NonNullable<
+  FunctionReturnType<typeof api.projects.listScriptVersions>["current"]
+>;
+type ProjectScriptVersionSummary = FunctionReturnType<
+  typeof api.projects.listScriptVersions
+>["versions"][number];
+type ProjectSource = FunctionReturnType<
+  typeof api.projects.listSources
+>[number];
+type ProjectScriptRevisionProposal = FunctionReturnType<
+  typeof api.projectScriptRevisions.list
+>[number];
+type ProjectNarrationVersion = FunctionReturnType<
+  typeof api.projectNarrations.list
+>["versions"][number];
+type ProjectNarrationPlanVersion = FunctionReturnType<
+  typeof api.narrationPlans.list
+>["versions"][number];
+type ProjectNarrationJob = FunctionReturnType<
+  typeof api.projectNarrations.list
+>["jobs"][number];
+type ProjectBeatWorkspace = FunctionReturnType<typeof api.projectBeats.list>;
+type ProjectCompositionWorkspace = FunctionReturnType<
+  typeof api.projectCompositions.list
+>;
+type ProjectCompositionProposal = FunctionReturnType<
+  typeof api.projectEditingAgent.list
+>[number];
+type ProjectDraftRender = FunctionReturnType<
+  typeof api.projectDraftRenders.list
+>[number];
 
-export type ProjectSource = {
-  _id: string;
-  projectId: string;
-  kind: "url" | "file";
-  status: "active" | "removed";
-  title: string;
-  normalizedUrl?: string;
-  storageId?: string;
-  fileName?: string;
-  mediaType: string;
-  byteSize: number;
-  contentHash: string;
-  hashKind: "reference_sha256" | "file_sha256";
-  createdAt: number;
-  updatedAt: number;
-  downloadUrl?: string;
-};
-
-export type ProjectScriptVersion = {
-  _id: string;
-  projectId: string;
-  version: number;
-  content: string;
-  provenance: "manual" | "import";
-  createdAt: number;
-};
-
-export type ProjectScriptVersionSummary = {
-  _id: string;
-  version: number;
-  provenance: "manual" | "import";
-  characterCount: number;
-  excerpt: string;
-  createdAt: number;
-};
-
-export type ProjectScriptRevisionProposal = {
-  _id: string;
-  baseScriptVersionId: string;
-  baseScriptVersionNumber: number;
-  baseDraftHash: string;
-  scope: "selection" | "document";
-  selectionFrom: number;
-  selectionTo: number;
-  selectedText: string;
-  instruction: string;
-  replacementMarkdown: string;
-  rationale: string;
-  state: "reviewable" | "applied" | "rejected";
-  provider: string;
-  model: string;
-  inputTokens?: number;
-  outputTokens?: number;
-  estimatedCostUsd?: number;
-  wallTimeMs?: number;
-  createdAt: number;
-  updatedAt: number;
-};
-
-export type ProjectNarrationVersion = {
-  _id: string;
-  projectId: string;
-  scriptVersionId?: string;
-  version: number;
-  provenance: "generated" | "upload";
-  audioUrl?: string;
-  mediaType: string;
-  durationMs: number;
-  timingSegments: Array<{
-    index: number;
-    startMs: number;
-    endMs: number;
-    text: string;
-  }>;
-  provider?: string;
-  model?: string;
-  fileName?: string;
-  audioCodec?: string;
-  sampleRate?: number;
-  channels?: number;
-  usageCharacters?: number;
-  estimatedCostUsd?: number;
-  wallTimeMs?: number;
-  createdAt: number;
-};
-
-export type ProjectNarrationJob = {
-  _id: string;
-  scriptVersionId?: string;
-  kind?: "generated" | "upload";
-  state:
-    | "queued"
-    | "running"
-    | "succeeded"
-    | "failed"
-    | "canceled"
-    | "needs_intervention";
-  provider: string;
-  model: string;
-  cancelRequested: boolean;
-  terminalCode?: string;
-  terminalMessage?: string;
-  createdAt: number;
-  updatedAt: number;
-};
-
-export type ProjectBeat = {
-  _id: string;
-  narrationVersionId: string;
-  order: number;
-  startMs: number;
-  endMs: number;
-  title: string;
-  summary?: string | undefined;
-};
-
-export type ProjectBeatWorkspace = {
-  currentNarrationVersionId: string | null;
-  narrationVersions: Array<{
-    _id: string;
-    version: number;
-    durationMs: number;
-  }>;
-  beats: ProjectBeat[];
-};
-
-export type ProjectComposition = {
-  schemaVersion: 1;
-  narrationVersionId: string;
-  fps: number;
-  width: number;
-  height: number;
-  segments: Array<
-    | {
-        id: string;
-        kind: "component";
-        componentVersionId: string;
-        input: unknown;
-        anchor:
-          | { kind: "time"; startMs: number; endMs: number }
-          | {
-              kind: "beat";
-              beatId: string;
-              startMs: number;
-              endMs: number;
-            };
-      }
-    | {
-        id: string;
-        kind: "media";
-        sourceId: string;
-        fit: "cover" | "contain";
-        anchor:
-          | { kind: "time"; startMs: number; endMs: number }
-          | {
-              kind: "beat";
-              beatId: string;
-              startMs: number;
-              endMs: number;
-            };
-      }
-  >;
-};
-
-export type ProjectCompositionWorkspace = {
-  current: {
-    _id: string;
-    version: number;
-    provenance: "manual" | "agent";
-    narrationVersionId: string;
-    composition: ProjectComposition;
-    createdAt: number;
-  } | null;
-  versions: Array<{
-    _id: string;
-    version: number;
-    provenance: "manual" | "agent";
-    narrationVersionId: string;
-    segmentCount: number;
-    createdAt: number;
-  }>;
-};
-
-export type ProjectCompositionProposal = {
-  _id: string;
-  request: string;
-  state: "reviewable" | "invalid" | "accepted" | "rejected";
-  rationale: string;
-  patchJson?: string;
-  validationEvidenceJson: string;
-  toolActivityJson: string;
-  provider: string;
-  model: string;
-  attempt: number;
-  maxAttempts: number;
-  inputTokens: number;
-  outputTokens: number;
-  estimatedCostUsd: number;
-  acceptedCompositionVersionId?: string;
-  createdAt: number;
-};
-
-export type ProjectDraftRender = {
-  _id: string;
-  compositionVersionId: string;
-  narrationVersionId: string;
-  rangeKind: "full" | "selection";
-  rangeStartMs: number;
-  rangeEndMs: number;
-  width: number;
-  height: number;
-  fps: number;
-  state:
-    | "queued"
-    | "running"
-    | "succeeded"
-    | "failed"
-    | "canceled"
-    | "needs_intervention";
-  progress: number;
-  attempt: number;
-  maxAttempts: number;
-  cancelRequested: boolean;
-  outputUrl?: string | null;
-  outputSizeBytes?: number;
-  outputContentHash?: string;
-  visualFingerprint?: string;
-  wallTimeMs?: number;
-  terminalCode?: string;
-  terminalMessage?: string;
-  createdAt: number;
-  updatedAt: number;
-};
-
-type Workspace = {
-  user: { id: string; name: string };
-  channel: { id: string; slug: string; name: string };
-  membership: { id: string; role: "owner" | "member" };
-};
+const projects = api.projects;
+const scriptRevisions = api.projectScriptRevisions;
+const narrationPlans = api.narrationPlans;
+const narrations = api.projectNarrations;
+const projectBeats = api.projectBeats;
+const compositions = api.projectCompositions;
+const editingAgent = api.projectEditingAgent;
+const draftRenders = api.projectDraftRenders;
 
 let client: ConvexHttpClient | undefined;
 let workspacePromise: Promise<Workspace> | undefined;
@@ -263,9 +61,8 @@ export async function listProjects(): Promise<{
   projects: ChannelProject[];
 }> {
   const workspace = await developmentWorkspace();
-  const projects = (await convex().query(api.list!, access(workspace))) as
-    ChannelProject[] | undefined;
-  return { channel: workspace.channel, projects: projects ?? [] };
+  const projectList = await convex().query(projects.list, access(workspace));
+  return { channel: workspace.channel, projects: projectList };
 }
 
 export async function getProject(projectId: string): Promise<{
@@ -273,10 +70,10 @@ export async function getProject(projectId: string): Promise<{
   project: ChannelProject;
 }> {
   const workspace = await developmentWorkspace();
-  const project = (await convex().query(api.get!, {
+  const project = await convex().query(projects.get, {
     ...access(workspace),
-    projectId,
-  })) as ChannelProject;
+    projectId: convexId<"projects">(projectId),
+  });
   return { channel: workspace.channel, project };
 }
 
@@ -285,10 +82,13 @@ export async function createProject(input: {
   description?: string | undefined;
 }): Promise<{ projectId: string }> {
   const workspace = await developmentWorkspace();
-  const projectId = (await convex().mutation(api.create!, {
+  const projectId = await convex().mutation(projects.create, {
     ...access(workspace),
-    ...input,
-  })) as string;
+    name: input.name,
+    ...(input.description !== undefined
+      ? { description: input.description }
+      : {}),
+  });
   return { projectId };
 }
 
@@ -297,18 +97,21 @@ export async function updateProject(
   input: { name: string; description?: string | undefined },
 ): Promise<void> {
   const workspace = await developmentWorkspace();
-  await convex().mutation(api.rename!, {
+  await convex().mutation(projects.rename, {
     ...access(workspace),
-    projectId,
-    ...input,
+    projectId: convexId<"projects">(projectId),
+    name: input.name,
+    ...(input.description !== undefined
+      ? { description: input.description }
+      : {}),
   });
 }
 
 export async function archiveProject(projectId: string): Promise<void> {
   const workspace = await developmentWorkspace();
-  await convex().mutation(api.archive!, {
+  await convex().mutation(projects.archive, {
     ...access(workspace),
-    projectId,
+    projectId: convexId<"projects">(projectId),
   });
 }
 
@@ -318,14 +121,10 @@ export async function listProjectScriptVersions(projectId: string): Promise<{
   maximumCharacters: number;
 }> {
   const workspace = await developmentWorkspace();
-  return (await convex().query(api.listScriptVersions!, {
+  return convex().query(projects.listScriptVersions, {
     ...access(workspace),
-    projectId,
-  })) as {
-    current: ProjectScriptVersion | null;
-    versions: ProjectScriptVersionSummary[];
-    maximumCharacters: number;
-  };
+    projectId: convexId<"projects">(projectId),
+  });
 }
 
 export async function getProjectScriptVersion(
@@ -338,17 +137,20 @@ export async function getProjectScriptVersion(
 }> {
   const workspace = await developmentWorkspace();
   const [project, script] = await Promise.all([
-    convex().query(api.get!, { ...access(workspace), projectId }),
-    convex().query(api.getScriptVersion!, {
+    convex().query(projects.get, {
       ...access(workspace),
-      projectId,
+      projectId: convexId<"projects">(projectId),
+    }),
+    convex().query(projects.getScriptVersion, {
+      ...access(workspace),
+      projectId: convexId<"projects">(projectId),
       version,
     }),
   ]);
   return {
     channel: workspace.channel,
-    project: project as ChannelProject,
-    script: script as ProjectScriptVersion,
+    project,
+    script,
   };
 }
 
@@ -357,21 +159,21 @@ export async function saveProjectScriptVersion(
   input: { content: string; provenance: "manual" | "import" },
 ): Promise<{ scriptVersionId: string; version: number }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(api.saveScriptVersion!, {
+  return convex().mutation(projects.saveScriptVersion, {
     ...access(workspace),
-    projectId,
+    projectId: convexId<"projects">(projectId),
     ...input,
-  })) as { scriptVersionId: string; version: number };
+  });
 }
 
 export async function listProjectScriptRevisionProposals(
   projectId: string,
 ): Promise<ProjectScriptRevisionProposal[]> {
   const workspace = await developmentWorkspace();
-  return (await convex().query(anyApi.projectScriptRevisions!.list!, {
+  return convex().query(scriptRevisions.list, {
     ...access(workspace),
-    projectId,
-  })) as ProjectScriptRevisionProposal[];
+    projectId: convexId<"projects">(projectId),
+  });
 }
 
 export async function proposeProjectScriptRevision(
@@ -395,11 +197,12 @@ export async function proposeProjectScriptRevision(
   },
 ): Promise<{ proposalId: string }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(anyApi.projectScriptRevisions!.propose!, {
+  return convex().mutation(scriptRevisions.propose, {
     ...access(workspace),
-    projectId,
     ...input,
-  })) as { proposalId: string };
+    projectId: convexId<"projects">(projectId),
+    baseScriptVersionId: convexId<"scriptVersions">(input.baseScriptVersionId),
+  });
 }
 
 export async function decideProjectScriptRevision(
@@ -412,11 +215,12 @@ export async function decideProjectScriptRevision(
   },
 ): Promise<{ proposalId: string }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(anyApi.projectScriptRevisions!.decide!, {
+  return convex().mutation(scriptRevisions.decide, {
     ...access(workspace),
-    projectId,
     ...input,
-  })) as { proposalId: string };
+    projectId: convexId<"projects">(projectId),
+    proposalId: convexId<"scriptRevisionProposals">(input.proposalId),
+  });
 }
 
 export async function listProjectNarrations(projectId: string): Promise<{
@@ -424,25 +228,60 @@ export async function listProjectNarrations(projectId: string): Promise<{
   jobs: ProjectNarrationJob[];
 }> {
   const workspace = await developmentWorkspace();
-  return (await convex().query(anyApi.projectNarrations!.list!, {
+  const result = await convex().query(narrations.list, {
     ...access(workspace),
-    projectId,
-  })) as {
-    versions: ProjectNarrationVersion[];
-    jobs: ProjectNarrationJob[];
-  };
+    projectId: convexId<"projects">(projectId),
+  });
+  return { versions: result.versions, jobs: result.jobs };
 }
 
-export async function generateProjectNarration(
+export async function listProjectNarrationPlans(projectId: string): Promise<{
+  currentPlanVersionId: string | null;
+  versions: ProjectNarrationPlanVersion[];
+}> {
+  const workspace = await developmentWorkspace();
+  return convex().query(narrationPlans.list, {
+    ...access(workspace),
+    projectId: convexId<"projects">(projectId),
+  });
+}
+
+export async function createProjectNarrationPlan(
   projectId: string,
   scriptVersionId: string,
-): Promise<{ jobId: string }> {
+): Promise<ProjectNarrationPlanVersion> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(anyApi.projectNarrations!.enqueue!, {
+  return convex().mutation(narrationPlans.createFromScript, {
     ...access(workspace),
-    projectId,
-    scriptVersionId,
-  })) as { jobId: string };
+    projectId: convexId<"projects">(projectId),
+    scriptVersionId: convexId<"scriptVersions">(scriptVersionId),
+  });
+}
+
+export async function updateProjectNarrationPlan(
+  projectId: string,
+  planVersionId: string,
+  cues: ProjectNarrationPlanVersion["cues"],
+): Promise<ProjectNarrationPlanVersion> {
+  const workspace = await developmentWorkspace();
+  return convex().mutation(narrationPlans.updateReviewable, {
+    ...access(workspace),
+    projectId: convexId<"projects">(projectId),
+    planVersionId: convexId<"narrationPlanVersions">(planVersionId),
+    cues,
+  });
+}
+
+export async function approveProjectNarrationPlan(
+  projectId: string,
+  planVersionId: string,
+): Promise<ProjectNarrationPlanVersion> {
+  const workspace = await developmentWorkspace();
+  return convex().mutation(narrationPlans.approve, {
+    ...access(workspace),
+    projectId: convexId<"projects">(projectId),
+    planVersionId: convexId<"narrationPlanVersions">(planVersionId),
+  });
 }
 
 export async function cancelProjectNarration(
@@ -450,45 +289,70 @@ export async function cancelProjectNarration(
   jobId: string,
 ): Promise<{ jobId: string }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(anyApi.projectNarrations!.requestCancel!, {
+  return convex().mutation(narrations.requestCancel, {
     ...access(workspace),
-    projectId,
-    jobId,
-  })) as { jobId: string };
+    projectId: convexId<"projects">(projectId),
+    jobId: convexId<"narrationJobs">(jobId),
+  });
 }
 
 export async function prepareNarrationUpload(
   projectId: string,
-  input: { fileName: string; mediaType: string; byteSize: number },
+  input: {
+    planVersionId: string;
+    fileName: string;
+    mediaType: string;
+    byteSize: number;
+  },
 ): Promise<{ uploadUrl: string; maximumBytes: number }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(anyApi.projectNarrations!.prepareUpload!, {
+  return convex().mutation(narrations.prepareUpload, {
     ...access(workspace),
-    projectId,
     ...input,
-  })) as { uploadUrl: string; maximumBytes: number };
+    projectId: convexId<"projects">(projectId),
+    planVersionId: convexId<"narrationPlanVersions">(input.planVersionId),
+  });
 }
 
 export async function finalizeNarrationUpload(
   projectId: string,
-  input: { storageId: string; fileName: string; mediaType: string },
+  input: {
+    planVersionId: string;
+    storageId: string;
+    fileName: string;
+    mediaType: string;
+  },
 ): Promise<{ jobId: string }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(anyApi.projectNarrations!.enqueueUpload!, {
+  return convex().mutation(narrations.enqueueUpload, {
     ...access(workspace),
-    projectId,
     ...input,
-  })) as { jobId: string };
+    projectId: convexId<"projects">(projectId),
+    planVersionId: convexId<"narrationPlanVersions">(input.planVersionId),
+    storageId: storageId(input.storageId),
+  });
+}
+
+export async function approveNarrationAlignment(
+  projectId: string,
+  narrationVersionId: string,
+): Promise<{ narrationVersionId: string; version: number }> {
+  const workspace = await developmentWorkspace();
+  return convex().mutation(narrations.approveAlignment, {
+    ...access(workspace),
+    projectId: convexId<"projects">(projectId),
+    narrationVersionId: convexId<"narrationVersions">(narrationVersionId),
+  });
 }
 
 export async function listProjectBeats(
   projectId: string,
 ): Promise<ProjectBeatWorkspace> {
   const workspace = await developmentWorkspace();
-  return (await convex().query(anyApi.projectBeats!.list!, {
+  return convex().query(projectBeats.list, {
     ...access(workspace),
-    projectId,
-  })) as ProjectBeatWorkspace;
+    projectId: convexId<"projects">(projectId),
+  });
 }
 
 export async function replaceProjectBeats(
@@ -502,22 +366,27 @@ export async function replaceProjectBeats(
   }>,
 ): Promise<{ beatIds: string[] }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(anyApi.projectBeats!.replace!, {
+  return convex().mutation(projectBeats.replace, {
     ...access(workspace),
-    projectId,
-    narrationVersionId,
-    beats,
-  })) as { beatIds: string[] };
+    projectId: convexId<"projects">(projectId),
+    narrationVersionId: convexId<"narrationVersions">(narrationVersionId),
+    beats: beats.map((beat) => ({
+      startMs: beat.startMs,
+      endMs: beat.endMs,
+      title: beat.title,
+      ...(beat.summary !== undefined ? { summary: beat.summary } : {}),
+    })),
+  });
 }
 
 export async function listProjectCompositions(
   projectId: string,
 ): Promise<ProjectCompositionWorkspace> {
   const workspace = await developmentWorkspace();
-  return (await convex().query(anyApi.projectCompositions!.list!, {
+  return convex().query(compositions.list, {
     ...access(workspace),
-    projectId,
-  })) as ProjectCompositionWorkspace;
+    projectId: convexId<"projects">(projectId),
+  });
 }
 
 export async function saveProjectComposition(
@@ -526,22 +395,22 @@ export async function saveProjectComposition(
   provenance: "manual" | "agent" = "manual",
 ): Promise<{ compositionVersionId: string; version: number }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(anyApi.projectCompositions!.save!, {
+  return convex().mutation(compositions.save, {
     ...access(workspace),
-    projectId,
+    projectId: convexId<"projects">(projectId),
     composition,
     provenance,
-  })) as { compositionVersionId: string; version: number };
+  });
 }
 
 export async function listProjectCompositionProposals(
   projectId: string,
 ): Promise<ProjectCompositionProposal[]> {
   const workspace = await developmentWorkspace();
-  return (await convex().query(anyApi.projectEditingAgent!.list!, {
+  return convex().query(editingAgent.list, {
     ...access(workspace),
-    projectId,
-  })) as ProjectCompositionProposal[];
+    projectId: convexId<"projects">(projectId),
+  });
 }
 
 export async function proposeProjectCompositionChange(
@@ -549,39 +418,37 @@ export async function proposeProjectCompositionChange(
   request: string,
 ): Promise<{ proposalId: string }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(anyApi.projectEditingAgent!.propose!, {
+  return convex().mutation(editingAgent.propose, {
     ...access(workspace),
-    projectId,
+    projectId: convexId<"projects">(projectId),
     request,
-  })) as { proposalId: string };
+  });
 }
 
 export async function decideProjectCompositionProposal(
   projectId: string,
   proposalId: string,
   decision: "accept" | "reject",
-): Promise<{ compositionVersionId?: string; version?: number }> {
+) {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(
-    decision === "accept"
-      ? anyApi.projectEditingAgent!.accept!
-      : anyApi.projectEditingAgent!.reject!,
-    {
-      ...access(workspace),
-      projectId,
-      proposalId,
-    },
-  )) as { compositionVersionId?: string; version?: number };
+  const args = {
+    ...access(workspace),
+    projectId: convexId<"projects">(projectId),
+    proposalId: convexId<"compositionProposals">(proposalId),
+  };
+  return decision === "accept"
+    ? convex().mutation(editingAgent.accept, args)
+    : convex().mutation(editingAgent.reject, args);
 }
 
 export async function listProjectDraftRenders(
   projectId: string,
 ): Promise<ProjectDraftRender[]> {
   const workspace = await developmentWorkspace();
-  return (await convex().query(anyApi.projectDraftRenders!.list!, {
+  return convex().query(draftRenders.list, {
     ...access(workspace),
-    projectId,
-  })) as ProjectDraftRender[];
+    projectId: convexId<"projects">(projectId),
+  });
 }
 
 export async function enqueueProjectDraftRender(
@@ -589,11 +456,11 @@ export async function enqueueProjectDraftRender(
   range?: { startMs: number; endMs: number },
 ): Promise<{ jobId: string }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(anyApi.projectDraftRenders!.enqueue!, {
+  return convex().mutation(draftRenders.enqueue, {
     ...access(workspace),
-    projectId,
+    projectId: convexId<"projects">(projectId),
     ...(range ? { range } : {}),
-  })) as { jobId: string };
+  });
 }
 
 export async function cancelProjectDraftRender(
@@ -601,21 +468,21 @@ export async function cancelProjectDraftRender(
   jobId: string,
 ): Promise<{ jobId: string }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(anyApi.projectDraftRenders!.requestCancel!, {
+  return convex().mutation(draftRenders.requestCancel, {
     ...access(workspace),
-    projectId,
-    jobId,
-  })) as { jobId: string };
+    projectId: convexId<"projects">(projectId),
+    jobId: convexId<"projectRenderJobs">(jobId),
+  });
 }
 
 export async function listProjectSources(
   projectId: string,
 ): Promise<ProjectSource[]> {
   const workspace = await developmentWorkspace();
-  return (await convex().query(api.listSources!, {
+  return convex().query(projects.listSources, {
     ...access(workspace),
-    projectId,
-  })) as ProjectSource[];
+    projectId: convexId<"projects">(projectId),
+  });
 }
 
 export async function addProjectUrlSource(
@@ -623,11 +490,11 @@ export async function addProjectUrlSource(
   input: { title: string; url: string },
 ): Promise<{ sourceId: string }> {
   const workspace = await developmentWorkspace();
-  const sourceId = (await convex().mutation(api.addUrlSource!, {
+  const sourceId = await convex().mutation(projects.addUrlSource, {
     ...access(workspace),
-    projectId,
+    projectId: convexId<"projects">(projectId),
     ...input,
-  })) as string;
+  });
   return { sourceId };
 }
 
@@ -636,11 +503,11 @@ export async function prepareProjectFileUpload(
   input: { fileName: string; mediaType: string; byteSize: number },
 ): Promise<{ uploadUrl: string; maximumBytes: number }> {
   const workspace = await developmentWorkspace();
-  return (await convex().mutation(api.createSourceUploadUrl!, {
+  return convex().mutation(projects.createSourceUploadUrl, {
     ...access(workspace),
-    projectId,
+    projectId: convexId<"projects">(projectId),
     ...input,
-  })) as { uploadUrl: string; maximumBytes: number };
+  });
 }
 
 export async function addProjectFileSource(
@@ -653,11 +520,12 @@ export async function addProjectFileSource(
   },
 ): Promise<{ sourceId: string }> {
   const workspace = await developmentWorkspace();
-  const sourceId = (await convex().mutation(api.addFileSource!, {
+  const sourceId = await convex().mutation(projects.addFileSource, {
     ...access(workspace),
-    projectId,
+    projectId: convexId<"projects">(projectId),
     ...input,
-  })) as string;
+    storageId: storageId(input.storageId),
+  });
   return { sourceId };
 }
 
@@ -666,10 +534,10 @@ export async function removeProjectSource(
   sourceId: string,
 ): Promise<void> {
   const workspace = await developmentWorkspace();
-  await convex().mutation(api.removeSource!, {
+  await convex().mutation(projects.removeSource, {
     ...access(workspace),
-    projectId,
-    sourceId,
+    projectId: convexId<"projects">(projectId),
+    sourceId: convexId<"projectSources">(sourceId),
   });
 }
 
@@ -689,7 +557,7 @@ function developmentWorkspace(): Promise<Workspace> {
   const serverToken = process.env.PROJECTS_SERVER_TOKEN;
   if (!serverToken) throw new Error("Project access is not configured.");
   workspacePromise = convex()
-    .mutation(api.bootstrapDevelopmentWorkspace!, {
+    .mutation(projects.bootstrapDevelopmentWorkspace, {
       serverToken,
       identitySubject: process.env.RELAY_DEV_USER_SUBJECT ?? "relay-dev-user",
       userName: process.env.RELAY_DEV_USER_NAME ?? "Relay creator",
@@ -699,14 +567,24 @@ function developmentWorkspace(): Promise<Workspace> {
     .catch((error: unknown) => {
       workspacePromise = undefined;
       throw error;
-    }) as Promise<Workspace>;
+    });
   return workspacePromise;
 }
 
 function access(workspace: Workspace) {
+  const serverToken = process.env.PROJECTS_SERVER_TOKEN;
+  if (!serverToken) throw new Error("Project access is not configured.");
   return {
-    serverToken: process.env.PROJECTS_SERVER_TOKEN!,
+    serverToken,
     identitySubject: process.env.RELAY_DEV_USER_SUBJECT ?? "relay-dev-user",
     channelId: workspace.channel.id,
   };
+}
+
+function convexId<TableName extends TableNames>(value: string): Id<TableName> {
+  return value as Id<TableName>;
+}
+
+function storageId(value: string): Id<"_storage"> {
+  return value as Id<"_storage">;
 }

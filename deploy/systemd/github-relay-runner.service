@@ -1,5 +1,5 @@
 [Unit]
-Description=GitHub Actions runner for Relay production deployments
+Description=GitHub Actions runner for Relay development deployments
 After=network-online.target
 Wants=network-online.target
 

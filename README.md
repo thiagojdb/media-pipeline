@@ -4,6 +4,18 @@ Relay is an AI-assisted production workspace for scripted, source-based YouTube 
 
 The rebuild starts with the riskiest product loop: a creator asks a coding agent to build a reusable channel video component, Relay validates it independently, the creator reviews it at arbitrary frames, and the exact approved version renders into video.
 
+## Environments
+
+`main` is the development branch and deploys the complete private alpha stack.
+`prod` is the production branch and promotes into a separate web and Convex
+environment. Production intentionally has no worker during alpha, so
+worker-backed features report that they are unavailable instead of reaching
+development infrastructure.
+
+See [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md) for the environment contract
+and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for deployment and promotion
+operations.
+
 ## Local development
 
 Requirements:
@@ -49,7 +61,25 @@ Local endpoints are:
 
 - web application: <http://localhost:3000>
 - Convex API: <http://127.0.0.1:3210> when using the default local deployment
-- worker health: <http://127.0.0.1:3212/health>
+- local worker health: <http://127.0.0.1:3213/health>
+
+`npm run dev` selects the real authoring, script-revision, and
+narration-alignment providers. The workspace still starts when an optional
+paid-provider credential is absent; the affected model action reports that it
+is unavailable until configured and never falls back to a fake provider. The
+local worker reads provider credentials from the process environment or the
+gitignored root `.env.local` file. Pi authoring can also use the existing local
+Pi/OpenCode OAuth credential store. One `OPENAI_API_KEY` can configure both
+OpenAI script revision and narration alignment; alternatively configure
+`KIMI_API_KEY` for script revision and `NARRATION_OPENAI_API_KEY` for alignment.
+For deterministic or offline work, use `npm run dev:fake`; that command makes
+no paid model calls. Both commands use local Convex plus the worker on port
+3213, leaving a production worker on 3212 untouched. Set
+`RELAY_LOCAL_WORKER_PORT` to override the local port. The launcher explicitly
+binds Next.js and the local worker to that same port and gives both a
+development-only auth token, so local routes cannot accidentally use a worker
+on port 3212. `npm run dev:loop` and `npm run dev:loop:real` remain aliases for
+the real-provider stack.
 
 Copy `.env.example` only when you need to set values manually. Never commit `.env.local` or credentials.
 
@@ -74,6 +104,13 @@ npm run build
 ```
 
 Workspace package builds are ordered explicitly, so `npm run build` and the `npm run dev` preparation step do not depend on ignored `dist` output from an earlier run.
+
+`convex dev` regenerates the committed `convex/_generated` contract while the
+local stack runs. After changing Convex modules outside that loop, run
+`npm run convex:codegen` against the configured local or hosted development
+deployment and commit the generated result. `npm run typecheck` consumes that
+contract from a clean checkout and checks both Convex and every workspace that
+imports it.
 
 ### Browser tests
 
@@ -196,4 +233,4 @@ The worker retains the process-local component-fixture MP4 proof endpoints with 
 
 ## Legacy boundary
 
-`../media-pipeline-alpha` and the archived Linear project **Legacy — Visual Composition and Component Platform** are read-only research sources. Do not copy legacy code, contracts, or architecture unless a new issue explicitly justifies the choice.
+`../media-pipeline-alpha` and the archived Linear project **Legacy — Visual Composition and Component Platform** are read-only research sources. Do not copy legacy code, contracts, or architecture unless the current work explicitly justifies the choice.

@@ -1,6 +1,17 @@
-const workerBaseUrl = process.env.RELAY_WORKER_URL ?? "http://127.0.0.1:3212";
-const workerAuthToken = process.env.RELAY_WORKER_AUTH_TOKEN;
 export const MAX_WORKER_REQUEST_BYTES = 1_000_000;
+
+export function resolveWorkerConfiguration(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): { enabled: false } | { enabled: true; baseUrl: string; authToken?: string } {
+  const baseUrl = environment.RELAY_WORKER_URL?.trim();
+  if (!baseUrl) return { enabled: false };
+  const authToken = environment.RELAY_WORKER_AUTH_TOKEN?.trim();
+  return {
+    enabled: true,
+    baseUrl,
+    ...(authToken ? { authToken } : {}),
+  };
+}
 
 export async function readBoundedRequestBody(
   request: Request,
@@ -44,14 +55,24 @@ export async function forwardWorkerRequest(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
+  const worker = resolveWorkerConfiguration();
+  if (!worker.enabled) {
+    return Response.json(
+      {
+        error: "worker_unavailable",
+        message: "Worker-backed features are not enabled in this environment.",
+      },
+      { status: 503 },
+    );
+  }
   try {
-    const upstream = await fetch(new URL(path, workerBaseUrl), {
+    const upstream = await fetch(new URL(path, worker.baseUrl), {
       ...init,
       cache: "no-store",
       headers: {
         ...(init?.body ? { "content-type": "application/json" } : {}),
-        ...(workerAuthToken
-          ? { authorization: `Bearer ${workerAuthToken}` }
+        ...(worker.authToken
+          ? { authorization: `Bearer ${worker.authToken}` }
           : {}),
         ...init?.headers,
       },

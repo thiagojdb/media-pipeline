@@ -76,6 +76,16 @@ describe("worker queue availability", () => {
         storageId,
         mediaType: "audio/wav",
         durationMs: 1_000,
+        alignmentState: "approved",
+        wordTimings: [
+          {
+            index: 0,
+            word: "Opening",
+            startMs: 0,
+            endMs: 500,
+            match: "exact",
+          },
+        ],
         timingSegments: [],
         createdAt: now,
       });
