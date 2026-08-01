@@ -25,6 +25,7 @@ const MAX_REQUEST_BYTES = 1_000_000;
 
 export const createWorkerServer = ({
   authToken,
+  instanceId,
   draftRenders,
   componentBuildsEnabled = false,
   componentBuildStatus,
@@ -35,6 +36,7 @@ export const createWorkerServer = ({
   scriptRevisionAgent,
 }: {
   readonly authToken?: string;
+  readonly instanceId?: string;
   readonly draftRenders?: DraftRenderService;
   readonly componentBuildsEnabled?: boolean;
   readonly componentBuildStatus?: () =>
@@ -55,6 +57,7 @@ export const createWorkerServer = ({
         sendJson(response, 200, {
           service: "relay-worker",
           status: "ready",
+          ...(instanceId ? { instanceId } : {}),
           componentBuilds:
             componentBuildStatus?.() ??
             (componentBuildsEnabled ? "running" : "disabled"),

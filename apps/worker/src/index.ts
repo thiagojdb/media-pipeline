@@ -263,6 +263,9 @@ const server = createWorkerServer({
   ...(process.env.RELAY_WORKER_AUTH_TOKEN
     ? { authToken: process.env.RELAY_WORKER_AUTH_TOKEN }
     : {}),
+  ...(process.env.RELAY_INSTANCE_ID
+    ? { instanceId: process.env.RELAY_INSTANCE_ID }
+    : {}),
   draftRenders,
   componentBuildsEnabled,
   componentBuildStatus: () => componentBuildLoop?.status ?? "disabled",

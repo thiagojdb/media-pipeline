@@ -4,11 +4,35 @@ import os from "node:os";
 import path from "node:path";
 
 const localEnvFile = path.resolve(".env.local");
-if (await fileExists(localEnvFile)) process.loadEnvFile(localEnvFile);
+if (process.env.RELAY_DEV_CELL !== "true" && (await fileExists(localEnvFile)))
+  process.loadEnvFile(localEnvFile);
 
 const workerPort = process.env.RELAY_LOCAL_WORKER_PORT ?? "3213";
 const workerAuthToken =
   process.env.RELAY_WORKER_AUTH_TOKEN ?? "relay-local-worker";
+const instanceRoot = path.resolve(
+  process.env.RELAY_INSTANCE_ROOT ?? path.join(".relay"),
+);
+const renderOutputDirectory = resolvePath(
+  process.env.RELAY_RENDER_OUTPUT_DIR,
+  path.join(instanceRoot, "local-renders"),
+);
+const componentBuildWorkspaceRoot = resolvePath(
+  process.env.COMPONENT_BUILD_WORKSPACE_ROOT,
+  path.join(instanceRoot, "local-component-builds"),
+);
+const authoringWorkspaceRoot = resolvePath(
+  process.env.AUTHORING_WORKSPACE_ROOT,
+  path.join(instanceRoot, "local-authoring"),
+);
+const authoringPiSessionRoot = resolvePath(
+  process.env.AUTHORING_PI_SESSION_ROOT,
+  path.join(instanceRoot, "local-pi-sessions"),
+);
+const narrationTmpDirectory = resolvePath(
+  process.env.RELAY_NARRATION_TMPDIR,
+  path.join(instanceRoot, "local-narration"),
+);
 const authoringMode = process.env.AUTHORING_MODE ?? "fake";
 const scriptRevisionMode = process.env.SCRIPT_REVISION_MODE ?? "fake";
 if (!["fake", "real"].includes(authoringMode))
@@ -79,27 +103,24 @@ const child = spawn("npm", ["run", "dev", "--workspace", "@relay/worker"], {
     RELAY_ENV: "development",
     WORKER_PORT: workerPort,
     RELAY_WORKER_AUTH_TOKEN: workerAuthToken,
-    RELAY_RENDER_OUTPUT_DIR: path.resolve(".relay", "local-renders"),
+    RELAY_RENDER_OUTPUT_DIR: renderOutputDirectory,
     COMPONENT_BUILD_ENABLED: "true",
     COMPONENT_BUILD_CONVEX_URL: process.env.COMPONENT_BUILD_CONVEX_URL,
     COMPONENT_BUILD_WORKER_TOKEN: process.env.COMPONENT_BUILD_WORKER_TOKEN,
-    COMPONENT_BUILD_WORKSPACE_ROOT: path.resolve(
-      ".relay",
-      "local-component-builds",
-    ),
+    COMPONENT_BUILD_WORKSPACE_ROOT: componentBuildWorkspaceRoot,
     AUTHORING_ENABLED: "true",
     AUTHORING_MODE: authoringMode,
     SCRIPT_REVISION_MODE: scriptRevisionMode,
     AUTHORING_CONVEX_URL: process.env.AUTHORING_CONVEX_URL,
     AUTHORING_WORKER_TOKEN: process.env.AUTHORING_WORKER_TOKEN,
-    AUTHORING_WORKSPACE_ROOT: path.resolve(".relay", "local-authoring"),
-    AUTHORING_PI_SESSION_ROOT: path.resolve(".relay", "local-pi-sessions"),
+    AUTHORING_WORKSPACE_ROOT: authoringWorkspaceRoot,
+    AUTHORING_PI_SESSION_ROOT: authoringPiSessionRoot,
     COMPONENT_LOOP_ENABLED: "true",
     COMPONENT_LOOP_WORKER_TOKEN: process.env.COMPONENT_LOOP_WORKER_TOKEN,
     NARRATION_ENABLED: "true",
     NARRATION_CONVEX_URL: process.env.NARRATION_CONVEX_URL,
     NARRATION_WORKER_TOKEN: process.env.NARRATION_WORKER_TOKEN,
-    RELAY_NARRATION_TMPDIR: path.resolve(".relay", "local-narration"),
+    RELAY_NARRATION_TMPDIR: narrationTmpDirectory,
     NARRATION_ALIGNMENT_MODE: process.env.NARRATION_ALIGNMENT_MODE ?? "fake",
     NARRATION_OPENAI_API_KEY:
       process.env.NARRATION_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY,
@@ -121,6 +142,10 @@ async function fileExists(filePath) {
   } catch {
     return false;
   }
+}
+
+function resolvePath(value, fallback) {
+  return path.resolve(value ?? fallback);
 }
 
 async function authoringAuthFile() {

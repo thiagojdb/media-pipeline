@@ -11,20 +11,27 @@ if (mode !== "real" && mode !== "fake") {
 const requiredNodeMajor = 24;
 const currentNodeMajor = Number.parseInt(process.versions.node, 10);
 const stackScript = mode === "real" ? "dev:stack:real" : "dev:stack:fake";
-const localWorkerPort = process.env.RELAY_LOCAL_WORKER_PORT ?? "3213";
-const localWorkerAuthToken =
-  process.env.RELAY_LOCAL_WORKER_AUTH_TOKEN ?? "relay-local-worker";
-for (const envFile of [
-  path.join(os.homedir(), ".config", "relay-worker", "development.env"),
-  path.join(os.homedir(), ".config", "relay", "development.env"),
-]) {
-  try {
-    await access(envFile);
-    process.loadEnvFile(envFile);
-  } catch {
-    // Each file is optional here; required values are checked below.
+if (process.env.RELAY_DEV_CELL !== "true") {
+  for (const envFile of [
+    path.join(os.homedir(), ".config", "relay-worker", "development.env"),
+    path.join(os.homedir(), ".config", "relay", "development.env"),
+  ]) {
+    try {
+      await access(envFile);
+      process.loadEnvFile(envFile);
+    } catch {
+      // Each file is optional here; required values are checked below.
+    }
   }
 }
+
+const localWorkerPort = process.env.RELAY_LOCAL_WORKER_PORT ?? "3213";
+const localWorkerAuthToken =
+  process.env.RELAY_LOCAL_WORKER_AUTH_TOKEN ??
+  process.env.RELAY_WORKER_AUTH_TOKEN ??
+  "relay-local-worker";
+const webPort = process.env.RELAY_WEB_PORT ?? process.env.PORT ?? "3000";
+const nextDistDir = process.env.NEXT_DIST_DIR ?? ".next-dev";
 
 for (const name of ["PROJECTS_CONVEX_URL", "PROJECTS_SERVER_TOKEN"]) {
   if (!process.env[name]?.trim()) {
@@ -36,6 +43,9 @@ for (const name of ["PROJECTS_CONVEX_URL", "PROJECTS_SERVER_TOKEN"]) {
 const developmentEnvironment = {
   ...process.env,
   RELAY_ENV: "development",
+  RELAY_WEB_PORT: webPort,
+  PORT: webPort,
+  NEXT_DIST_DIR: nextDistDir,
   RELAY_LOCAL_WORKER_PORT: localWorkerPort,
   RELAY_WORKER_URL: `http://127.0.0.1:${localWorkerPort}`,
   RELAY_WORKER_AUTH_TOKEN: localWorkerAuthToken,
