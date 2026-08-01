@@ -39,7 +39,6 @@ export class ComponentLoopService {
   constructor(
     url: string,
     private readonly token: string,
-    private readonly authoringMode: "fake" | "real",
     private readonly modelSpec?: string,
     private readonly dialogueAgent?: ComponentDialogueAgent,
   ) {
@@ -53,7 +52,6 @@ export class ComponentLoopService {
       .object({
         prompt: z.string().trim().min(1).max(8_000),
         theme: themeSchema,
-        failureProbe: z.boolean().optional().default(false),
       })
       .parse(input);
     const threadId = `loop-${randomUUID()}`;
@@ -71,21 +69,7 @@ export class ComponentLoopService {
         themeJson: JSON.stringify(value.theme),
       } as never,
     );
-    if (value.failureProbe) {
-      await this.#completeDialogueWithoutModel(
-        threadId,
-        assistantMessageId,
-        "Starting the deterministic recovery probe.",
-        `[FAKE_TOKEN_LIMIT] ${value.prompt}`,
-      );
-      await this.#beginInitial(
-        threadId,
-        `[FAKE_TOKEN_LIMIT] ${value.prompt}`,
-        value.theme,
-      );
-    } else {
-      this.#launchDialogue(threadId, assistantMessageId, value.theme);
-    }
+    this.#launchDialogue(threadId, assistantMessageId, value.theme);
     return { channelId, threadId };
   }
 
@@ -267,8 +251,7 @@ export class ComponentLoopService {
         compactionCount: conversation.thread.compactionCount ?? 0,
         lastCompactedAt: conversation.thread.lastCompactedAt,
       },
-      authoringMode: this.authoringMode,
-      model: this.authoringMode === "real" ? this.modelSpec : undefined,
+      model: this.modelSpec,
     };
   }
 
@@ -413,45 +396,6 @@ export class ComponentLoopService {
       );
   }
 
-  async #completeDialogueWithoutModel(
-    threadId: string,
-    messageId: string,
-    content: string,
-    transitionBrief: string,
-  ) {
-    await this.#client.mutation(
-      api.componentConversation!.appendDelta as never,
-      {
-        workerToken: this.token,
-        channelId,
-        threadId,
-        messageId,
-        delta: content,
-      } as never,
-    );
-    await this.#client.mutation(
-      api.componentConversation!.complete as never,
-      {
-        workerToken: this.token,
-        channelId,
-        threadId,
-        messageId,
-        transitionBrief,
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
-        costUsd: 0,
-        totalInputTokens: 0,
-        totalOutputTokens: 0,
-        totalCacheReadTokens: 0,
-        totalCacheWriteTokens: 0,
-        estimatedCostUsd: 0,
-        compacted: false,
-      } as never,
-    );
-  }
-
   async #beginImplementation(
     threadId: string,
     brief: string,
@@ -517,10 +461,7 @@ export class ComponentLoopService {
   ) {
     const turnId = `turn-${randomUUID()}`;
     const source = starterComponentSource;
-    const userRequest =
-      this.authoringMode === "fake" && !brief.startsWith("[FAKE_")
-        ? `[FAKE_LINE_CHART_INITIAL] ${brief}`
-        : brief;
+    const userRequest = brief;
     await this.#client.mutation(
       api.componentLoop!.start as never,
       {
@@ -590,10 +531,7 @@ export class ComponentLoopService {
       })
       .parse(input);
     const turnId = `revision-${randomUUID()}`;
-    const userRequest =
-      this.authoringMode === "fake"
-        ? `[FAKE_LINE_CHART_REVISION] ${value.prompt}`
-        : value.prompt;
+    const userRequest = value.prompt;
     await this.#client.mutation(
       api.componentReview![
         value.candidateId ? "enqueueCandidateRevision" : "enqueueRevision"
@@ -672,7 +610,7 @@ export class ComponentLoopService {
       maxWallTimeMs: 300_000,
       maxModelTurns: 12,
       maxToolCalls: 30,
-      maxTokens: this.authoringMode === "real" ? 100_000 : 12_000,
+      maxTokens: 100_000,
       maxCostUsd: 10,
     };
   }

@@ -15,14 +15,23 @@ const editingApi = anyApi.projectEditingAgent!;
 const rendersApi = anyApi.projectDraftRenders!;
 const serverToken = "projects-test-token";
 const workerToken = "render-worker-token";
+const testCompositionAuthoring = {
+  provider: "relay-test-editor",
+  model: "deterministic-composition-v1",
+};
 
 beforeEach(() => {
   process.env.PROJECTS_SERVER_TOKEN = serverToken;
   process.env.NARRATION_WORKER_TOKEN = workerToken;
+  process.env.COMPOSITION_AUTHORING_PROVIDER =
+    testCompositionAuthoring.provider;
+  process.env.COMPOSITION_AUTHORING_MODEL = testCompositionAuthoring.model;
 });
 afterEach(() => {
   delete process.env.PROJECTS_SERVER_TOKEN;
   delete process.env.NARRATION_WORKER_TOKEN;
+  delete process.env.COMPOSITION_AUTHORING_PROVIDER;
+  delete process.env.COMPOSITION_AUTHORING_MODEL;
 });
 
 describe("structured project composition versions", () => {
@@ -155,7 +164,7 @@ describe("structured project composition versions", () => {
     ).resolves.toEqual([]);
   });
 
-  it("keeps fake-agent proposals reviewable until explicit acceptance and repairs bounded failures", async () => {
+  it("keeps composition proposals reviewable until explicit acceptance", async () => {
     const fixture = await setup();
     const initial = await fixture.t.mutation(compositionsApi.save, {
       ...fixture.access,
@@ -166,7 +175,7 @@ describe("structured project composition versions", () => {
     const proposed = await fixture.t.mutation(editingApi.propose, {
       ...fixture.access,
       projectId: fixture.projectId,
-      request: "Put the line chart on beat 2 [FAKE_INVALID_FIRST]",
+      request: "Put the line chart on beat 2",
     });
     const beforeAccept = await fixture.t.query(compositionsApi.list, {
       ...fixture.access,
@@ -180,14 +189,13 @@ describe("structured project composition versions", () => {
     expect(proposals[0]).toMatchObject({
       _id: proposed.proposalId,
       state: "reviewable",
-      attempt: 2,
-      maxAttempts: 2,
-      provider: "relay-fake-editor",
+      attempt: 1,
+      maxAttempts: 1,
+      ...testCompositionAuthoring,
       estimatedCostUsd: 0,
     });
     expect(JSON.parse(proposals[0]!.validationEvidenceJson)).toMatchObject([
-      { attempt: 1, valid: false },
-      { attempt: 2, valid: true },
+      { attempt: 1, valid: true },
     ]);
 
     const accepted = await fixture.t.mutation(editingApi.accept, {

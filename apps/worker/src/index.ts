@@ -3,10 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  createFakeDraftRenderExecutor,
-  DraftRenderService,
-} from "./draft-render-service.js";
+import { DraftRenderService } from "./draft-render-service.js";
 import { RemotionDraftRenderExecutor } from "./remotion-draft-renderer.js";
 import { createWorkerServer } from "./server.js";
 import { IsolatedCandidateExecutor } from "./component-build/executor.js";
@@ -14,38 +11,23 @@ import { ComponentBuildLoop } from "./component-build/loop.js";
 import { ComponentBuildService } from "./component-build/service.js";
 import { ConvexComponentBuildJobStore } from "./component-build/store.js";
 import { CandidateWorkspaceManager } from "./component-build/workspace.js";
-import { DeterministicFakeAuthoringAgent } from "./component-authoring/fake-agent.js";
 import { ComponentAuthoringLoop } from "./component-authoring/loop.js";
 import { ComponentAuthoringService } from "./component-authoring/service.js";
 import { ConvexAuthoringTurnStore } from "./component-authoring/store.js";
 import { AuthoringWorkspaceManager } from "./component-authoring/workspace.js";
 import { ComponentLoopService } from "./component-loop-service.js";
-import {
-  DeterministicFakeDialogueAgent,
-  RealPiDialogueAgent,
-} from "./component-dialogue-agent.js";
-import {
-  DeterministicFakeAligner,
-  NarrationLoop,
-  OpenAIWhisperAligner,
-} from "./narration-loop.js";
+import { RealPiDialogueAgent } from "./component-dialogue-agent.js";
+import { NarrationLoop, OpenAIWhisperAligner } from "./narration-loop.js";
 import {
   BrowserProjectRenderExecutor,
-  createFakeProjectRenderExecutor,
   ProjectRenderLoop,
 } from "./project-render-loop.js";
-import {
-  createScriptRevisionAgentFromEnvironment,
-  DeterministicFakeScriptRevisionAgent,
-} from "./script-revision-agent.js";
+import { createScriptRevisionAgentFromEnvironment } from "./script-revision-agent.js";
 import { WorkerQueueCoordinator } from "./worker-queue-coordinator.js";
 
 const port = Number.parseInt(process.env.WORKER_PORT ?? "3212", 10);
-const useFakeRenderer = process.env.RELAY_RENDER_MODE === "fake";
-if (!useFakeRenderer) lowerWorkerPriority();
-const executor = useFakeRenderer
-  ? createFakeDraftRenderExecutor()
-  : new RemotionDraftRenderExecutor();
+lowerWorkerPriority();
+const executor = new RemotionDraftRenderExecutor();
 const draftRenders = new DraftRenderService(
   executor,
   path.resolve(process.env.RELAY_RENDER_OUTPUT_DIR ?? ".relay/draft-renders"),
@@ -81,10 +63,10 @@ if (componentBuildsEnabled && buildUrl && buildToken) {
   componentBuildLoop.start();
 }
 const authoringEnabled = process.env.AUTHORING_ENABLED === "true";
-const authoringMode = process.env.AUTHORING_MODE ?? "fake";
-const scriptRevisionMode = process.env.SCRIPT_REVISION_MODE ?? "fake";
 const authoringUrl = process.env.AUTHORING_CONVEX_URL;
 const authoringToken = process.env.AUTHORING_WORKER_TOKEN;
+const componentLoopEnabled = process.env.COMPONENT_LOOP_ENABLED === "true";
+const componentLoopToken = process.env.COMPONENT_LOOP_WORKER_TOKEN;
 const relayPiSessionRoot = path.resolve(
   process.env.AUTHORING_PI_SESSION_ROOT ?? ".relay/relay-agent-sessions",
 );
@@ -93,19 +75,13 @@ if (authoringEnabled && (!authoringUrl || !authoringToken)) {
     "AUTHORING_ENABLED=true requires AUTHORING_CONVEX_URL and AUTHORING_WORKER_TOKEN.",
   );
 }
-if (authoringEnabled && !["fake", "real"].includes(authoringMode))
-  throw new Error("AUTHORING_MODE must be fake or real.");
-if (!["fake", "real"].includes(scriptRevisionMode))
-  throw new Error("SCRIPT_REVISION_MODE must be fake or real.");
-if (
-  authoringEnabled &&
-  authoringMode === "real" &&
-  (process.env.AUTHORING_REAL_PI_ENABLED !== "true" ||
-    !process.env.AUTHORING_PI_MODEL?.includes("/") ||
-    !process.env.AUTHORING_PI_CREDENTIAL_JSON)
-)
+const piConfigurationValid =
+  process.env.AUTHORING_REAL_PI_ENABLED === "true" &&
+  Boolean(process.env.AUTHORING_PI_MODEL?.includes("/")) &&
+  Boolean(process.env.AUTHORING_PI_CREDENTIAL_JSON?.trim());
+if ((authoringEnabled || componentLoopEnabled) && !piConfigurationValid)
   throw new Error(
-    "Real authoring requires AUTHORING_REAL_PI_ENABLED=true, exact AUTHORING_PI_MODEL=provider/model, and server-only AUTHORING_PI_CREDENTIAL_JSON.",
+    "Component authoring and dialogue require AUTHORING_REAL_PI_ENABLED=true, exact AUTHORING_PI_MODEL=provider/model, and server-only AUTHORING_PI_CREDENTIAL_JSON.",
   );
 let authoringLoop: ComponentAuthoringLoop | undefined;
 if (authoringEnabled && authoringUrl && authoringToken) {
@@ -118,16 +94,13 @@ if (authoringEnabled && authoringUrl && authoringToken) {
     ),
   );
   await workspaces.cleanupOrphans();
-  const agent =
-    authoringMode === "real"
-      ? new (
-          await import("./component-authoring/real-pi-agent.js")
-        ).RealPiAuthoringAgent(
-          process.env.AUTHORING_PI_MODEL ?? "",
-          relayPiSessionRoot,
-          process.env.AUTHORING_PI_CREDENTIAL_JSON,
-        )
-      : new DeterministicFakeAuthoringAgent();
+  const agent = new (
+    await import("./component-authoring/real-pi-agent.js")
+  ).RealPiAuthoringAgent(
+    process.env.AUTHORING_PI_MODEL ?? "",
+    relayPiSessionRoot,
+    process.env.AUTHORING_PI_CREDENTIAL_JSON,
+  );
   const service = new ComponentAuthoringService(
     store,
     workspaces,
@@ -139,71 +112,56 @@ if (authoringEnabled && authoringUrl && authoringToken) {
   authoringLoop.start();
 }
 
-const componentLoopEnabled = process.env.COMPONENT_LOOP_ENABLED === "true";
-const componentLoopToken = process.env.COMPONENT_LOOP_WORKER_TOKEN;
 if (componentLoopEnabled && (!authoringUrl || !componentLoopToken)) {
   throw new Error(
     "COMPONENT_LOOP_ENABLED=true requires AUTHORING_CONVEX_URL and COMPONENT_LOOP_WORKER_TOKEN.",
   );
 }
 const componentLoop =
-  componentLoopEnabled && authoringUrl && componentLoopToken
+  componentLoopEnabled &&
+  piConfigurationValid &&
+  authoringUrl &&
+  componentLoopToken
     ? new ComponentLoopService(
         authoringUrl,
         componentLoopToken,
-        authoringMode as "fake" | "real",
         process.env.AUTHORING_PI_MODEL,
-        authoringMode === "real"
-          ? new RealPiDialogueAgent(
-              process.env.AUTHORING_PI_MODEL ?? "",
-              relayPiSessionRoot,
-              process.env.AUTHORING_PI_CREDENTIAL_JSON,
-            )
-          : new DeterministicFakeDialogueAgent(),
+        new RealPiDialogueAgent(
+          process.env.AUTHORING_PI_MODEL ?? "",
+          relayPiSessionRoot,
+          process.env.AUTHORING_PI_CREDENTIAL_JSON,
+        ),
       )
     : undefined;
 const scriptRevisionAgent =
-  scriptRevisionMode === "real"
-    ? process.env.KIMI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim()
-      ? createScriptRevisionAgentFromEnvironment()
-      : undefined
-    : new DeterministicFakeScriptRevisionAgent();
+  process.env.KIMI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim()
+    ? createScriptRevisionAgentFromEnvironment()
+    : undefined;
 
 const narrationEnabled = process.env.NARRATION_ENABLED === "true";
 const narrationUrl = process.env.NARRATION_CONVEX_URL;
 const narrationToken = process.env.NARRATION_WORKER_TOKEN;
-const narrationAlignmentMode = process.env.NARRATION_ALIGNMENT_MODE;
 if (narrationEnabled && (!narrationUrl || !narrationToken)) {
   throw new Error(
     "NARRATION_ENABLED=true requires NARRATION_CONVEX_URL and NARRATION_WORKER_TOKEN.",
   );
 }
-if (
-  narrationEnabled &&
-  narrationAlignmentMode !== "fake" &&
-  narrationAlignmentMode !== "openai"
-) {
-  throw new Error(
-    "NARRATION_ENABLED=true requires NARRATION_ALIGNMENT_MODE=fake or openai.",
-  );
-}
-const narrationOpenAIApiKey = process.env.NARRATION_OPENAI_API_KEY?.trim();
-const narrationAligner =
-  narrationAlignmentMode === "openai"
-    ? narrationOpenAIApiKey
-      ? new OpenAIWhisperAligner(
-          narrationOpenAIApiKey,
-          process.env.NARRATION_OPENAI_MODEL ?? "whisper-1",
-          process.env.NARRATION_OPENAI_BASE_URL,
-        )
-      : {
-          async transcribe(): Promise<never> {
-            throw new Error(
-              "Real narration alignment requires NARRATION_OPENAI_API_KEY or OPENAI_API_KEY.",
-            );
-          },
-        }
-    : new DeterministicFakeAligner();
+const narrationOpenAIApiKey =
+  process.env.NARRATION_OPENAI_API_KEY?.trim() ||
+  process.env.OPENAI_API_KEY?.trim();
+const narrationAligner = narrationOpenAIApiKey
+  ? new OpenAIWhisperAligner(
+      narrationOpenAIApiKey,
+      process.env.NARRATION_OPENAI_MODEL ?? "whisper-1",
+      process.env.NARRATION_OPENAI_BASE_URL,
+    )
+  : {
+      async transcribe(): Promise<never> {
+        throw new Error(
+          "Real narration alignment requires NARRATION_OPENAI_API_KEY or OPENAI_API_KEY.",
+        );
+      },
+    };
 const narrationLoop =
   narrationEnabled && narrationUrl && narrationToken
     ? new NarrationLoop(narrationUrl, narrationToken, narrationAligner)
@@ -215,12 +173,10 @@ const projectRenderLoop =
     ? new ProjectRenderLoop(
         narrationUrl,
         narrationToken,
-        process.env.RELAY_PROJECT_RENDER_MODE === "fake"
-          ? createFakeProjectRenderExecutor()
-          : new BrowserProjectRenderExecutor(
-              process.env.RELAY_COMPONENT_PREVIEW_ORIGIN ??
-                `http://127.0.0.1:${port}`,
-            ),
+        new BrowserProjectRenderExecutor(
+          process.env.RELAY_COMPONENT_PREVIEW_ORIGIN ??
+            `http://127.0.0.1:${port}`,
+        ),
       )
     : undefined;
 projectRenderLoop?.start();

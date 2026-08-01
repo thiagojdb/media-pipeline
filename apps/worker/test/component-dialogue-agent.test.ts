@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  DeterministicFakeDialogueAgent,
+  DeterministicTestDialogueAgent,
   relaySkills,
   safePublicUrl,
 } from "../src/component-dialogue-agent.js";
@@ -9,7 +9,7 @@ import {
 describe("component dialogue boundary", () => {
   it("answers a greeting without beginning authoring", async () => {
     const text: string[] = [];
-    const result = await new DeterministicFakeDialogueAgent().run({
+    const result = await new DeterministicTestDialogueAgent().run({
       history: [{ role: "user", content: "Hi, who are you?" }],
       onTextDelta: async (delta) => void text.push(delta),
       onSafeStatus: async () => undefined,
@@ -20,7 +20,7 @@ describe("component dialogue boundary", () => {
   });
 
   it("hands a concrete brief to authoring only after dialogue", async () => {
-    const result = await new DeterministicFakeDialogueAgent().run({
+    const result = await new DeterministicTestDialogueAgent().run({
       history: [
         {
           role: "user",
@@ -36,7 +36,7 @@ describe("component dialogue boundary", () => {
 
   it("answers a status question without starting duplicate authoring", async () => {
     const text: string[] = [];
-    const result = await new DeterministicFakeDialogueAgent().run({
+    const result = await new DeterministicTestDialogueAgent().run({
       history: [{ role: "user", content: "Did you finish?" }],
       workState: '{"implementation":{"state":"candidate_submitted"}}',
       onTextDelta: async (delta) => void text.push(delta),

@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+const testCompositionAuthoring = {
+  provider: "relay-test-editor",
+  model: "deterministic-composition-v1",
+} as const;
+
 test("creates, opens, renames, and archives a channel project through real routes", async ({
   page,
 }) => {
@@ -434,7 +439,7 @@ test("creates, opens, renames, and archives a channel project through real route
             url.searchParams.get("models") === "1"
               ? [
                   {
-                    provider: "relay-fake-script-editor",
+                    provider: "relay-test-script-editor",
                     model: "deterministic-revision-v1",
                     label: "Relay test editor",
                     default: true,
@@ -474,7 +479,7 @@ test("creates, opens, renames, and archives a channel project through real route
           replacementMarkdown: input.selectedText.toUpperCase(),
           rationale: "Make the selected passage more direct.",
           state: "reviewable" as const,
-          provider: "relay-fake-script-editor",
+          provider: "relay-test-script-editor",
           model: "deterministic-revision-v1",
           inputTokens: 0,
           outputTokens: 0,
@@ -990,10 +995,9 @@ test("creates, opens, renames, and archives a channel project through real route
                 "read_narration_beats",
                 "read_approved_component_library",
               ]),
-              provider: "relay-fake-editor",
-              model: "deterministic-composition-v1",
+              ...testCompositionAuthoring,
               attempt: 1,
-              maxAttempts: 2,
+              maxAttempts: 1,
               inputTokens: 9,
               outputTokens: 42,
               estimatedCostUsd: 0,

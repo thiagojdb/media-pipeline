@@ -352,7 +352,6 @@ test("streams lightweight dialogue without creating a component", async ({
     await route.fulfill({
       status: 200,
       json: {
-        authoringMode: "real",
         model: "openai-codex/gpt-5.4-mini",
         phase: "dialogue",
         messages: [
@@ -434,7 +433,6 @@ function status(
   },
 ) {
   return {
-    authoringMode: "real",
     model: "openai-codex/gpt-5.4-mini",
     theme,
     phase: candidates.length ? "review" : "dialogue",

@@ -5,14 +5,14 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { DraftRenderExecutor } from "../src/draft-render-contract.js";
 import {
-  createFakeDraftRenderExecutor,
+  createTestDraftRenderExecutor,
   DraftRenderRequestError,
   DraftRenderService,
 } from "../src/draft-render-service.js";
 
 const directories: string[] = [];
 
-async function service(executor = createFakeDraftRenderExecutor(1)) {
+async function service(executor = createTestDraftRenderExecutor(1)) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "relay-render-test-"));
   directories.push(directory);
   return new DraftRenderService(executor, directory);
@@ -57,7 +57,7 @@ describe("draft render service", () => {
         mediaType: "video/mp4",
         sizeBytes: expect.any(Number),
         contentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-        visualFingerprint: expect.stringMatching(/^fake:/),
+        visualFingerprint: expect.stringMatching(/^test:/),
       },
     });
     await expect(renders.output(created.id)).resolves.toMatchObject({
@@ -75,7 +75,7 @@ describe("draft render service", () => {
   });
 
   it("serializes render jobs so only one resource-intensive executor runs", async () => {
-    const fake = createFakeDraftRenderExecutor(10);
+    const test = createTestDraftRenderExecutor(10);
     let active = 0;
     let maximumActive = 0;
     const controlled: DraftRenderExecutor = {
@@ -83,7 +83,7 @@ describe("draft render service", () => {
         active += 1;
         maximumActive = Math.max(maximumActive, active);
         try {
-          return await fake.execute(request, outputPath, hooks);
+          return await test.execute(request, outputPath, hooks);
         } finally {
           active -= 1;
         }
@@ -170,7 +170,7 @@ describe("draft render service", () => {
   });
 
   it("moves running work to canceled and never publishes partial output", async () => {
-    const renders = await service(createFakeDraftRenderExecutor(50));
+    const renders = await service(createTestDraftRenderExecutor(50));
     const created = await renders.create(validRequest());
     await waitForState(renders, created.id, "running");
     const canceled = renders.cancel(created.id);
@@ -191,7 +191,7 @@ describe("draft render service", () => {
     const blockedOutputRoot = path.join(parent, "not-a-directory");
     await writeFile(blockedOutputRoot, "file");
     const blocked = new DraftRenderService(
-      createFakeDraftRenderExecutor(1),
+      createTestDraftRenderExecutor(1),
       blockedOutputRoot,
     );
     const storageFailure = await waitForTerminal(

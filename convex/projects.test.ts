@@ -336,7 +336,7 @@ describe("membership-backed channel projects", () => {
       selectedText,
       replacementMarkdown: "This is important, to understand the result.",
       rationale: "Tightened the selected passage.",
-      provider: "relay-fake-script-editor",
+      provider: "relay-test-script-editor",
       model: "deterministic-revision-v1",
       inputTokens: 0,
       outputTokens: 0,
@@ -355,7 +355,7 @@ describe("membership-backed channel projects", () => {
         baseScriptVersionId: script.scriptVersionId,
         state: "reviewable",
         replacementMarkdown: "This is important, to understand the result.",
-        provider: "relay-fake-script-editor",
+        provider: "relay-test-script-editor",
       }),
     ]);
     await expect(
@@ -413,7 +413,7 @@ describe("membership-backed channel projects", () => {
       replacementMarkdown:
         "## COLD OPEN\n\n**[VISUAL: Map fades in.]**\n\n**NARRATOR:**\n\nOpening line.",
       rationale: "Applied script Markdown structure.",
-      provider: "relay-fake-script-editor",
+      provider: "relay-test-script-editor",
       model: "deterministic-revision-v1",
       inputTokens: 0,
       outputTokens: 0,

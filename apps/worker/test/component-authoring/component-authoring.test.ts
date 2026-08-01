@@ -18,9 +18,9 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { buildAuthoringContext } from "../../src/component-authoring/context.js";
 import {
-  DeterministicFakeAuthoringAgent,
-  prepareFakeRevisionCandidate,
-} from "../../src/component-authoring/fake-agent.js";
+  DeterministicTestAuthoringAgent,
+  prepareTestRevisionCandidate,
+} from "../../src/component-authoring/test-agent.js";
 import { ComponentAuthoringLoop } from "../../src/component-authoring/loop.js";
 import {
   assertRealPiActivation,
@@ -54,9 +54,9 @@ afterEach(async () => {
 });
 
 describe("constrained component authoring", () => {
-  it("increments repeated fake revisions from the exact approved version", () => {
+  it("increments repeated test revisions from the exact approved version", () => {
     expect(
-      prepareFakeRevisionCandidate(
+      prepareTestRevisionCandidate(
         'version: "1.1.0",\ncompatibility: { mode: "backward-compatible", previousVersion: "1.0.0" },',
       ),
     ).toBe(
@@ -64,14 +64,14 @@ describe("constrained component authoring", () => {
     );
   });
 
-  it("runs the free fake-agent flow through Relay tools and atomically queues validation", async () => {
+  it("runs the free test-agent flow through Relay tools and atomically queues validation", async () => {
     const { store, loop, root } = await harness(
       turn("create", "Create a chart"),
     );
     await expect(loop.tick()).resolves.toBe(true);
     expect(store.turns.get("create")).toMatchObject({
       state: "candidate_submitted",
-      sessionRef: "fake:thread-opaque",
+      sessionRef: "test:thread-opaque",
     });
     expect(store.activities.map(({ name }) => name)).toEqual([
       "read_authoring_context",
@@ -107,12 +107,12 @@ describe("constrained component authoring", () => {
   });
 
   it.each([
-    ["[FAKE_FAILURE]", "failed"],
-    ["[FAKE_CANCEL]", "canceled"],
-    ["[FAKE_TIMEOUT]", "needs_intervention"],
+    ["[TEST_FAILURE]", "failed"],
+    ["[TEST_CANCEL]", "canceled"],
+    ["[TEST_TIMEOUT]", "needs_intervention"],
   ] as const)("handles terminal fixture %s as %s", async (marker, expected) => {
     const configured = turn(`fixture-${expected}-${marker}`, marker, {
-      maxWallTimeMs: marker === "[FAKE_TIMEOUT]" ? 20 : 5_000,
+      maxWallTimeMs: marker === "[TEST_TIMEOUT]" ? 20 : 5_000,
     });
     const { store, loop, root } = await harness(configured);
     await loop.tick();
@@ -563,7 +563,7 @@ async function harness(initial: AuthoringTurn) {
   const service = new ComponentAuthoringService(
     store,
     new AuthoringWorkspaceManager(root),
-    new DeterministicFakeAuthoringAgent(),
+    new DeterministicTestAuthoringAgent(),
     workerId,
     repositoryRoot,
     5_000,

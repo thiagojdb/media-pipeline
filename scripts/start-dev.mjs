@@ -3,14 +3,12 @@ import { access } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const mode = process.argv[2];
-if (mode !== "real" && mode !== "fake") {
-  throw new Error("Usage: node scripts/start-dev.mjs <real|fake>");
+if (process.argv.length > 2) {
+  throw new Error("Usage: node scripts/start-dev.mjs");
 }
 
 const requiredNodeMajor = 24;
 const currentNodeMajor = Number.parseInt(process.versions.node, 10);
-const stackScript = mode === "real" ? "dev:stack:real" : "dev:stack:fake";
 if (process.env.RELAY_DEV_CELL !== "true") {
   for (const envFile of [
     path.join(os.homedir(), ".config", "relay-worker", "development.env"),
@@ -53,20 +51,13 @@ const developmentEnvironment = {
 
 const child =
   currentNodeMajor >= requiredNodeMajor
-    ? spawn("npm", ["run", stackScript], {
+    ? spawn("npm", ["run", "dev:stack"], {
         stdio: "inherit",
         env: developmentEnvironment,
       })
     : spawn(
         "fnm",
-        [
-          "exec",
-          "--using",
-          String(requiredNodeMajor),
-          "npm",
-          "run",
-          stackScript,
-        ],
+        ["exec", "--using", ".node-version", "npm", "run", "dev:stack"],
         {
           stdio: "inherit",
           env: developmentEnvironment,

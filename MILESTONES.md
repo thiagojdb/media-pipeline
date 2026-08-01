@@ -70,7 +70,7 @@ The implementation should generally progress through these proof layers:
 
 2. **Durable and isolated execution**
    - MED-133: job lifecycle and bounded workspaces
-   - Deterministic fake-agent paths for tests
+   - Deterministic test-agent paths that never call a provider
 
 3. **Real coding agent**
    - MED-128: Pi SDK integration with constrained context and tools
@@ -114,7 +114,7 @@ This order separates SDK/rendering defects from agent defects. Pi should not be 
 - [ ] Existing inputs and versions remain reproducible after a successor is approved.
 - [ ] Agent attempts, tool activity, usage/cost, wall time, and terminal state are recorded.
 - [ ] Provider stalls and operational retry exhaustion become recoverable `needs_intervention` states rather than infinite loops; token and cost totals remain telemetry only.
-- [ ] Ordinary CI uses a fake agent and spends no model tokens.
+- [ ] Ordinary CI uses injected test agents and spends no model tokens.
 - [ ] One explicit real-Pi dogfood run passes with context, usage, and estimated cost recorded.
 - [ ] Residual limitations are documented before M2 starts.
 

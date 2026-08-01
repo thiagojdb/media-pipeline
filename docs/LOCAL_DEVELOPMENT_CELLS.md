@@ -55,9 +55,9 @@ npm install
 npm run dev:cell -- med-157
 ```
 
-The default is deterministic `fake` mode. Once the web server responds, the
-launcher registers and activates an app named `relay-med-157` in Rementor and
-prints the URL:
+The cell always starts the configured provider-backed stack. Once the web
+server responds, the launcher registers and activates an app named
+`relay-med-157` in Rementor and prints the URL:
 
 ```text
 http://relay-med-157.localhost:18080
@@ -68,13 +68,6 @@ Use explicit ports when a collision is reported:
 
 ```bash
 npm run dev:cell -- med-157 --web-port 3407 --worker-port 5407
-```
-
-The real-provider stack is explicit and should normally be limited to one
-cell:
-
-```bash
-npm run dev:cell -- med-157 --mode real
 ```
 
 This command does not create a new Convex deployment. If the cell must not
@@ -148,12 +141,12 @@ Separate hostnames do not imply separate Convex data. The default cell setup
 uses the configured development deployment, so multiple cells can still see
 the same projects and durable jobs. Use a dedicated Convex deployment per cell
 for full data and queue isolation. If a shared deployment is intentional,
-keep the cell in its own development channel and use fake providers.
+keep the cell in its own development channel and configure provider credentials
+only in the worker environment.
 
-Parallel cells should use `fake` mode by default. A real cell can spend model
-tokens, create external provider traffic, and mutate shared development data.
-Never put provider credentials in browser variables, component source, or
-Rementor configuration.
+Every cell can spend model tokens, create external provider traffic, and mutate
+shared development data. Never put provider credentials in browser variables,
+component source, or Rementor configuration.
 
 ## Troubleshooting
 
@@ -165,7 +158,7 @@ rementorctl --json workspace list
 
 Start or repair the local Rementor service before starting a routed cell. For
 process-only work, use the direct port only after passing `--domain` through a
-different local proxy or temporarily run the existing `npm run dev:fake` path.
+different local proxy.
 
 ### The port is already in use
 

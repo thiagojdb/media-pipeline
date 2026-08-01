@@ -13,6 +13,12 @@ Relay is being rebuilt as an AI-assisted production workspace for scripted, sour
 Linear is optional. Do not require, create, or update a Linear issue unless the
 user explicitly asks for Linear to be part of the work.
 
+## Local runtime
+
+The repository pins Node.js 24.18.1 in `.nvmrc` and `.node-version`. Before
+running npm commands, use `fnm install --use` (or `nvm install` followed by
+`nvm use`) so agents do not rely on the host's system Node version.
+
 ## Current phase
 
 Foundation is the active milestone. There is no runnable application until MED-130 establishes it. Do not add placeholder commands or claim verification that does not exist.
@@ -49,8 +55,8 @@ worker or development Convex deployment.
   `npm run dev:cell -- <instance-id>`.
 - The cell launcher is the supported entry point for isolated local web and
   worker processes. It derives per-cell ports, local data roots, worker tokens,
-  and the Next.js build directory; use `--mode real` only when real providers
-  are explicitly needed.
+  and the Next.js build directory. Cells always use the configured provider
+  integrations; provider credentials remain server-only.
 - Cell routing is restricted to the `relay-local` Rementor workspace. Never
   point the launcher at the GISS `desenvolvimento` or `qualidade` workspaces.
   Use `npm run dev:cell -- cleanup <instance-id>` to remove a stale route.

@@ -13,17 +13,17 @@ Project `n172xayxmnd74k247hec4knn218b87n2` demonstrates the failure:
 - script version 1 contains 34,340 characters and approximately 5,043 words;
 - the document includes production metadata, headings, 27 visual directions,
   and a narrator label alongside the spoken prose;
-- two duplicate `relay-fake-tts/deterministic-wave-v1` narration versions were
+- two duplicate `relay-synthetic-test/deterministic-wave-v1` narration versions were
   generated from the complete Markdown document;
 - each result was compressed into 119,981 milliseconds with 156 synthetic
   timing segments;
 - the approximately 4,568 words that are candidates for narration would take
   roughly 30.5 minutes at 150 words per minute;
-- no beats, compositions, or draft renders depend on either fake narration
+- no beats, compositions, or draft renders depend on either synthetic test narration
   version.
 
-The existing fake output is useful as deterministic test infrastructure, but it
-must not be presented as production narration or become authoritative
+The existing synthetic output is useful as deterministic test infrastructure,
+but it must not be presented as production narration or become authoritative
 production timing.
 
 ## Current information flow
@@ -185,8 +185,8 @@ replaces a working render, or changes prior output.
 - Human recording and upload workflows do not require a synthetic provider.
 - Synthetic generation fails closed unless an explicitly selected real
   provider and server-only credential are configured.
-- The deterministic fake provider remains available only through explicit
-  local-development and automated-test configuration.
+- Deterministic provider implementations remain confined to automated-test
+  configuration.
 - Normal tests and CI never call paid providers.
 - Provider credentials never enter Convex records, browser payloads, job logs,
   component inputs, or render inputs.
@@ -243,7 +243,8 @@ independent lifecycles or document-size boundaries.
 ### 4. Optional synthetic provider boundary
 
 - Introduce a narrow `NarrationProvider` interface in the Node worker.
-- Select fake or real mode explicitly at worker startup.
+- Use a configured real provider at worker startup and fail closed when its
+  credential is incomplete.
 - Refuse synthetic production when real configuration is incomplete without
   blocking human narration.
 - Record provider identity, settings, usage, cost, and bounded failures.

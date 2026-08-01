@@ -152,11 +152,11 @@ export class ConfiguredScriptRevisionAgent implements ScriptRevisionAgent {
   }
 }
 
-export class DeterministicFakeScriptRevisionAgent implements ScriptRevisionAgent {
+export class DeterministicTestScriptRevisionAgent implements ScriptRevisionAgent {
   listModels(): readonly ScriptRevisionModel[] {
     return [
       {
-        provider: "relay-fake-script-editor",
+        provider: "relay-test-script-editor",
         model: "deterministic-revision-v1",
         label: "Relay test editor",
         default: true,
@@ -173,7 +173,7 @@ export class DeterministicFakeScriptRevisionAgent implements ScriptRevisionAgent
     return {
       replacementMarkdown,
       rationale: revisionRationale(parsed.scope, parsed.instruction),
-      provider: "relay-fake-script-editor",
+      provider: "relay-test-script-editor",
       model: "deterministic-revision-v1",
       inputTokens: 0,
       outputTokens: 0,
@@ -467,7 +467,7 @@ function reviseDeterministically(text: string, instruction: string): string {
   if (/\b(?:lower|lowercase)\b/i.test(instruction)) {
     return text.toLowerCase();
   }
-  throw new Error("The fake script editor does not support this instruction.");
+  throw new Error("The test script editor does not support this instruction.");
 }
 
 function modelKey(provider: string, model: string): string {

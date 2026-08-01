@@ -318,7 +318,7 @@ export class OpenAIWhisperAligner implements NarrationAligner {
   }
 }
 
-export class DeterministicFakeAligner implements NarrationAligner {
+export class DeterministicTestAligner implements NarrationAligner {
   async transcribe(input: {
     audio: Buffer;
     fileName: string;
@@ -330,7 +330,7 @@ export class DeterministicFakeAligner implements NarrationAligner {
     const duration = Math.max(1, metadata.durationMs);
     const step = duration / Math.max(1, words.length);
     return {
-      provider: "relay-fake-alignment",
+      provider: "relay-test-alignment",
       model: "deterministic-word-timing-v1",
       transcript: words.join(" "),
       words: words.map((word, index) => ({

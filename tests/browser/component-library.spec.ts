@@ -292,7 +292,6 @@ function version(
 
 function revisionStatus(chatted: boolean) {
   return {
-    authoringMode: "real",
     model: "openai-codex/gpt-5.4-mini",
     phase: "dialogue",
     theme: {

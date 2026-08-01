@@ -7,13 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "node scripts/start-dev.mjs real",
-    "dev:fake": "node scripts/start-dev.mjs fake",
+    "dev": "node scripts/start-dev.mjs",
     "dev:cell": "node scripts/dev-cell.mjs",
-    "dev:stack:real": "npm run build:packages && AUTHORING_MODE=real SCRIPT_REVISION_MODE=real NARRATION_ALIGNMENT_MODE=openai concurrently --kill-others-on-fail --names web,worker --prefix-colors blue,green \"node scripts/wait-for-local-worker.mjs && npm run dev --workspace @relay/web\" \"node scripts/start-local-worker.mjs\"",
-    "dev:stack:fake": "npm run build:packages && AUTHORING_MODE=fake SCRIPT_REVISION_MODE=fake NARRATION_ALIGNMENT_MODE=fake concurrently --kill-others-on-fail --names web,worker --prefix-colors blue,green \"node scripts/wait-for-local-worker.mjs && npm run dev --workspace @relay/web\" \"node scripts/start-local-worker.mjs\"",
+    "dev:stack": "npm run build:packages && concurrently --kill-others-on-fail --names web,worker --prefix-colors blue,green \"node scripts/wait-for-local-worker.mjs && npm run dev --workspace @relay/web\" \"node scripts/start-local-worker.mjs\"",
     "dev:loop": "npm run dev",
-    "dev:loop:real": "npm run dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
@@ -27,7 +24,6 @@
     "prerender:smoke": "npm run build",
     "render:smoke": "npm run render:smoke --workspace @relay/worker",
     "isolation:smoke": "npm run isolation:smoke --workspace @relay/worker",
-    "authoring:smoke": "npm run authoring:smoke --workspace @relay/worker",
     "pi:smoke": "npm run pi:smoke --workspace @relay/worker",
     "script-revision:smoke": "npm run script-revision:smoke --workspace @relay/worker",
     "build": "npm run build:packages && npm run build --workspace @relay/worker && npm run build --workspace @relay/web",

@@ -97,8 +97,7 @@ const childEnvironment = {
 
 await ensureRementorWorkspace(workspace);
 
-const mode = options.mode ?? "fake";
-const child = spawn("npm", ["run", mode === "real" ? "dev" : "dev:fake"], {
+const child = spawn("npm", ["run", "dev"], {
   cwd: process.cwd(),
   env: childEnvironment,
   stdio: "inherit",
@@ -131,7 +130,6 @@ try {
   console.log(`Web:    ${formatRementorUrl(domain, rementorProxyPort)}`);
   console.log(`Direct: http://127.0.0.1:${webPort}`);
   console.log(`Worker: http://127.0.0.1:${workerPort}/health`);
-  console.log(`Mode:   ${mode}`);
   console.log(`Data:   ${process.env.PROJECTS_CONVEX_URL}`);
   console.log("");
 
@@ -391,7 +389,6 @@ function parseArguments(argv) {
   const result = {
     action: "start",
     instanceId: undefined,
-    mode: undefined,
     webPort: undefined,
     workerPort: undefined,
     workspace: undefined,
@@ -418,16 +415,12 @@ function parseArguments(argv) {
     if (!value || value.startsWith("--")) {
       throw new Error(`${flag} requires a value.`);
     }
-    if (flag === "--mode") result.mode = value;
-    else if (flag === "--web-port") result.webPort = parsePort(value, flag);
+    if (flag === "--web-port") result.webPort = parsePort(value, flag);
     else if (flag === "--worker-port")
       result.workerPort = parsePort(value, flag);
     else if (flag === "--workspace") result.workspace = value;
     else if (flag === "--domain") result.domain = value;
     else throw new Error(`Unknown option ${flag}.`);
-  }
-  if (result.mode && !["fake", "real"].includes(result.mode)) {
-    throw new Error("--mode must be fake or real.");
   }
   return result;
 }
@@ -449,14 +442,14 @@ Usage:
   npm run dev:cell -- cleanup <instance> [--workspace <id>]
 
 Options:
-  --mode fake|real       Provider mode (default: fake)
   --web-port <port>      Override the deterministic web port
   --worker-port <port>   Override the deterministic worker port
   --workspace <id>       Rementor workspace (default: relay-local)
   --domain <hostname>    Rementor hostname (default: relay-<instance>.localhost)
   --help                 Show this help
 
-The cell inherits the configured Convex environment. Use a separate Convex
+The cell always uses the configured real provider integrations and inherits the
+configured Convex environment. Use a separate Convex
 deployment and server tokens when the cell must not share data or queues.
 `);
 }

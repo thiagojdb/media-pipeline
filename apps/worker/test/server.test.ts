@@ -5,10 +5,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  createFakeDraftRenderExecutor,
+  createTestDraftRenderExecutor,
   DraftRenderService,
 } from "../src/draft-render-service.js";
-import { DeterministicFakeScriptRevisionAgent } from "../src/script-revision-agent.js";
+import { DeterministicTestScriptRevisionAgent } from "../src/script-revision-agent.js";
 import { createWorkerServer } from "../src/server.js";
 
 const servers = new Set<ReturnType<typeof createWorkerServer>>();
@@ -111,7 +111,7 @@ describe("worker HTTP boundary", () => {
 
   it("keeps model-free script revisions behind the worker boundary", async () => {
     const server = createWorkerServer({
-      scriptRevisionAgent: new DeterministicFakeScriptRevisionAgent(),
+      scriptRevisionAgent: new DeterministicTestScriptRevisionAgent(),
     }).listen(0, "127.0.0.1");
     servers.add(server);
     await new Promise<void>((resolve) => server.once("listening", resolve));
@@ -130,14 +130,14 @@ describe("worker HTTP boundary", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       replacementMarkdown: "A STRONGER OPENING.",
-      provider: "relay-fake-script-editor",
+      provider: "relay-test-script-editor",
       model: "deterministic-revision-v1",
     });
   });
 
   it("exposes only the worker-configured script revision models", async () => {
     const server = createWorkerServer({
-      scriptRevisionAgent: new DeterministicFakeScriptRevisionAgent(),
+      scriptRevisionAgent: new DeterministicTestScriptRevisionAgent(),
     }).listen(0, "127.0.0.1");
     servers.add(server);
     await new Promise<void>((resolve) => server.once("listening", resolve));
@@ -150,7 +150,7 @@ describe("worker HTTP boundary", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual([
       {
-        provider: "relay-fake-script-editor",
+        provider: "relay-test-script-editor",
         model: "deterministic-revision-v1",
         label: "Relay test editor",
         default: true,
@@ -164,7 +164,7 @@ describe("worker HTTP boundary", () => {
     );
     directories.push(directory);
     const draftRenders = new DraftRenderService(
-      createFakeDraftRenderExecutor(1),
+      createTestDraftRenderExecutor(1),
       directory,
     );
     const server = createWorkerServer({ draftRenders }).listen(0, "127.0.0.1");

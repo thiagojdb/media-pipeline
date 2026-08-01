@@ -330,14 +330,17 @@ MED-123 makes validation evidence, rather than the readiness declaration, the ne
 
 MED-125 promotes a successful build only to a `reviewable` component candidate containing its declared identity/version, input-schema fingerprint, fixtures, dimensions, exact source lineage, and validation evidence. Approval is a separate explicit creator decision that creates one immutable component-version record; rejection and changes requested leave the latest approved version untouched. Schema changes from the exact selected base produce an acknowledgement-required compatibility warning. Revision turns reconstruct their base source and hash from that selected immutable version, while project component pins continue to reference an exact version until explicitly changed. Approved history retains the build/source reference required for later preview and rendering instead of copying or mutating source in place.
 
-Normal CI and development use the deterministic fake agent and never initialize a model runtime. Real Pi is dynamically loaded only in explicit real mode with an exact model and server-only credential. MED-123 owns independent repair, MED-125 owns review/approval, and MED-124 owns the creator chat-like end-to-end proof.
+Normal CI uses injected deterministic test agents and never initializes a model
+runtime. Development loads the configured Pi provider dynamically with an exact
+model and server-only credential. MED-123 owns independent repair, MED-125 owns
+review/approval, and MED-124 owns the creator chat-like end-to-end proof.
 
 ## Testing strategy
 
 Normal tests and CI must not require a model provider or spend tokens.
 
 - Unit tests cover schemas, time/frame calculations, policies, and state transitions.
-- Integration tests use a fake agent that emits known valid and invalid component workspaces.
+- Integration tests use injected test agents that emit known valid and invalid component workspaces.
 - Reference components provide deterministic fixtures and frame checkpoints.
 - Browser tests cover creator-visible preview and recovery behavior on real routes.
 - Render tests compare selected preview and output frames within declared tolerances.

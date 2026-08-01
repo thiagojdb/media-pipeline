@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { AuthoringAgent, AgentRunResult } from "./types.js";
 
-export class DeterministicFakeAuthoringAgent implements AuthoringAgent {
+export class DeterministicTestAuthoringAgent implements AuthoringAgent {
   async run({
     turn,
     workspace,
@@ -12,23 +12,23 @@ export class DeterministicFakeAuthoringAgent implements AuthoringAgent {
     const started = Date.now();
     const usage = () => ({
       toolCalls: tools.toolCalls,
-      modelTurns: turn.userRequest.includes("[FAKE_TURN_LIMIT]")
+      modelTurns: turn.userRequest.includes("[TEST_TURN_LIMIT]")
         ? turn.maxModelTurns + 1
         : turn.priorModelTurns + 1,
-      inputTokens: turn.userRequest.includes("[FAKE_TOKEN_LIMIT]")
+      inputTokens: turn.userRequest.includes("[TEST_TOKEN_LIMIT]")
         ? turn.maxTokens
         : turn.priorInputTokens + Math.min(20, Math.floor(turn.maxTokens / 2)),
-      outputTokens: turn.userRequest.includes("[FAKE_TOKEN_LIMIT]")
+      outputTokens: turn.userRequest.includes("[TEST_TOKEN_LIMIT]")
         ? turn.priorOutputTokens + 1
         : turn.priorOutputTokens + 10,
       cacheReadTokens: turn.priorCacheReadTokens,
       cacheWriteTokens: turn.priorCacheWriteTokens,
-      costUsd: turn.userRequest.includes("[FAKE_COST_LIMIT]")
+      costUsd: turn.userRequest.includes("[TEST_COST_LIMIT]")
         ? turn.maxCostUsd + 0.01
         : turn.priorCostUsd,
       wallTimeMs: turn.priorWallTimeMs + (Date.now() - started),
     });
-    if (turn.userRequest.includes("[FAKE_TIMEOUT]")) {
+    if (turn.userRequest.includes("[TEST_TIMEOUT]")) {
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, turn.maxWallTimeMs + 1_000);
         signal.addEventListener(
@@ -43,35 +43,35 @@ export class DeterministicFakeAuthoringAgent implements AuthoringAgent {
       return {
         status: "failed",
         code: "authoring_interrupted",
-        message: "Fake authoring was interrupted by its operational timeout.",
+        message: "Test authoring was interrupted by its operational timeout.",
         assistantSummary: "Timed out deterministically.",
-        sessionRef: `fake:${turn.threadId}`,
+        sessionRef: `test:${turn.threadId}`,
         ...usage(),
       };
     }
-    if (signal.aborted || turn.userRequest.includes("[FAKE_CANCEL]")) {
+    if (signal.aborted || turn.userRequest.includes("[TEST_CANCEL]")) {
       return {
         status: "canceled",
         code: "authoring_canceled",
-        message: "Fake authoring canceled.",
+        message: "Test authoring canceled.",
         assistantSummary: "Canceled deterministically.",
-        sessionRef: `fake:${turn.threadId}`,
+        sessionRef: `test:${turn.threadId}`,
         ...usage(),
       };
     }
-    if (turn.userRequest.includes("[FAKE_FAILURE]")) {
+    if (turn.userRequest.includes("[TEST_FAILURE]")) {
       return {
         status: "failed",
-        code: "fake_agent_failure",
-        message: "Deterministic fake-agent failure.",
+        code: "test_agent_failure",
+        message: "Deterministic test-agent failure.",
         assistantSummary: "Failed deterministically.",
-        sessionRef: `fake:${turn.threadId}`,
+        sessionRef: `test:${turn.threadId}`,
         ...usage(),
       };
     }
 
     await tools.readContext();
-    if (turn.userRequest.includes("[FAKE_TOOL_LIMIT]")) {
+    if (turn.userRequest.includes("[TEST_TOOL_LIMIT]")) {
       for (let index = 0; index <= turn.maxToolCalls; index += 1)
         await tools.readContext();
     }
@@ -80,8 +80,8 @@ export class DeterministicFakeAuthoringAgent implements AuthoringAgent {
       .update(turn.userRequest)
       .digest("hex")
       .slice(0, 12);
-    const candidate = turn.userRequest.includes("[FAKE_LINE_CHART_REVISION]")
-      ? prepareFakeRevisionCandidate(base, turn.userRequest)
+    const candidate = turn.userRequest.includes("[TEST_LINE_CHART_REVISION]")
+      ? prepareTestRevisionCandidate(base, turn.userRequest)
       : base;
     await tools.replaceCandidate(
       `${candidate.trimEnd()}\n// Relay deterministic authoring turn ${requestHash}\n`,
@@ -96,25 +96,25 @@ export class DeterministicFakeAuthoringAgent implements AuthoringAgent {
       message: "Candidate declared ready for independent validation.",
       assistantSummary:
         "Deterministic candidate prepared from the exact base source.",
-      sessionRef: `fake:${turn.threadId}`,
+      sessionRef: `test:${turn.threadId}`,
       ...usage(),
     };
   }
 }
 
-export function prepareFakeRevisionCandidate(
+export function prepareTestRevisionCandidate(
   base: string,
   request = "",
 ): string {
   const version = base.match(/version:\s*"(\d+)\.(\d+)\.(\d+)"/);
   if (!version)
-    throw new Error("Fake revision base must declare a semantic version.");
+    throw new Error("Test revision base must declare a semantic version.");
   const current = `${version[1]}.${version[2]}.${version[3]}`;
   const successor = `${version[1]}.${Number(version[2]) + 1}.0`;
   const compatibility =
     /compatibility:\s*\{ mode: "(?:initial|backward-compatible)"(?:, previousVersion: "[^"]+")? \}/;
   if (!compatibility.test(base))
-    throw new Error("Fake revision base must declare compatibility metadata.");
+    throw new Error("Test revision base must declare compatibility metadata.");
   let candidate = base
     .replace(version[0], `version: "${successor}"`)
     .replace(

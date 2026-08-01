@@ -187,7 +187,7 @@ export class IsolatedCandidateExecutor implements CandidateExecutor {
   }
 }
 
-export function createFakeCandidateExecutor(): CandidateExecutor {
+export function createTestCandidateExecutor(): CandidateExecutor {
   return {
     async execute(workspace, signal) {
       const source = await readFile(
