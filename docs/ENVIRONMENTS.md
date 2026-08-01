@@ -28,6 +28,10 @@
    port `3213`, backed by hosted development Convex data and credentials. It
    never forwards API execution to the deployed web application or contacts
    the persistent worker on `3212`.
+8. Parallel local development cells use the separate `relay-local` Rementor
+   workspace and their own web/worker ports. They must not modify the GISS
+   `desenvolvimento` or `qualidade` Rementor workspaces. The cell launcher
+   rejects any other workspace before it contacts Rementor.
 
 ## Current transition
 

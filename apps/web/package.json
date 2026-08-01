@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "NEXT_DIST_DIR=.next-dev next dev",
+    "dev": "next dev",
     "build": "next build",
     "build:sites": "opennextjs-cloudflare build",
     "start": "next start",

@@ -76,10 +76,22 @@ For deterministic model behavior, use `npm run dev:fake`; that command makes
 no paid model calls. Both commands use hosted development Convex plus the worker on port
 3213, leaving a production worker on 3212 untouched. Set
 `RELAY_LOCAL_WORKER_PORT` to override the local port. The launcher explicitly
-binds Next.js and the local worker to that same port and gives both a
-development-only auth token, so local routes cannot accidentally use a worker
-on port 3212. `npm run dev:loop` and `npm run dev:loop:real` remain aliases for
-the real-provider stack.
+binds Next.js and the local worker to their configured local ports and gives
+both a development-only auth token, so local routes cannot accidentally use a
+worker on port 3212. `npm run dev:loop` and `npm run dev:loop:real` remain
+aliases for the real-provider stack.
+
+For parallel worktrees, use a development cell. It assigns a separate local
+web/worker port pair, isolates ignored build output, and registers a stable
+Rementor hostname such as `http://relay-med-157.localhost:18080`:
+
+```bash
+npm run dev:cell -- med-157
+```
+
+Cells default to deterministic fake providers. See
+[docs/LOCAL_DEVELOPMENT_CELLS.md](docs/LOCAL_DEVELOPMENT_CELLS.md) for
+worktree setup, Rementor routing, cleanup, data isolation, and troubleshooting.
 
 Copy `.env.example` only when you need to set values manually. Never commit `.env.local` or credentials.
 

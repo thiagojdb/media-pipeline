@@ -43,6 +43,21 @@ worker or development Convex deployment.
 - Model ownership through channels and memberships, even while collaboration UI is deferred.
 - Add expensive infrastructure and test suites only when they protect an implemented boundary.
 
+## Parallel local development
+
+- Give each parallel task its own Git worktree and start it with
+  `npm run dev:cell -- <instance-id>`.
+- The cell launcher is the supported entry point for isolated local web and
+  worker processes. It derives per-cell ports, local data roots, worker tokens,
+  and the Next.js build directory; use `--mode real` only when real providers
+  are explicitly needed.
+- Cell routing is restricted to the `relay-local` Rementor workspace. Never
+  point the launcher at the GISS `desenvolvimento` or `qualidade` workspaces.
+  Use `npm run dev:cell -- cleanup <instance-id>` to remove a stale route.
+- Cells may share the configured development Convex deployment. Configure a
+  separate Convex deployment and server tokens when a task must isolate data,
+  queues, or mutations as well as local processes.
+
 ## Work discipline
 
 - Implement one bounded work item at a time. The user's request can define the
