@@ -14,7 +14,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  createFakeCandidateExecutor,
+  createTestCandidateExecutor,
   IsolatedCandidateExecutor,
 } from "../../src/component-build/executor.js";
 import { ComponentBuildLoop } from "../../src/component-build/loop.js";
@@ -272,7 +272,7 @@ describe("bounded component build lifecycle", () => {
     const service = new ComponentBuildService(
       store,
       new CandidateWorkspaceManager(root, scaffold),
-      createFakeCandidateExecutor(),
+      createTestCandidateExecutor(),
       workerId,
     );
     const loop = new ComponentBuildLoop(store, service, workerId, 5_000);
@@ -339,7 +339,7 @@ async function harness(initial: ComponentBuildJob) {
   const service = new ComponentBuildService(
     store,
     new CandidateWorkspaceManager(root, scaffold),
-    createFakeCandidateExecutor(),
+    createTestCandidateExecutor(),
     workerId,
     5_000,
   );

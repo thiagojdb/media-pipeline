@@ -43,7 +43,7 @@ export interface ComponentDialogueAgent {
   }): Promise<DialogueResult>;
 }
 
-export class DeterministicFakeDialogueAgent implements ComponentDialogueAgent {
+export class DeterministicTestDialogueAgent implements ComponentDialogueAgent {
   async run({
     history,
     onTextDelta,

@@ -340,7 +340,7 @@ export class BrowserProjectRenderExecutor implements ProjectRenderExecutor {
   }
 }
 
-export function createFakeProjectRenderExecutor(
+export function createTestProjectRenderExecutor(
   delayMs = 10,
 ): ProjectRenderExecutor {
   return {
@@ -348,7 +348,7 @@ export function createFakeProjectRenderExecutor(
       const temporaryRoot = path.join(os.homedir(), ".cache", "ai-tmp");
       await mkdir(temporaryRoot, { recursive: true });
       const root = await mkdtemp(
-        path.join(temporaryRoot, "relay-fake-render-"),
+        path.join(temporaryRoot, "relay-test-render-"),
       );
       const outputPath = path.join(root, "draft.mp4");
       for (const progress of [0.2, 0.6, 0.98]) {
@@ -356,7 +356,7 @@ export function createFakeProjectRenderExecutor(
         hooks.onProgress(progress);
       }
       const bytes = Buffer.from(
-        `fake-project-mp4:${job._id}:${job.rangeStartMs}`,
+        `test-project-mp4:${job._id}:${job.rangeStartMs}`,
       );
       await writeFile(outputPath, bytes);
       const hash = createHash("sha256").update(bytes).digest("hex");

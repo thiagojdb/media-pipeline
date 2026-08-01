@@ -20,8 +20,31 @@ operations.
 
 Requirements:
 
-- Node.js 24 or newer
+- Node.js 24 or newer (the version files pin 24.18.1 by default)
 - npm 11 or newer
+
+The repository pins the development runtime in both `.nvmrc` (for nvm) and
+`.node-version` (for fnm). With fnm's shell integration enabled, changing into
+the repository switches automatically. Otherwise select the pinned version
+once per shell:
+
+```bash
+# fnm
+fnm install --use
+# or, after it is installed:
+fnm use --install-if-missing
+
+# or nvm
+nvm install
+nvm use
+```
+
+To enable fnm's automatic directory switching, add this to your shell profile
+once (use `bash` instead of `zsh` for Bash):
+
+```bash
+eval "$(fnm env --use-on-cd --shell zsh)"
+```
 
 A Convex account is not required for local development. Use an account only when you intentionally choose a hosted Convex deployment.
 
@@ -32,8 +55,8 @@ npm install
 npm run dev
 ```
 
-`npm run dev` includes the deterministic creator component loop, project
-workspace, authoring/build queues, narration, and draft-render worker. The
+`npm run dev` includes the creator component loop, project workspace,
+provider-backed authoring/build queues, narration, and draft-render worker. The
 legacy convenience alias remains available:
 
 ```bash
@@ -42,17 +65,15 @@ npm run dev:loop
 
 Both commands start the same complete local environment. Open
 `http://127.0.0.1:3000/projects` for video projects or
-`http://127.0.0.1:3000/component-loop` for component authoring. Local mode uses
-fixed development-only worker tokens. Component authoring remains
-deterministic by default, while an explicit **Ask for changes** action in the
-script editor uses the server-side Relay model. Automated tests set a fake
-script editor and never call a paid model.
+`http://127.0.0.1:3000/component-loop` for component authoring. Local
+development uses fixed development-only worker tokens. Component authoring and
+script revision always use the configured server-side providers; automated
+tests inject test agents and never call a paid model.
 
 Current component-loop limits are deliberate: the creator route targets the
 animated line chart, and only trusted compiled versions 1.0.0 and 1.1.0 can be
-previewed or rendered. Local `dev:loop` uses deterministic fake component
-authoring. The local launcher loads the configured Pi credential into the
-worker only for real script revisions; no credential enters Next.js, Convex,
+previewed or rendered. The local launcher loads configured provider
+credentials into the worker only; no credential enters Next.js, Convex,
 browser payloads, logs, or model input.
 
 `npm run dev` is the single start path. It runs the local Next.js application and Node worker against the hosted development Convex deployment. The API handlers execute from this checkout, so API edits are exercised locally while localhost uses the same projects and project state as the stable development deployment. Machine-local development credentials live in `~/.config/relay/development.env` with mode `0600`.
@@ -63,23 +84,21 @@ Local endpoints are:
 - Convex API: the hosted development deployment
 - local worker health: <http://127.0.0.1:3213/health>
 
-`npm run dev` selects the real authoring, script-revision, and
+`npm run dev` uses the configured authoring, script-revision, and
 narration-alignment providers. The workspace still starts when an optional
-paid-provider credential is absent; the affected model action reports that it
-is unavailable until configured and never falls back to a fake provider. The
+provider credential is absent; the affected model action reports that it is
+unavailable until configured and never substitutes a local provider. The
 local worker reads provider credentials from the process environment or the
 gitignored root `.env.local` file. Pi authoring can also use the existing local
 Pi/OpenCode OAuth credential store. One `OPENAI_API_KEY` can configure both
 OpenAI script revision and narration alignment; alternatively configure
 `KIMI_API_KEY` for script revision and `NARRATION_OPENAI_API_KEY` for alignment.
-For deterministic model behavior, use `npm run dev:fake`; that command makes
-no paid model calls. Both commands use hosted development Convex plus the worker on port
-3213, leaving a production worker on 3212 untouched. Set
+Both commands use hosted development Convex plus the worker on port 3213,
+leaving a production worker on 3212 untouched. Set
 `RELAY_LOCAL_WORKER_PORT` to override the local port. The launcher explicitly
 binds Next.js and the local worker to their configured local ports and gives
 both a development-only auth token, so local routes cannot accidentally use a
-worker on port 3212. `npm run dev:loop` and `npm run dev:loop:real` remain
-aliases for the real-provider stack.
+worker on port 3212. `npm run dev:loop` remains an alias for the same stack.
 
 For parallel worktrees, use a development cell. It assigns a separate local
 web/worker port pair, isolates ignored build output, and registers a stable
@@ -89,7 +108,7 @@ Rementor hostname such as `http://relay-med-157.localhost:18080`:
 npm run dev:cell -- med-157
 ```
 
-Cells default to deterministic fake providers. See
+Cells use the configured providers. See
 [docs/LOCAL_DEVELOPMENT_CELLS.md](docs/LOCAL_DEVELOPMENT_CELLS.md) for
 worktree setup, Rementor routing, cleanup, data isolation, and troubleshooting.
 
@@ -103,7 +122,9 @@ Run the clean-checkout gate with:
 npm run verify
 ```
 
-The gate checks formatting, lint, strict TypeScript, deterministic unit tests, package builds, and the Next.js production build. It does not call a model provider.
+The gate checks formatting, lint, strict TypeScript, model-independent unit
+tests, package builds, and the Next.js production build. It does not call a
+paid model provider.
 
 Individual commands are also available:
 
@@ -132,13 +153,19 @@ Install the pinned Playwright Chromium runtime once after `npm install`:
 npx playwright install chromium
 ```
 
-Then run the browser suite deterministically against test-owned production web and fake-render worker processes:
+Then run the browser suite against test-owned production web and real render
+worker processes:
 
 ```bash
 npm run test:browser
 ```
 
-The command first performs the production build, starts the worker on `127.0.0.1:3213` and `next start` on `127.0.0.1:3100`, and refuses to reuse processes already listening there. Browser tests use an explicitly selected fake renderer; they still exercise the real browser → Next.js proxy → worker HTTP path without invoking Chromium or FFmpeg. Browser tests remain explicit rather than part of `npm run verify`. Playwright reports, traces, render outputs, and test-result directories are ignored build artifacts.
+The command first performs the production build, starts the worker on
+`127.0.0.1:3213` and `next start` on `127.0.0.1:3100`, and refuses to reuse
+processes already listening there. Browser tests exercise the real browser →
+Next.js proxy → worker HTTP path and remain explicit rather than part of
+`npm run verify`. Playwright reports, traces, render outputs, and test-result
+directories are ignored build artifacts.
 
 ### Draft render smoke test
 
@@ -150,15 +177,9 @@ npm run render:smoke
 
 It renders the reference line chart twice at 960×540, verifies both outputs as playable H.264 MP4s, and proves declared checkpoint agreement across the browser preview, Remotion stills, and frames decoded from the MP4. It also confirms identical requests produce identical Remotion checkpoint fingerprints. This expensive proof is separate from the normal repository gate.
 
-### Deterministic authoring smoke test
+### Authoring integration smoke test
 
-Run the free MED-128 create → Relay tools → candidate → MED-133 handoff without a model or network call:
-
-```bash
-npm run authoring:smoke
-```
-
-Real Pi dogfood is a separate paid command and fails closed unless all explicit activation variables are present:
+The metered Pi integration smoke fails closed unless all explicit activation variables are present:
 
 ```bash
 AUTHORING_REAL_PI_ENABLED=true \
@@ -167,7 +188,14 @@ AUTHORING_PI_MODEL=provider/exact-model \
 npm run pi:smoke
 ```
 
-The paid smoke enforces wall-time and tool limits before work, caps each provider response to the remaining token allowance, persists cumulative usage after provider responses, and prevents another model turn once token, turn, or cost ceilings are reached. The reviewed real-agent ceiling is 6 model turns, 60,000 total provider tokens (including cache reads/writes), 16 tools, 120 seconds, and $1. Provider-reported token/cost usage arrives at response boundaries, so one in-flight response may exceed a total estimate; that overshoot is retained and no automatic paid retry is allowed. Normal `npm run verify`, `npm run dev`, browser tests, and `npm run authoring:smoke` never initialize Pi `ModelRuntime` or call a provider.
+The smoke enforces wall-time and tool limits before work, caps each provider
+response to the remaining token allowance, persists cumulative usage after
+provider responses, and prevents another model turn once token, turn, or cost
+ceilings are reached. Provider-reported token/cost usage arrives at response
+boundaries, so one in-flight response may exceed a total estimate; that
+overshoot is retained and no automatic paid retry is allowed. Normal
+`npm run verify`, `npm run dev`, and browser tests do not initialize Pi
+`ModelRuntime` or call a paid provider.
 
 ### Isolated component-build smoke test
 
@@ -177,7 +205,8 @@ On the Linux worker target, prove through adversarial probes that Bubblewrap and
 npm run isolation:smoke
 ```
 
-Normal `npm run verify` uses the deterministic fake executor and does not require privileged isolation or call a model.
+Normal `npm run verify` uses injected test executors and does not require
+privileged isolation or call a model.
 
 ## MED-133 component-build boundary
 
@@ -187,14 +216,13 @@ Jobs retain opaque `channelId`, `threadId`, `turnId`, optional parent-candidate,
 
 ## MED-128 authoring boundary
 
-Component authoring is explicitly opt-in with `AUTHORING_ENABLED=true`; normal development reports `authoring: disabled`. Fake mode is deterministic and follows the same context, workspace, Relay-tool, activity, usage, and MED-133 publication path as real mode without network/model calls. Real mode additionally requires `AUTHORING_MODE=real`, `AUTHORING_REAL_PI_ENABLED=true`, an exact `AUTHORING_PI_MODEL=provider/model`, a server-only `AUTHORING_PI_CREDENTIAL_JSON` containing one Pi `api_key` or OAuth credential, and per-turn budgets below reviewed ceilings. The worker parses that credential into an app-owned in-memory store; it never falls back to Pi's global auth file and never copies credentials into sessions, context, logs, or workspaces.
+Component authoring is explicitly opt-in with `AUTHORING_ENABLED=true`; normal development reports `authoring: disabled`. When enabled, it always uses the configured Pi provider and requires `AUTHORING_REAL_PI_ENABLED=true`, an exact `AUTHORING_PI_MODEL=provider/model`, a server-only `AUTHORING_PI_CREDENTIAL_JSON` containing one Pi `api_key` or OAuth credential, and per-turn budgets below reviewed ceilings. The worker parses that credential into an app-owned in-memory store; it never falls back to Pi's global auth file and never copies credentials into sessions, context, logs, or workspaces.
 
 Script revision generation is a separate provider-selectable worker boundary.
-Local development defaults `SCRIPT_REVISION_MODE=real`; the worker exposes only
-the server-configured provider/model allowlist to the editor. Kimi Code uses its
+The worker exposes only the server-configured provider/model allowlist to the
+editor. Kimi Code uses its
 OpenAI-compatible Chat Completions endpoint, while OpenAI uses the Responses API
-with strict Structured Outputs. `SCRIPT_REVISION_MODE=fake` is reserved for
-deterministic tests. Provider API keys remain server-only. The worker returns
+with strict Structured Outputs. Provider API keys remain server-only. The worker returns
 bounded Markdown plus provider, model, token, cost, and wall-time telemetry.
 Convex validates and stores that output as a reviewable proposal but never
 invokes the model itself.

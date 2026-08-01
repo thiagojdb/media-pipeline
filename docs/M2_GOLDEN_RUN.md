@@ -50,8 +50,8 @@ while the immutable composition and render pins keep both results reproducible.
 
 ## Explicit real-model dogfood
 
-Thread `loop-3302e784-47bc-4dc0-a6d8-3a69af779285` ran in explicit real mode
-with `openai-codex/gpt-5.4-mini`. Relay created, independently validated,
+Thread `loop-3302e784-47bc-4dc0-a6d8-3a69af779285` ran with the configured
+`openai-codex/gpt-5.4-mini` provider. Relay created, independently validated,
 previewed, and then approved `golden-telemetry-card@1.0.0` without a developer
 editing generated source.
 
@@ -74,8 +74,9 @@ zero-token success; a current server-only credential then completed the run.
   identity UI do not.
 - URL sources preserve a safe canonical reference and fingerprint; Relay does
   not yet extract claims, citations, or article content.
-- Generated narration uses the deterministic local provider during this proof.
-  Uploaded narration is probed and versioned, but voice selection, mixing, and
+- The historical generated narration result is not a production integration.
+  Current narration requires a configured provider and server-side credentials;
+  uploaded narration is probed and versioned, but voice selection, mixing, and
   alignment refinement are not productized.
 - Project editing proposals intentionally support a small set of bounded
   commands. They are not yet a general-purpose model editing session.

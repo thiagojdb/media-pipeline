@@ -15,7 +15,7 @@ const accessArgs = {
   identitySubject: v.string(),
   channelId: v.id("channels"),
 };
-const MAX_ATTEMPTS = 2;
+const MAX_ATTEMPTS = 1;
 
 export const list = query({
   args: { ...accessArgs, projectId: v.id("projects") },
@@ -61,7 +61,7 @@ export const propose = mutation({
       "read_narration_beats",
       "read_approved_component_library",
     ];
-    let attempt = 1;
+    const attempt = 1;
     const evidence: Array<{
       attempt: number;
       valid: boolean;
@@ -139,11 +139,7 @@ export const propose = mutation({
               },
             ].sort((left, right) => left.anchor.startMs - right.anchor.startMs),
           });
-        let candidate = createCandidate(
-          request.includes("[FAKE_INVALID_FIRST]")
-            ? "invalid-component-version"
-            : component._id,
-        );
+        const candidate = createCandidate(component._id);
         proposed = candidate;
         try {
           await validateCompositionForProject(
@@ -163,27 +159,7 @@ export const propose = mutation({
             valid: false,
             message: safeMessage(error),
           });
-          if (
-            request.includes("[FAKE_INVALID_FIRST]") &&
-            attempt < MAX_ATTEMPTS
-          ) {
-            attempt += 1;
-            candidate = createCandidate(component._id);
-            proposed = candidate;
-            await validateCompositionForProject(
-              ctx,
-              project._id,
-              project.channelId,
-              candidate,
-            );
-            evidence.push({
-              attempt,
-              valid: true,
-              message: "Bounded repair passed independent validation.",
-            });
-          } else {
-            proposed = undefined;
-          }
+          proposed = undefined;
         }
         patch = {
           operation: speedRevision
@@ -220,7 +196,7 @@ export const propose = mutation({
       rationale,
       validationEvidenceJson: JSON.stringify(evidence),
       toolActivityJson: JSON.stringify(tools),
-      provider: "relay-fake-editor",
+      provider: "relay-test-editor",
       model: "deterministic-composition-v1",
       attempt,
       maxAttempts: MAX_ATTEMPTS,

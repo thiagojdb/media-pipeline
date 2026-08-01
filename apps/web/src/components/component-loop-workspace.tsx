@@ -86,7 +86,6 @@ type Version = {
   approvedAt: number;
 };
 type LoopStatus = {
-  authoringMode: "fake" | "real";
   model?: string;
   theme?: ChannelTheme;
   selectedBaseVersion?: {
@@ -207,7 +206,7 @@ export function ComponentLoopWorkspace({
 
   const working = Boolean(threadId && (!status || hasActiveWork(status)));
 
-  const start = async (prompt: string, failureProbe = false) => {
+  const start = async (prompt: string) => {
     setBusy(true);
     setError(undefined);
     try {
@@ -215,7 +214,7 @@ export function ComponentLoopWorkspace({
         "/api/component-loop/requests",
         {
           method: "POST",
-          body: JSON.stringify({ prompt, theme, failureProbe }),
+          body: JSON.stringify({ prompt, theme }),
         },
       );
       rememberThread(result.threadId);
@@ -362,9 +361,7 @@ export function ComponentLoopWorkspace({
                 : "Ready"}
             {status && (
               <span className="rounded-full bg-slate-100 px-2 py-1 font-mono text-[10px]">
-                {status.authoringMode === "real"
-                  ? status.model?.split("/").at(-1)
-                  : "deterministic fake"}
+                {status.model?.split("/").at(-1) ?? "provider unavailable"}
               </span>
             )}
           </div>

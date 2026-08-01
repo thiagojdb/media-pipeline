@@ -7,7 +7,7 @@ import {
 
 describe("worker queue coordinator", () => {
   it("stays mutation-free while idle and wakes only available queues", async () => {
-    const client = new FakeQueueClient();
+    const client = new TestQueueClient();
     const componentBuild = vi.fn();
     const narration = vi.fn();
     const coordinator = new WorkerQueueCoordinator(
@@ -49,7 +49,7 @@ describe("worker queue coordinator", () => {
   });
 });
 
-class FakeQueueClient {
+class TestQueueClient {
   subscriptionCount = 0;
   unsubscribed = false;
   closed = false;

@@ -317,7 +317,7 @@ export function validateAndPinRequest(
   } as PinnedDraftRenderRequest;
 }
 
-export function createFakeDraftRenderExecutor(
+export function createTestDraftRenderExecutor(
   delayMilliseconds = 25,
 ): DraftRenderExecutor {
   return {
@@ -327,11 +327,11 @@ export function createFakeDraftRenderExecutor(
         hooks.onProgress(progress);
       }
       const bytes = Buffer.from(
-        `fake-mp4:${hashJson(request)}:${request.durationInFrames}`,
+        `test-mp4:${hashJson(request)}:${request.durationInFrames}`,
       );
       await mkdir(path.dirname(outputPath), { recursive: true });
       await writeFile(outputPath, bytes);
-      return resultForBytes(outputPath, bytes, `fake:${hashJson(request)}`);
+      return resultForBytes(outputPath, bytes, `test:${hashJson(request)}`);
     },
   };
 }

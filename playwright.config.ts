@@ -18,7 +18,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "WORKER_PORT=3213 RELAY_RENDER_MODE=fake RELAY_RENDER_OUTPUT_DIR=.relay/browser-renders npm run start --workspace @relay/worker",
+        "WORKER_PORT=3213 RELAY_RENDER_OUTPUT_DIR=.relay/browser-renders npm run start --workspace @relay/worker",
       url: "http://127.0.0.1:3213/health",
       reuseExistingServer: false,
       timeout: 120_000,

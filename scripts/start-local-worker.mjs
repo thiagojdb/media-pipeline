@@ -35,68 +35,80 @@ const narrationTmpDirectory = resolvePath(
   process.env.RELAY_NARRATION_TMPDIR,
   path.join(instanceRoot, "local-narration"),
 );
-const authoringMode = process.env.AUTHORING_MODE ?? "fake";
-const scriptRevisionMode = process.env.SCRIPT_REVISION_MODE ?? "fake";
-if (!["fake", "real"].includes(authoringMode))
-  throw new Error("AUTHORING_MODE must be fake or real.");
-if (!["fake", "real"].includes(scriptRevisionMode))
-  throw new Error("SCRIPT_REVISION_MODE must be fake or real.");
 let realAuthoringEnvironment = {};
-if (authoringMode === "real") {
-  const authFile = await authoringAuthFile();
-  const credentials = JSON.parse(await readFile(authFile, "utf8"));
-  const model =
-    process.env.AUTHORING_PI_MODEL ?? defaultAuthoringModel(credentials);
-  const provider = model.slice(0, model.indexOf("/"));
-  const credential =
-    credentials[provider] ??
-    (provider === "openai-codex" ? credentials.openai : undefined);
-  if (!credential)
+let authoringProviderConfigured = false;
+const configuredCredentialJson =
+  process.env.AUTHORING_PI_CREDENTIAL_JSON?.trim();
+if (configuredCredentialJson) {
+  const model = process.env.AUTHORING_PI_MODEL?.trim();
+  if (!model?.includes("/")) {
     throw new Error(
-      `Pi credential provider ${provider} is unavailable in the configured auth file.`,
+      "AUTHORING_PI_CREDENTIAL_JSON requires AUTHORING_PI_MODEL=provider/model.",
     );
+  }
   realAuthoringEnvironment = {
-    AUTHORING_REAL_PI_ENABLED: "true",
+    AUTHORING_REAL_PI_ENABLED: process.env.AUTHORING_REAL_PI_ENABLED ?? "true",
     AUTHORING_PI_MODEL: model,
-    AUTHORING_PI_CREDENTIAL_JSON: JSON.stringify(credential),
+    AUTHORING_PI_CREDENTIAL_JSON: configuredCredentialJson,
   };
-}
-let realScriptRevisionEnvironment = {};
-if (scriptRevisionMode === "real") {
-  const localKeyFile = path.resolve("kimi-api-key-code-moonshot");
-  const keyFile =
-    process.env.SCRIPT_REVISION_KIMI_API_KEY_FILE ??
-    ((await fileExists(localKeyFile)) ? localKeyFile : undefined);
-  const kimiApiKey =
-    process.env.KIMI_API_KEY?.trim() ||
-    (keyFile ? (await readFile(keyFile, "utf8")).trim() : "");
-  const openAIApiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!kimiApiKey && !openAIApiKey) {
-    console.warn(
-      "Real script editing is selected but unavailable until KIMI_API_KEY or OPENAI_API_KEY is configured.",
-    );
-  } else {
-    realScriptRevisionEnvironment = {
-      ...(kimiApiKey ? { KIMI_API_KEY: kimiApiKey } : {}),
-      ...(openAIApiKey ? { OPENAI_API_KEY: openAIApiKey } : {}),
-      SCRIPT_REVISION_PROVIDER:
-        process.env.SCRIPT_REVISION_PROVIDER ??
-        (kimiApiKey ? "kimi-code" : "openai"),
-      SCRIPT_REVISION_MODEL:
-        process.env.SCRIPT_REVISION_MODEL ??
-        (kimiApiKey ? "k3-256k" : "gpt-5.6"),
+  authoringProviderConfigured = true;
+} else {
+  const authFile = await authoringAuthFile();
+  if (authFile) {
+    const credentials = JSON.parse(await readFile(authFile, "utf8"));
+    const model =
+      process.env.AUTHORING_PI_MODEL ?? defaultAuthoringModel(credentials);
+    const provider = model.slice(0, model.indexOf("/"));
+    const credential =
+      credentials[provider] ??
+      (provider === "openai-codex" ? credentials.openai : undefined);
+    if (!credential)
+      throw new Error(
+        `Pi credential provider ${provider} is unavailable in the configured auth file.`,
+      );
+    realAuthoringEnvironment = {
+      AUTHORING_REAL_PI_ENABLED: "true",
+      AUTHORING_PI_MODEL: model,
+      AUTHORING_PI_CREDENTIAL_JSON: JSON.stringify(credential),
     };
+    authoringProviderConfigured = true;
   }
 }
+let realScriptRevisionEnvironment = {};
+const localKeyFile = path.resolve("kimi-api-key-code-moonshot");
+const keyFile =
+  process.env.SCRIPT_REVISION_KIMI_API_KEY_FILE ??
+  ((await fileExists(localKeyFile)) ? localKeyFile : undefined);
+const kimiApiKey =
+  process.env.KIMI_API_KEY?.trim() ||
+  (keyFile ? (await readFile(keyFile, "utf8")).trim() : "");
+const openAIApiKey = process.env.OPENAI_API_KEY?.trim();
+if (!kimiApiKey && !openAIApiKey) {
+  console.warn(
+    "Real script editing is unavailable until KIMI_API_KEY or OPENAI_API_KEY is configured.",
+  );
+} else {
+  realScriptRevisionEnvironment = {
+    ...(kimiApiKey ? { KIMI_API_KEY: kimiApiKey } : {}),
+    ...(openAIApiKey ? { OPENAI_API_KEY: openAIApiKey } : {}),
+    SCRIPT_REVISION_PROVIDER:
+      process.env.SCRIPT_REVISION_PROVIDER ??
+      (kimiApiKey ? "kimi-code" : "openai"),
+    SCRIPT_REVISION_MODEL:
+      process.env.SCRIPT_REVISION_MODEL ?? (kimiApiKey ? "k3-256k" : "gpt-5.6"),
+  };
+}
 if (
-  process.env.NARRATION_ALIGNMENT_MODE === "openai" &&
   !process.env.NARRATION_OPENAI_API_KEY?.trim() &&
   !process.env.OPENAI_API_KEY?.trim()
 ) {
   console.warn(
-    "Real narration alignment is selected but unavailable until NARRATION_OPENAI_API_KEY or OPENAI_API_KEY is configured.",
+    "Real narration alignment is unavailable until NARRATION_OPENAI_API_KEY or OPENAI_API_KEY is configured.",
   );
 }
+
+const authoringEnabled =
+  authoringProviderConfigured && process.env.AUTHORING_ENABLED !== "false";
 
 const child = spawn("npm", ["run", "dev", "--workspace", "@relay/worker"], {
   stdio: "inherit",
@@ -110,20 +122,17 @@ const child = spawn("npm", ["run", "dev", "--workspace", "@relay/worker"], {
     COMPONENT_BUILD_CONVEX_URL: process.env.COMPONENT_BUILD_CONVEX_URL,
     COMPONENT_BUILD_WORKER_TOKEN: process.env.COMPONENT_BUILD_WORKER_TOKEN,
     COMPONENT_BUILD_WORKSPACE_ROOT: componentBuildWorkspaceRoot,
-    AUTHORING_ENABLED: "true",
-    AUTHORING_MODE: authoringMode,
-    SCRIPT_REVISION_MODE: scriptRevisionMode,
+    AUTHORING_ENABLED: String(authoringEnabled),
     AUTHORING_CONVEX_URL: process.env.AUTHORING_CONVEX_URL,
     AUTHORING_WORKER_TOKEN: process.env.AUTHORING_WORKER_TOKEN,
     AUTHORING_WORKSPACE_ROOT: authoringWorkspaceRoot,
     AUTHORING_PI_SESSION_ROOT: authoringPiSessionRoot,
-    COMPONENT_LOOP_ENABLED: "true",
+    COMPONENT_LOOP_ENABLED: String(authoringEnabled),
     COMPONENT_LOOP_WORKER_TOKEN: process.env.COMPONENT_LOOP_WORKER_TOKEN,
     NARRATION_ENABLED: "true",
     NARRATION_CONVEX_URL: process.env.NARRATION_CONVEX_URL,
     NARRATION_WORKER_TOKEN: process.env.NARRATION_WORKER_TOKEN,
     RELAY_NARRATION_TMPDIR: narrationTmpDirectory,
-    NARRATION_ALIGNMENT_MODE: process.env.NARRATION_ALIGNMENT_MODE ?? "fake",
     NARRATION_OPENAI_API_KEY:
       process.env.NARRATION_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY,
     ...realAuthoringEnvironment,
@@ -160,9 +169,10 @@ async function authoringAuthFile() {
   ]) {
     if (await fileExists(candidate)) return candidate;
   }
-  throw new Error(
-    "Real authoring requires AUTHORING_PI_AUTH_FILE or a supported local Pi/OpenCode auth file.",
+  console.warn(
+    "Real component authoring is unavailable until AUTHORING_PI_AUTH_FILE or a supported local Pi/OpenCode auth file is configured.",
   );
+  return undefined;
 }
 
 function defaultAuthoringModel(credentials) {
