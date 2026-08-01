@@ -26,7 +26,9 @@ if (options.action === "cleanup") {
 }
 
 const instanceId = requireInstanceId(options.instanceId);
-const workspace = options.workspace ?? DEFAULT_REMENTOR_WORKSPACE;
+const workspace = requireRementorWorkspace(
+  options.workspace ?? DEFAULT_REMENTOR_WORKSPACE,
+);
 const domain =
   options.domain ??
   `relay-${instanceId}.${DEFAULT_REMENTOR_DOMAIN.replace(/^relay\./, "")}`;
@@ -73,7 +75,7 @@ const channelName =
   process.env.RELAY_DEV_CHANNEL_NAME ?? `Relay Studio (${instanceId})`;
 const userSubject =
   process.env.RELAY_DEV_USER_SUBJECT ?? `relay-dev-user-${instanceId}`;
-const nextDistDir = process.env.NEXT_DIST_DIR ?? ".next-dev";
+const nextDistDir = process.env.NEXT_DIST_DIR ?? `.next-dev-${instanceId}`;
 const childEnvironment = {
   ...process.env,
   RELAY_DEV_CELL: "true",
@@ -160,7 +162,9 @@ async function cleanupRoute({
   workspace: requestedWorkspace,
 }) {
   const cleanInstanceId = requireInstanceId(requestedInstanceId);
-  const cleanWorkspace = requestedWorkspace ?? DEFAULT_REMENTOR_WORKSPACE;
+  const cleanWorkspace = requireRementorWorkspace(
+    requestedWorkspace ?? DEFAULT_REMENTOR_WORKSPACE,
+  );
   const removed = await unregisterRementorRoute(
     cleanWorkspace,
     `relay-${cleanInstanceId}`,
@@ -188,17 +192,24 @@ async function ensureRementorWorkspace(workspaceId) {
     }
     return;
   }
-  await runRementor([
-    "workspace",
-    "create",
-    workspaceId,
-    "--local-domain",
-    DEFAULT_REMENTOR_DOMAIN,
-    "--type",
-    "local-apps",
-    "--name",
-    "Relay local development",
-  ]);
+  try {
+    await runRementor([
+      "workspace",
+      "create",
+      workspaceId,
+      "--local-domain",
+      DEFAULT_REMENTOR_DOMAIN,
+      "--type",
+      "local-apps",
+      "--name",
+      "Relay local development",
+    ]);
+  } catch (error) {
+    if (error instanceof Error && /already exists/i.test(error.message)) {
+      return;
+    }
+    throw error;
+  }
 }
 
 async function announceRementorRoute({ workspace, app, domain, port }) {
@@ -331,7 +342,11 @@ async function waitForHttp(url, childExit) {
       );
     }
     try {
-      const response = await fetch(url, { redirect: "manual" });
+      const remainingMs = Math.max(1, deadline - Date.now());
+      const response = await fetch(url, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(Math.min(1_000, remainingMs)),
+      });
       if (response.status < 500) return;
     } catch {
       // The web process may still be compiling or binding its port.
@@ -358,6 +373,15 @@ function requireInstanceId(value) {
   if (!value || !/^[a-z0-9][a-z0-9-]{0,49}$/.test(value)) {
     throw new Error(
       "Instance id must contain lowercase letters, numbers, and hyphens (max 50 characters).",
+    );
+  }
+  return value;
+}
+
+function requireRementorWorkspace(value) {
+  if (value !== DEFAULT_REMENTOR_WORKSPACE) {
+    throw new Error(
+      `Parallel development cells may use only the ${DEFAULT_REMENTOR_WORKSPACE} Rementor workspace.`,
     );
   }
   return value;

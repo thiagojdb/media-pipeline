@@ -9,7 +9,9 @@ if (process.env.RELAY_DEV_CELL !== "true" && (await fileExists(localEnvFile)))
 
 const workerPort = process.env.RELAY_LOCAL_WORKER_PORT ?? "3213";
 const workerAuthToken =
-  process.env.RELAY_WORKER_AUTH_TOKEN ?? "relay-local-worker";
+  process.env.RELAY_LOCAL_WORKER_AUTH_TOKEN ??
+  process.env.RELAY_WORKER_AUTH_TOKEN ??
+  "relay-local-worker";
 const instanceRoot = path.resolve(
   process.env.RELAY_INSTANCE_ROOT ?? path.join(".relay"),
 );

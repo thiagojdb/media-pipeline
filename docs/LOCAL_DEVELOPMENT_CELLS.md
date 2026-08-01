@@ -90,7 +90,8 @@ Each cell sets:
 - `RELAY_LOCAL_WORKER_PORT` and a unique worker auth token;
 - `RELAY_WORKER_URL` to that cell's loopback worker;
 - `RELAY_INSTANCE_ID` and `RELAY_DEV_HOSTNAME`;
-- `NEXT_DIST_DIR` for Next's development output;
+- `NEXT_DIST_DIR` for Next's development output (by default
+  `.next-dev-<instance-id>`);
 - `RELAY_INSTANCE_ROOT` for renders, component builds, authoring sessions,
   Pi sessions, and narration temporary files;
 - a unique development user subject and channel slug by default.
