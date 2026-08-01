@@ -15,14 +15,23 @@ const editingApi = anyApi.projectEditingAgent!;
 const rendersApi = anyApi.projectDraftRenders!;
 const serverToken = "projects-test-token";
 const workerToken = "render-worker-token";
+const testCompositionAuthoring = {
+  provider: "relay-test-editor",
+  model: "deterministic-composition-v1",
+};
 
 beforeEach(() => {
   process.env.PROJECTS_SERVER_TOKEN = serverToken;
   process.env.NARRATION_WORKER_TOKEN = workerToken;
+  process.env.COMPOSITION_AUTHORING_PROVIDER =
+    testCompositionAuthoring.provider;
+  process.env.COMPOSITION_AUTHORING_MODEL = testCompositionAuthoring.model;
 });
 afterEach(() => {
   delete process.env.PROJECTS_SERVER_TOKEN;
   delete process.env.NARRATION_WORKER_TOKEN;
+  delete process.env.COMPOSITION_AUTHORING_PROVIDER;
+  delete process.env.COMPOSITION_AUTHORING_MODEL;
 });
 
 describe("structured project composition versions", () => {
@@ -182,7 +191,7 @@ describe("structured project composition versions", () => {
       state: "reviewable",
       attempt: 1,
       maxAttempts: 1,
-      provider: "relay-test-editor",
+      ...testCompositionAuthoring,
       estimatedCostUsd: 0,
     });
     expect(JSON.parse(proposals[0]!.validationEvidenceJson)).toMatchObject([

@@ -21,7 +21,7 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
@@ -44,3 +44,6 @@ jobs:
 
       - name: Run model-free repository gate
         run: npm run verify
+
+      - name: Run browser integration suite with real rendering
+        run: npm run test:browser

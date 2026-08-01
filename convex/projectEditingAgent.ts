@@ -7,6 +7,7 @@ import {
   publishCompositionVersion,
   validateCompositionForProject,
 } from "./projectCompositions";
+import { configuredCompositionAuthoring } from "./compositionAuthoring";
 import { mutation, query } from "./_generated/server";
 import { editableProject, readableProject } from "./projects";
 
@@ -37,6 +38,7 @@ export const propose = mutation({
   },
   handler: async (ctx, args) => {
     const project = await editableProject(ctx, args);
+    const authoring = configuredCompositionAuthoring();
     const request = bounded(args.request, 4_000);
     if (!project.currentCompositionVersionId) {
       throw new Error("Save a composition before asking Relay to revise it.");
@@ -196,8 +198,8 @@ export const propose = mutation({
       rationale,
       validationEvidenceJson: JSON.stringify(evidence),
       toolActivityJson: JSON.stringify(tools),
-      provider: "relay-test-editor",
-      model: "deterministic-composition-v1",
+      provider: authoring.provider,
+      model: authoring.model,
       attempt,
       maxAttempts: MAX_ATTEMPTS,
       inputTokens: Math.ceil(request.length / 4),

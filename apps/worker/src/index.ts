@@ -65,6 +65,8 @@ if (componentBuildsEnabled && buildUrl && buildToken) {
 const authoringEnabled = process.env.AUTHORING_ENABLED === "true";
 const authoringUrl = process.env.AUTHORING_CONVEX_URL;
 const authoringToken = process.env.AUTHORING_WORKER_TOKEN;
+const componentLoopEnabled = process.env.COMPONENT_LOOP_ENABLED === "true";
+const componentLoopToken = process.env.COMPONENT_LOOP_WORKER_TOKEN;
 const relayPiSessionRoot = path.resolve(
   process.env.AUTHORING_PI_SESSION_ROOT ?? ".relay/relay-agent-sessions",
 );
@@ -73,14 +75,13 @@ if (authoringEnabled && (!authoringUrl || !authoringToken)) {
     "AUTHORING_ENABLED=true requires AUTHORING_CONVEX_URL and AUTHORING_WORKER_TOKEN.",
   );
 }
-if (
-  authoringEnabled &&
-  (process.env.AUTHORING_REAL_PI_ENABLED !== "true" ||
-    !process.env.AUTHORING_PI_MODEL?.includes("/") ||
-    !process.env.AUTHORING_PI_CREDENTIAL_JSON)
-)
+const piConfigurationValid =
+  process.env.AUTHORING_REAL_PI_ENABLED === "true" &&
+  Boolean(process.env.AUTHORING_PI_MODEL?.includes("/")) &&
+  Boolean(process.env.AUTHORING_PI_CREDENTIAL_JSON?.trim());
+if ((authoringEnabled || componentLoopEnabled) && !piConfigurationValid)
   throw new Error(
-    "Component authoring requires AUTHORING_REAL_PI_ENABLED=true, exact AUTHORING_PI_MODEL=provider/model, and server-only AUTHORING_PI_CREDENTIAL_JSON.",
+    "Component authoring and dialogue require AUTHORING_REAL_PI_ENABLED=true, exact AUTHORING_PI_MODEL=provider/model, and server-only AUTHORING_PI_CREDENTIAL_JSON.",
   );
 let authoringLoop: ComponentAuthoringLoop | undefined;
 if (authoringEnabled && authoringUrl && authoringToken) {
@@ -111,15 +112,16 @@ if (authoringEnabled && authoringUrl && authoringToken) {
   authoringLoop.start();
 }
 
-const componentLoopEnabled = process.env.COMPONENT_LOOP_ENABLED === "true";
-const componentLoopToken = process.env.COMPONENT_LOOP_WORKER_TOKEN;
 if (componentLoopEnabled && (!authoringUrl || !componentLoopToken)) {
   throw new Error(
     "COMPONENT_LOOP_ENABLED=true requires AUTHORING_CONVEX_URL and COMPONENT_LOOP_WORKER_TOKEN.",
   );
 }
 const componentLoop =
-  componentLoopEnabled && authoringUrl && componentLoopToken
+  componentLoopEnabled &&
+  piConfigurationValid &&
+  authoringUrl &&
+  componentLoopToken
     ? new ComponentLoopService(
         authoringUrl,
         componentLoopToken,

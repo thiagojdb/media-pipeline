@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { access, readFile } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 
 const localEnvFile = path.resolve(".env.local");
@@ -53,26 +52,9 @@ if (configuredCredentialJson) {
   };
   authoringProviderConfigured = true;
 } else {
-  const authFile = await authoringAuthFile();
-  if (authFile) {
-    const credentials = JSON.parse(await readFile(authFile, "utf8"));
-    const model =
-      process.env.AUTHORING_PI_MODEL ?? defaultAuthoringModel(credentials);
-    const provider = model.slice(0, model.indexOf("/"));
-    const credential =
-      credentials[provider] ??
-      (provider === "openai-codex" ? credentials.openai : undefined);
-    if (!credential)
-      throw new Error(
-        `Pi credential provider ${provider} is unavailable in the configured auth file.`,
-      );
-    realAuthoringEnvironment = {
-      AUTHORING_REAL_PI_ENABLED: "true",
-      AUTHORING_PI_MODEL: model,
-      AUTHORING_PI_CREDENTIAL_JSON: JSON.stringify(credential),
-    };
-    authoringProviderConfigured = true;
-  }
+  console.warn(
+    "Real component authoring is unavailable until AUTHORING_PI_CREDENTIAL_JSON is configured.",
+  );
 }
 let realScriptRevisionEnvironment = {};
 const localKeyFile = path.resolve("kimi-api-key-code-moonshot");
@@ -157,29 +139,4 @@ async function fileExists(filePath) {
 
 function resolvePath(value, fallback) {
   return path.resolve(value ?? fallback);
-}
-
-async function authoringAuthFile() {
-  if (process.env.AUTHORING_PI_AUTH_FILE) {
-    return process.env.AUTHORING_PI_AUTH_FILE;
-  }
-  for (const candidate of [
-    path.join(os.homedir(), ".pi", "agent", "auth.json"),
-    path.join(os.homedir(), ".local", "share", "opencode", "auth.json"),
-  ]) {
-    if (await fileExists(candidate)) return candidate;
-  }
-  console.warn(
-    "Real component authoring is unavailable until AUTHORING_PI_AUTH_FILE or a supported local Pi/OpenCode auth file is configured.",
-  );
-  return undefined;
-}
-
-function defaultAuthoringModel(credentials) {
-  if (credentials["openai-codex"] || credentials.openai)
-    return "openai-codex/gpt-5.6-sol";
-  if (credentials["github-copilot"]) return "github-copilot/gpt-5.6-sol";
-  throw new Error(
-    "Real authoring requires an OpenAI Codex, OpenAI, or GitHub Copilot credential.",
-  );
 }

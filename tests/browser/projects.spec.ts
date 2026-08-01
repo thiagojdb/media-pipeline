@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+const testCompositionAuthoring = {
+  provider: "relay-test-editor",
+  model: "deterministic-composition-v1",
+} as const;
+
 test("creates, opens, renames, and archives a channel project through real routes", async ({
   page,
 }) => {
@@ -990,8 +995,7 @@ test("creates, opens, renames, and archives a channel project through real route
                 "read_narration_beats",
                 "read_approved_component_library",
               ]),
-              provider: "relay-test-editor",
-              model: "deterministic-composition-v1",
+              ...testCompositionAuthoring,
               attempt: 1,
               maxAttempts: 1,
               inputTokens: 9,
@@ -1079,7 +1083,7 @@ test("creates, opens, renames, and archives a channel project through real route
           state: "queued",
           progress: 0,
           attempt: 0,
-          maxAttempts: 1,
+          maxAttempts: 2,
           cancelRequested: false,
           createdAt: 700 + projectRenders.length,
           updatedAt: 700 + projectRenders.length,

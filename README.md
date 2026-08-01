@@ -20,7 +20,7 @@ operations.
 
 Requirements:
 
-- Node.js 24 or newer (the version files pin 24.18.1 by default)
+- Node.js 24.18.1
 - npm 11 or newer
 
 The repository pins the development runtime in both `.nvmrc` (for nvm) and
@@ -89,9 +89,9 @@ narration-alignment providers. The workspace still starts when an optional
 provider credential is absent; the affected model action reports that it is
 unavailable until configured and never substitutes a local provider. The
 local worker reads provider credentials from the process environment or the
-gitignored root `.env.local` file. Pi authoring can also use the existing local
-Pi/OpenCode OAuth credential store. One `OPENAI_API_KEY` can configure both
-OpenAI script revision and narration alignment; alternatively configure
+gitignored root `.env.local` file. Pi authoring requires the server-only
+`AUTHORING_PI_CREDENTIAL_JSON` credential. One `OPENAI_API_KEY` can configure
+both OpenAI script revision and narration alignment; alternatively configure
 `KIMI_API_KEY` for script revision and `NARRATION_OPENAI_API_KEY` for alignment.
 Both commands use hosted development Convex plus the worker on port 3213,
 leaving a production worker on 3212 untouched. Set
@@ -217,6 +217,11 @@ Jobs retain opaque `channelId`, `threadId`, `turnId`, optional parent-candidate,
 ## MED-128 authoring boundary
 
 Component authoring is explicitly opt-in with `AUTHORING_ENABLED=true`; normal development reports `authoring: disabled`. When enabled, it always uses the configured Pi provider and requires `AUTHORING_REAL_PI_ENABLED=true`, an exact `AUTHORING_PI_MODEL=provider/model`, a server-only `AUTHORING_PI_CREDENTIAL_JSON` containing one Pi `api_key` or OAuth credential, and per-turn budgets below reviewed ceilings. The worker parses that credential into an app-owned in-memory store; it never falls back to Pi's global auth file and never copies credentials into sessions, context, logs, or workspaces.
+
+Composition proposals use the server-configured implementation named by
+`COMPOSITION_AUTHORING_PROVIDER` and `COMPOSITION_AUTHORING_MODEL`. Those
+values are persisted as proposal telemetry; the browser cannot select or
+override them. Tests configure an injected editor identity explicitly.
 
 Script revision generation is a separate provider-selectable worker boundary.
 The worker exposes only the server-configured provider/model allowlist to the
